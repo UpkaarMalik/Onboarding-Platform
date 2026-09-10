@@ -1,0 +1,16 @@
+-- 0018: normalize existing phone_number values to digits-only.
+--
+-- Root cause of "mobile + OTP shows Invalid credentials": several seed
+-- rows (0004, 0011, 0016, 0017) were inserted with a leading '+'
+-- (e.g. '+918009191175'), but the frontend's phone input strips every
+-- non-digit character, including '+', before sending it to
+-- /auth/login/otp/request. UsersService.findByPhoneNumber does an
+-- exact match, so '+918009191175' in the database never matched
+-- '918009191175' from the form — a silent, permanent mismatch, not a
+-- transient bug.
+--
+-- UsersService now normalizes on every write and every read (see
+-- normalizePhoneNumber in users.service.ts) so this can't recur for
+-- new rows; this migration brings existing rows in line with that
+-- same normalization, one time.
+UPDATE users SET phone_number = regexp_replace(phone_number, '\D', '', 'g');

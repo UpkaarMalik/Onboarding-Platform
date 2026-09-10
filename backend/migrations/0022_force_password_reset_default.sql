@@ -1,0 +1,18 @@
+-- 0022: Make "must reset password" the default state for a new account.
+--
+-- UsersService.insertUser already passes must_reset_password = true
+-- explicitly, so this changes nothing about the application path — it
+-- closes the gap for every OTHER way a row gets written: a raw psql
+-- insert, a GUI client, or a hand-run seed migration like 0004/0017,
+-- each of which had to remember to set it. Every account in this system
+-- is created with an HR-issued temporary password, so "must reset" is
+-- the correct default rather than something each insert opts into.
+--
+-- Same defensive reasoning as trg_users_normalize_phone_number (0019):
+-- an invariant the application maintains correctly is still worth
+-- enforcing at the database level, because the application is not the
+-- only thing that writes to this table.
+--
+-- Existing rows are unaffected — a DEFAULT applies only to future
+-- inserts that omit the column.
+ALTER TABLE users ALTER COLUMN must_reset_password SET DEFAULT true;
