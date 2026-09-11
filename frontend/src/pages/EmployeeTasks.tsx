@@ -86,6 +86,11 @@ export default function EmployeeTasks() {
   // row for whichever of them is currently open. Merge so a card can show its
   // description and subtask counts regardless of which side it came from.
   const richById = new Map(actionable.map((t) => [t.id, t]));
+  // Rendered in the order the server sends, which is already the trail's order
+  // (paperwork, reading, kit, installs, then the rest) with the sequential gate
+  // applied — see backend trail-order.util. Sorting again here would be a
+  // second opinion on the same question, and the one that loses an argument
+  // with the API is the one the employee is looking at.
   const roadmapSteps: RoadmapItem[] = dashboard.steps.map((s) => {
     const rich = richById.get(s.id);
     return {
@@ -134,13 +139,12 @@ export default function EmployeeTasks() {
    * task the employee hadn't reached. Walking roadmapSteps instead means the
    * highlight and the numbering can never disagree.
    *
-   * A 'locked' step is skipped: it isn't actionable until the checkpoint is
-   * confirmed, so it can't be what the employee should do next.
+   * Nothing is skipped: the server opens exactly one step at a time and the
+   * trail marks that one, so the highlight, the numbering and the boat all
+   * land on the step the employee is actually on.
    */
   const currentStep =
-    roadmapSteps.find(
-      (s) => s.status !== 'completed' && s.status !== 'cancelled' && s.status !== 'locked',
-    ) ?? null;
+    roadmapSteps.find((s) => s.status !== 'completed' && s.status !== 'cancelled') ?? null;
   const currentStepId = currentStep?.id ?? null;
   // The richer bucketed row when there is one — it carries priority and the
   // overdue flag that `steps` doesn't.

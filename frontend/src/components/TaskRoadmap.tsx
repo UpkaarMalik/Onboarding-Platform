@@ -15,13 +15,16 @@ export interface RoadmapItem {
 
 type VisualState = 'done' | 'active' | 'queued' | 'upcoming' | 'blocked';
 
+/**
+ * The server sends steps already in trail order with one step open and the
+ * rest locked behind it (see backend trail-order.util), so this is a straight
+ * reading of what it said — no second opinion about what the employee can do
+ * next.
+ */
 function visualState(step: RoadmapItem, currentId: string | null): VisualState {
   if (step.status === 'completed') return 'done';
   if (step.status === 'blocked') return 'blocked';
   if (step.id === currentId) return 'active';
-  // Phase-2 tasks start 'locked' until the checkpoint task is done
-  // (OnboardingsService.insertOnboardingTask) — genuinely not actionable yet,
-  // distinct from a task that's simply next in line.
   if (step.status === 'locked') return 'upcoming';
   return 'queued';
 }
@@ -443,10 +446,16 @@ function RoadmapTrail({
 
     const dur =
       Math.min(BOAT_MAX_DUR, Math.max(BOAT_MIN_DUR, len / BOAT_SPEED)) * 1000;
-    const started = performance.now();
+    // The clock starts on the FIRST FRAME, not here. requestAnimationFrame is
+    // paused while the page is hidden, but performance.now() is not: timing
+    // from effect time means a Tasks page opened in a background tab spends
+    // its whole voyage hidden and is already moored by the time anyone looks.
+    // Starting on the first frame turns that into a delayed departure instead.
+    let started = 0;
     let raf = 0;
 
     const tick = (now: number) => {
+      if (!started) started = now;
       const t = Math.min(1, (now - started) / dur);
       // ease-in-out
       const eased = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
@@ -533,9 +542,9 @@ function RoadmapCard({
   onSelect: (id: string) => void;
   final?: boolean;
 }) {
-  // A 'locked' task genuinely isn't actionable yet — the checkpoint has to be
-  // confirmed before the backend unlocks it — so inviting a click would only
-  // produce a 403.
+  // A locked step is one the employee hasn't reached yet: steps open one at a
+  // time, so inviting a click on a later one would promise something the
+  // journey doesn't allow.
   const clickable = state !== 'upcoming';
   const Tag = clickable ? 'button' : 'div';
 
@@ -601,7 +610,7 @@ function RoadmapCard({
       {state === 'upcoming' && (
         <span className="roadmap-card-locked">
           <LockIcon />
-          Unlocks after the checkpoint
+          Opens once the step before it is done
         </span>
       )}
     </Tag>

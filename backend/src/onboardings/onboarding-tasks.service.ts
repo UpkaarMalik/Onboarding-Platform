@@ -656,9 +656,6 @@ export class OnboardingTasksService {
     if (subtask.onboarding_user_id !== actor.id) {
       throw new ForbiddenException('Only the employee on this onboarding can update its subtasks');
     }
-    if (subtask.task_status === 'locked') {
-      throw new ForbiddenException('This task is locked until the checkpoint is completed');
-    }
     if (subtask.task_status === 'cancelled') {
       throw new ConflictException('This task has been cancelled');
     }
@@ -699,11 +696,6 @@ export class OnboardingTasksService {
     const task = rows[0];
     if (!task) {
       throw new NotFoundException('Task not found');
-    }
-    if (task.status === 'locked') {
-      throw new ForbiddenException(
-        'This task is locked until the checkpoint is completed',
-      );
     }
     if (task.status === 'cancelled') {
       throw new ConflictException('This task has been cancelled');
