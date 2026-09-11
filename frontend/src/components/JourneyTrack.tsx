@@ -15,9 +15,18 @@ import { useEffect, useState } from 'react';
 export default function JourneyTrack({
   stages,
   currentKey,
+  compact = false,
 }: {
-  stages: { key: string; label: string }[];
+  /** `done` is optional: the onboarding-stage track on Home is strictly
+   *  sequential, so "everything before the current node" is correct there.
+   *  The per-task track on the Tasks page is NOT — tasks get completed out of
+   *  order, so it passes explicit per-node state and the index walk would
+   *  otherwise mark the wrong ones. */
+  stages: { key: string; label: string; done?: boolean }[];
   currentKey: string;
+  /** Numbers only, no labels — for a track with one node per task, where
+   *  labels would collide. */
+  compact?: boolean;
 }) {
   const currentIndex = stages.findIndex((s) => s.key === currentKey);
   const activeIndex = currentIndex === -1 ? 0 : currentIndex;
@@ -37,8 +46,12 @@ export default function JourneyTrack({
 
   const fillPercent = stages.length > 1 ? (animatedIndex / (stages.length - 1)) * 100 : 0;
 
+  function isDone(stage: { done?: boolean }, i: number) {
+    return stage.done ?? i < animatedIndex;
+  }
+
   return (
-    <div className="journey-track">
+    <div className={`journey-track${compact ? ' journey-track--compact' : ''}`}>
       <div className="journey-line">
         <div className="journey-line-fill" style={{ width: `${fillPercent}%` }} />
         <div className="journey-marker" style={{ left: `${fillPercent}%` }} />
@@ -47,10 +60,11 @@ export default function JourneyTrack({
         {stages.map((s, i) => (
           <div
             key={s.key}
-            className={`journey-node ${i < animatedIndex ? 'done' : ''} ${i === animatedIndex ? 'current' : ''}`}
+            className={`journey-node ${isDone(s, i) ? 'done' : ''} ${i === animatedIndex ? 'current' : ''}`}
+            title={compact ? s.label : undefined}
           >
-            <span className="journey-dot">{i < animatedIndex ? '✓' : i + 1}</span>
-            <span className="journey-label">{s.label}</span>
+            <span className="journey-dot">{isDone(s, i) ? '✓' : i + 1}</span>
+            {!compact && <span className="journey-label">{s.label}</span>}
           </div>
         ))}
       </div>

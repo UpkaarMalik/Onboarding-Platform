@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
+import JourneyTrack from '../components/JourneyTrack';
 import TaskRoadmap, { type RoadmapItem } from '../components/TaskRoadmap';
 import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
 import DocumentChecklist from '../components/tasks/DocumentChecklist';
@@ -80,9 +81,6 @@ export default function EmployeeTasks() {
 
   const firstName = user?.full_name?.split(' ')[0] ?? 'there';
   const actionable = [...dashboard.overdue, ...dashboard.today, ...dashboard.upcoming];
-  const doFirst = actionable.find((t) => t.status !== 'completed') ?? null;
-  const currentStepId =
-    doFirst?.id ?? dashboard.steps.find((s) => s.status !== 'completed')?.id ?? null;
 
   // `steps` carries the full journey; the actionable buckets carry the richer
   // row for whichever of them is currently open. Merge so a card can show its
@@ -126,9 +124,37 @@ export default function EmployeeTasks() {
     });
   }
 
-  const { requiredCompleted, requiredTotal, percent } = dashboard.progress;
-  const remaining = requiredTotal - requiredCompleted;
-  const allDone = requiredTotal > 0 && remaining === 0;
+  /**
+   * The "you are here" step, taken from the trail's OWN order.
+   *
+   * This used to be the first entry of [...overdue, ...today, ...upcoming],
+   * which is ordered by due_date with ties broken arbitrarily by Postgres — so
+   * on an onboarding where several tasks share a due date it could mark step 2
+   * ACTIVE while step 1 was still open, and the "Up next" line would name a
+   * task the employee hadn't reached. Walking roadmapSteps instead means the
+   * highlight and the numbering can never disagree.
+   *
+   * A 'locked' step is skipped: it isn't actionable until the checkpoint is
+   * confirmed, so it can't be what the employee should do next.
+   */
+  const currentStep =
+    roadmapSteps.find(
+      (s) => s.status !== 'completed' && s.status !== 'cancelled' && s.status !== 'locked',
+    ) ?? null;
+  const currentStepId = currentStep?.id ?? null;
+  // The richer bucketed row when there is one — it carries priority and the
+  // overdue flag that `steps` doesn't.
+  const doFirst = currentStep ? richById.get(currentStep.id) ?? currentStep : null;
+
+  // Counted off the SAME array the trail renders rather than the backend's
+  // separate progress aggregate. Both currently agree, but deriving them from
+  // one source means the bar can never claim a number the cards below it
+  // contradict — which is the one way this panel could lie.
+  const totalSteps = roadmapSteps.length;
+  const doneSteps = roadmapSteps.filter((s) => s.status === 'completed').length;
+  const percent = totalSteps === 0 ? 0 : Math.round((doneSteps / totalSteps) * 100);
+  const remaining = totalSteps - doneSteps;
+  const allDone = totalSteps > 0 && remaining === 0;
 
   const activeIsDocuments = activeTask?.system_key === 'document_upload';
   const activeHasSubtasks = (activeTask?.subtask_count ?? 0) > 0;
@@ -140,9 +166,9 @@ export default function EmployeeTasks() {
 
       <Reveal>
         <header className="tasks-hero">
-          <span className="tasks-eyebrow">
+          <span className="eyebrow">
             <span className="tasks-eyebrow-dot" />
-            Your onboarding journey
+            {doneSteps} of {totalSteps} steps done
           </span>
           <h1 className="tasks-title">
             {allDone ? 'You’re all set, ' : 'Your trail, '}
@@ -150,43 +176,44 @@ export default function EmployeeTasks() {
           </h1>
           <p className="tasks-lede">
             {allDone
-              ? 'Every required step on your onboarding is complete. Have a look back through the trail any time.'
-              : `Follow the trail below. ${remaining} step${remaining === 1 ? '' : 's'} left to be fully set up.`}
+              ? 'Every step on your onboarding is complete. Look back through the trail any time.'
+              : `Your onboarding is ${percent}% complete — ${remaining} step${remaining === 1 ? '' : 's'} to go.`}
           </p>
 
-          <div className="tasks-progress">
-            <div className="tasks-progress-top">
-              <span className="tasks-progress-count">
-                <span className="tasks-progress-badge">{requiredCompleted}</span>
-                of {requiredTotal} steps complete
+          {/* One node per task rather than the five onboarding stages, so the
+              track and the trail below describe the same journey. Completion
+              is passed per node because tasks finish out of order. */}
+          <JourneyTrack
+            compact
+            stages={roadmapSteps.map((s, i) => ({
+              key: s.id,
+              label: `${i + 1}. ${s.title}`,
+              done: s.status === 'completed',
+            }))}
+            currentKey={currentStepId ?? ''}
+          />
+
+          {doFirst && (
+            <div className="tasks-next">
+              <span className="tasks-live-dot" aria-hidden="true" />
+              <span className="tasks-next-text">
+                Up next: <strong>{doFirst.title}</strong>
+                {dueLabel(doFirst.due_date, doFirst.status) && (
+                  <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
+                )}
               </span>
-              <span className="tasks-progress-pct">{percent}%</span>
+              <button type="button" className="btn-solid btn-sm" onClick={() => openStep(doFirst.id)}>
+                Open
+              </button>
             </div>
-            <span className="tasks-progress-track">
-              <span className="tasks-progress-fill" style={{ width: `${percent}%` }} />
-            </span>
-            {doFirst && (
-              <div className="tasks-progress-foot">
-                <span className="tasks-live-dot" aria-hidden="true" />
-                <span>
-                  Up next: <strong>{doFirst.title}</strong>
-                  {dueLabel(doFirst.due_date, doFirst.status) && (
-                    <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
-                  )}
-                </span>
-                <button type="button" className="btn-solid btn-sm" onClick={() => openStep(doFirst.id)}>
-                  Open
-                </button>
-              </div>
-            )}
-          </div>
+          )}
         </header>
       </Reveal>
 
       {roadmapSteps.length === 0 ? (
         <p className="muted">No steps on your onboarding yet — check back shortly.</p>
       ) : (
-        <section className="tasks-trail dot-grid">
+        <section className="tasks-trail">
           <TaskRoadmap steps={roadmapSteps} currentId={currentStepId} onSelect={openStep} />
         </section>
       )}
@@ -214,10 +241,10 @@ export default function EmployeeTasks() {
                   finish one task. */}
               {activeTask.status !== 'completed' && !activeIsChecklistDriven && (
                 <button
+                  type="button"
                   className="btn-solid"
                   disabled={completing}
                   onClick={() => completeTask(activeTask.id)}
-                  
                 >
                   {completing ? 'Marking done…' : 'Mark done'}
                 </button>
