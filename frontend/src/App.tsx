@@ -11,6 +11,10 @@ import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
 import Community from './pages/Community';
 import AdminNotes from './pages/AdminNotes';
 import Documents from './pages/Documents';
+import Benefits from './pages/Benefits';
+import CompanyLife from './pages/CompanyLife';
+import WorkLog from './pages/WorkLog';
+import AuditLog from './pages/AuditLog';
 
 function RoleHome() {
   const { user } = useAuth();
@@ -49,8 +53,12 @@ export default function App() {
                 <Route path="/notes-admin" element={<AdminNotes />} />
               </Route>
 
+              <Route path="/benefits" element={<Benefits />} />
               <Route path="/community" element={<Community />} />
               <Route path="/documents" element={<Documents />} />
+              <Route path="/events" element={<CompanyLife />} />
+              <Route path="/work-log" element={<WorkLog />} />
+              <Route path="/audit-log" element={<AuditLog />} />
             </Route>
           </Route>
 
