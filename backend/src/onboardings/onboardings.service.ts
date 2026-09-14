@@ -729,7 +729,11 @@ export class OnboardingsService {
             WHERE ot.onboarding_id = o.id
               AND ot.is_required = true
               AND ot.status = 'completed'
-          )::int AS required_task_completed_count
+          )::int AS required_task_completed_count,
+
+          o.experience_rating,
+          o.experience_comment,
+          o.experience_rated_at
 
         FROM onboardings o
 
