@@ -6,6 +6,7 @@ import { formatDate } from '../lib/format';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
 import AnimatedProgressBar from '../components/AnimatedProgressBar';
+import OceanBanner from '../components/OceanBanner';
 
 interface Department {
   id: string;
@@ -76,7 +77,6 @@ interface EmployeeProfile {
   };
 }
 
-const LIMIT = 10;
 const PIPELINE_STAGES = [
   { key: 'pre_onboarding', label: 'Pre-joining' },
   { key: 'email_provisioned', label: 'Email' },
@@ -104,13 +104,9 @@ function greeting() {
 export default function HrDashboard() {
   const authedFetch = useAuthedFetch();
   const { user } = useAuth();
+  const [timeOfDay, setTimeOfDay] = useState<number | null>(null);
+  const [sliderDragging, setSliderDragging] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [rows, setRows] = useState<any[]>([]);
-  const [total, setTotal] = useState(0);
-  const [view, setView] = useState<'all' | 'stuck'>('all');
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [page, setPage] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [selectedOnboarding, setSelectedOnboarding] = useState<any | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(
@@ -127,6 +123,8 @@ export default function HrDashboard() {
     count: 0,
   });
 
+  const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
+  const [upcomingDeptFilter, setUpcomingDeptFilter] = useState('');
   const [showAddJoiner, setShowAddJoiner] = useState(false);
   const [showAddTaskOwner, setShowAddTaskOwner] = useState(false);
   const [joinerCredentials, setJoinerCredentials] = useState<{
@@ -164,47 +162,7 @@ export default function HrDashboard() {
     void loadOverview();
   }, []);
 
-  // Guards against out-of-order responses: switching the department
-  // filter quickly can leave an OLD request (e.g. for Engineering)
-  // still in flight when a NEW one (e.g. for Operations) is sent. If
-  // the old one happens to resolve second — which network timing does
-  // not guarantee against — it would silently overwrite the correct,
-  // newer rows with stale ones. Only the response matching the latest
-  // request id is ever applied to state.
-  const latestRequestId = useRef(0);
-
-  async function loadRows() {
-    const requestId = ++latestRequestId.current;
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (departmentFilter) params.set('department', departmentFilter);
-      if (view === 'all' && statusFilter) params.set('status', statusFilter);
-      params.set('limit', String(LIMIT));
-      params.set('offset', String(page * LIMIT));
-      const path = view === 'stuck' ? '/onboardings/stuck' : '/onboardings';
-      const res = await authedFetch<{ data: any[]; total: number }>(`${path}?${params.toString()}`);
-      if (requestId !== latestRequestId.current) return; // a newer request has since started — ignore this stale response
-      setRows(res.data);
-      setTotal(res.total);
-    } catch (err) {
-      if (requestId !== latestRequestId.current) return;
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    }
-  }
-
-  useEffect(() => {
-    void loadRows();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, departmentFilter, statusFilter, page]);
-
-  function switchView(next: 'all' | 'stuck') {
-    setView(next);
-    setPage(0);
-  }
-
   function refreshEverything() {
-    void loadRows();
     void loadOverview();
   }
 
@@ -216,31 +174,59 @@ export default function HrDashboard() {
     ...stage,
     count: overviewRows.filter((o) => o.status === stage.key).length,
   }));
+  const today = new Date().toISOString().slice(0, 10);
   const pipelineRows = overviewRows
-    .filter((o) => o.status !== 'completed' && o.status !== 'cancelled')
-    .slice(0, 6);
+    .filter((o) => o.status !== 'completed' && o.status !== 'cancelled' && o.start_date >= today)
+    .filter((o) => !upcomingDeptFilter || o.department_id === upcomingDeptFilter);
+
+  const ratedRows = overviewRows.filter((o) => o.experience_rating != null);
 
   return (
     <div className="hr-dashboard">
-      <div className="greeting-banner">
-        <span className="eyebrow">HR / SuperAdmin</span>
-        <h1>
-          {greeting()}, {user?.full_name?.split(' ')[0] ?? 'there'} 👋
-        </h1>
-        <p>Here's how onboarding is tracking across every department right now.</p>
-        <div className="banner-actions">
-          <button className="btn-primary" onClick={() => setShowAddJoiner(true)}>
-            + Add joiner
-          </button>
-          <button onClick={() => setShowAddTaskOwner(true)}>+ Add task owner</button>
+      {/* Ocean banner with overlay */}
+      <div style={{ margin: '16px 0 0', borderRadius: 20, overflow: 'hidden', position: 'relative', height: 240 }}>
+        <OceanBanner height={240} timeOfDay={timeOfDay ?? undefined} animSpeed={sliderDragging ? 6 : 1} />
+        <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '24px 36px 32px', pointerEvents: 'none' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.9)', background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 6, padding: '4px 12px', letterSpacing: '0.5px' }}>HR / SuperAdmin</span>
+          </div>
+          <h1 style={{ margin: 0, fontSize: 38, fontWeight: 800, color: '#fff', textShadow: '0 2px 20px rgba(0,0,0,0.35)' }}>
+            {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{user?.full_name?.split(' ')[0] ?? 'there'}</span>
+          </h1>
         </div>
       </div>
+
+      {/* Time-of-day slider */}
+      <div style={{ margin: '12px 0 0', background: '#fff', border: '1px solid #e8e4dc', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>DAWN</span>
+        <input
+          type="range" min="0" max="1000"
+          value={Math.round((timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24) * 1000)}
+          onChange={e => setTimeOfDay(parseInt(e.target.value) / 1000)}
+          onMouseDown={() => setSliderDragging(true)} onMouseUp={() => setSliderDragging(false)}
+          onTouchStart={() => setSliderDragging(true)} onTouchEnd={() => setSliderDragging(false)}
+          style={{ flex: 1, height: 4, borderRadius: 4, background: 'linear-gradient(90deg, #3a4a8a 0%, #6fa8d4 25%, #ffd27f 55%, #ff7e54 78%, #1a2244 100%)', outline: 'none', cursor: 'grab', WebkitAppearance: 'none', appearance: 'none' as never }}
+        />
+        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>NIGHT</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#e8930c', minWidth: 44, textAlign: 'center' }}>
+          {(() => { const t = timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
+        </span>
+      </div>
+
+      {/* Description */}
+      <p style={{ margin: '10px 0 20px', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontSize: 15, color: '#4a4540', lineHeight: 1.6 }}>
+        Create joinees, manage onboarding access, track progress &amp; explore all HR features — right from here.
+      </p>
 
       {error && <p className="error-text">{error}</p>}
 
       <Reveal>
         <div className="stat-grid">
-          <div className="card stat-tile">
+          <div
+            className="card stat-tile"
+            style={{ cursor: 'pointer', outline: activeStatFilter === 'new_hires' ? '2px solid #e8930c' : 'none' }}
+            onClick={() => setActiveStatFilter(activeStatFilter === 'new_hires' ? null : 'new_hires')}
+          >
             <span className="stat-icon info">👋</span>
             <div>
               <div className="stat-value">{newHiresCount}</div>
@@ -248,7 +234,11 @@ export default function HrDashboard() {
               <div className="stat-sub">Not yet active</div>
             </div>
           </div>
-          <div className="card stat-tile">
+          <div
+            className="card stat-tile"
+            style={{ cursor: 'pointer', outline: activeStatFilter === 'active' ? '2px solid #e8930c' : 'none' }}
+            onClick={() => setActiveStatFilter(activeStatFilter === 'active' ? null : 'active')}
+          >
             <span className="stat-icon success">✅</span>
             <div>
               <div className="stat-value">{activeCount}</div>
@@ -256,7 +246,11 @@ export default function HrDashboard() {
               <div className="stat-sub">Past checkpoint</div>
             </div>
           </div>
-          <div className="card stat-tile">
+          <div
+            className="card stat-tile"
+            style={{ cursor: 'pointer', outline: activeStatFilter === 'delayed' ? '2px solid #e8930c' : 'none' }}
+            onClick={() => setActiveStatFilter(activeStatFilter === 'delayed' ? null : 'delayed')}
+          >
             <span className="stat-icon danger">⚠️</span>
             <div>
               <div className="stat-value">{stuckTotal}</div>
@@ -264,7 +258,11 @@ export default function HrDashboard() {
               <div className="stat-sub">Blocked or overdue tasks</div>
             </div>
           </div>
-          <div className="card stat-tile">
+          <div
+            className="card stat-tile"
+            style={{ cursor: 'pointer', outline: activeStatFilter === 'feedback' ? '2px solid #e8930c' : 'none' }}
+            onClick={() => setActiveStatFilter(activeStatFilter === 'feedback' ? null : 'feedback')}
+          >
             <span className="stat-icon accent">⭐</span>
             <div>
               <div className="stat-value">
@@ -279,31 +277,95 @@ export default function HrDashboard() {
         </div>
       </Reveal>
 
+      {activeStatFilter && (
+        <Reveal>
+          <section>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ margin: 0 }}>
+                {activeStatFilter === 'new_hires' && 'New hires — not yet active'}
+                {activeStatFilter === 'active' && 'Active onboardings'}
+                {activeStatFilter === 'delayed' && 'Delayed — blocked or overdue'}
+                {activeStatFilter === 'feedback' && 'First-week feedback summary'}
+              </h2>
+              <button style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => setActiveStatFilter(null)}>Close</button>
+            </div>
+            {activeStatFilter === 'feedback' ? (
+              <p style={{ color: 'var(--color-muted)', fontSize: 14 }}>
+                Average rating: <strong>{ratingSummary.average !== null ? `${ratingSummary.average.toFixed(1)}/5` : 'No ratings yet'}</strong> from {ratingSummary.count} response{ratingSummary.count === 1 ? '' : 's'}.
+              </p>
+            ) : (
+              (() => {
+                const filtered = activeStatFilter === 'new_hires'
+                  ? overviewRows.filter((o) => ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'].includes(o.status))
+                  : activeStatFilter === 'active'
+                    ? overviewRows.filter((o) => o.status === 'active')
+                    : attention;
+                return filtered.length === 0 ? (
+                  <p className="muted">No one in this category right now.</p>
+                ) : (
+                  filtered.map((o) => {
+                    if (activeStatFilter === 'delayed') {
+                      return (
+                        <div className="pipeline-row" key={o.task_id} style={{ cursor: 'default' }}>
+                          <span className="pipeline-name">{o.employee_name}</span>
+                          <span style={{ fontSize: 13, color: 'var(--color-muted)' }}>{o.task_title}</span>
+                          <span className={`status-pill ${o.is_blocked ? 'status-blocked' : 'status-cancelled'}`}>
+                            {o.is_blocked ? 'Blocked' : 'Overdue'}
+                          </span>
+                        </div>
+                      );
+                    }
+                    const pct = o.required_task_count > 0
+                      ? Math.round((o.required_task_completed_count / o.required_task_count) * 100) : 0;
+                    return (
+                      <div className="pipeline-row" key={o.id} onClick={() => setProfileUserId(o.user_id)}>
+                        <span className="pipeline-name">{o.employee_name}</span>
+                        <AnimatedProgressBar percent={pct} thin style={{ margin: 0 }} />
+                        <span className="pipeline-pct" style={{ color: pct > 0 ? '#e8930c' : undefined }}>{pct}%</span>
+                      </div>
+                    );
+                  })
+                );
+              })()
+            )}
+          </section>
+        </Reveal>
+      )}
+
       <Reveal>
         <section>
-          <h2>Onboarding pipeline</h2>
-          <div className="pipeline-stages">
-            {stageCounts.map((s) => (
-              <div key={s.key} className="pipeline-stage">
-                {s.label}
-                <span className="stage-count">{s.count}</span>
-              </div>
-            ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ margin: 0 }}>Upcoming onboardings</h2>
+            <div className="filters" style={{ margin: 0 }}>
+              <select
+                value={upcomingDeptFilter}
+                onChange={(e) => setUpcomingDeptFilter(e.target.value)}
+              >
+                <option value="">All departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
-          {pipelineRows.map((o) => {
-            const pct =
-              o.required_task_count > 0
-                ? Math.round((o.required_task_completed_count / o.required_task_count) * 100)
-                : 0;
-            return (
-              <div className="pipeline-row" key={o.id} onClick={() => setProfileUserId(o.user_id)}>
-                <span className="pipeline-name">{o.employee_name}</span>
-                <AnimatedProgressBar percent={pct} thin style={{ margin: 0 }} />
-                <span className="pipeline-pct">{pct}%</span>
-              </div>
-            );
-          })}
-          {pipelineRows.length === 0 && <p className="muted">Nothing in flight right now.</p>}
+          {pipelineRows.length === 0 ? (
+            <p className="muted">No upcoming onboardings right now.</p>
+          ) : (
+            pipelineRows.map((o) => {
+              const pct =
+                o.required_task_count > 0
+                  ? Math.round((o.required_task_completed_count / o.required_task_count) * 100)
+                  : 0;
+              return (
+                <div className="pipeline-row" key={o.id} onClick={() => setProfileUserId(o.user_id)} style={{ gridTemplateColumns: 'minmax(120px,1fr) auto 3fr auto' }}>
+                  <span className="pipeline-name">{o.employee_name}</span>
+                  <span style={{ fontSize: 12, color: 'var(--color-muted)' }}>{o.department_name}</span>
+                  <AnimatedProgressBar percent={pct} thin style={{ margin: 0 }} />
+                  <span className="pipeline-pct" style={{ color: pct > 0 ? '#e8930c' : undefined }}>{pct}%</span>
+                </div>
+              );
+            })
+          )}
         </section>
       </Reveal>
 
@@ -327,150 +389,42 @@ export default function HrDashboard() {
       )}
 
       <Reveal>
-      <div className="dashboard-header" style={{ marginTop: '0.5rem' }}>
-        <h2 style={{ marginBottom: '0.75rem' }}>All onboardings</h2>
-      </div>
-
-      <div className="filters">
-        <button className={view === 'all' ? 'active' : ''} onClick={() => switchView('all')}>
-          Overview
-        </button>
-        <button className={view === 'stuck' ? 'active' : ''} onClick={() => switchView('stuck')}>
-          What&apos;s stuck
-        </button>
-
-        <select
-          value={departmentFilter}
-          onChange={(e) => {
-            setDepartmentFilter(e.target.value);
-            setPage(0);
-          }}
-        >
-          <option value="">All departments</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
-
-        {view === 'all' && (
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              setStatusFilter(e.target.value);
-              setPage(0);
-            }}
-          >
-            <option value="">All statuses</option>
-            <option value="pre_onboarding">Pre-onboarding</option>
-            <option value="email_provisioned">Email provisioned</option>
-            <option value="checkpoint_pending">Checkpoint pending</option>
-            <option value="active">Active</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        )}
-      </div>
-
-      {view === 'all' ? (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Joinee ID</th>
-              <th>Department</th>
-              <th>Template</th>
-              <th>Status</th>
-              <th>Start date</th>
-              <th>Progress</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((o) => (
-              // Clicking the employee opens their PROFILE, not the task
-              // scheduler. That was the bug behind "the joinee id and pwd are
-              // not available when HR clicks on employee": the row used to open
-              // a modal that lists tasks and has no credentials in it at all,
-              // while the credentials sat behind an unlabelled last-column
-              // button. The scheduler now has its own explicit button.
-              <tr key={o.id} onClick={() => setProfileUserId(o.user_id)}>
-                <td>{o.employee_name}</td>
-                <td>
-                  {o.joinee_id ? (
-                    <code className="id-pill">{o.joinee_id}</code>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </td>
-                <td>{o.department_name}</td>
-                <td>{o.template_name}</td>
-                <td>
-                  <span className={`status-pill status-${o.status}`}>{o.status}</span>
-                </td>
-                <td>{formatDate(o.start_date)}</td>
-                <td>
-                  {o.required_task_completed_count}/{o.required_task_count}
-                </td>
-                <td className="row-actions">
-                  {/* stopPropagation so this doesn't also fire the row's own
-                      profile-open handler. */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedOnboarding(o);
-                    }}
-                  >
-                    Tasks
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Department</th>
-              <th>Task</th>
-              <th>Due</th>
-              <th>Why stuck</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((t) => (
-              <tr key={t.task_id}>
-                <td>{t.employee_name}</td>
-                <td>{t.department_name}</td>
-                <td>
-                  {t.task_title}
-                  {t.is_checkpoint && <span className="badge">Checkpoint</span>}
-                </td>
-                <td>{t.due_date}</td>
-                <td>{t.is_blocked ? 'Blocked' : 'Overdue'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {rows.length === 0 && <p className="muted">Nothing to show.</p>}
-
-      <div className="pagination">
-        <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-          Previous
-        </button>
-        <span>
-          Page {page + 1} of {Math.max(1, Math.ceil(total / LIMIT))} ({total} total)
-        </span>
-        <button disabled={(page + 1) * LIMIT >= total} onClick={() => setPage((p) => p + 1)}>
-          Next
-        </button>
-      </div>
+        <section>
+          <h2>Feedback &amp; ratings</h2>
+          {ratedRows.length === 0 ? (
+            <p className="muted">No one has submitted feedback yet.</p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Rating</th>
+                  <th>Comment</th>
+                  <th>Rated on</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ratedRows.map((o) => (
+                  <tr key={o.id} onClick={() => setProfileUserId(o.user_id)} style={{ cursor: 'pointer' }}>
+                    <td>{o.employee_name}</td>
+                    <td>{o.department_name}</td>
+                    <td>
+                      <span style={{ fontWeight: 700, color: '#e8930c' }}>
+                        {'★'.repeat(Math.round(o.experience_rating))}{'☆'.repeat(5 - Math.round(o.experience_rating))}
+                      </span>
+                      <span style={{ marginLeft: 6, fontSize: 13, color: 'var(--color-muted)' }}>{o.experience_rating}/5</span>
+                    </td>
+                    <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {o.experience_comment || <span className="muted">—</span>}
+                    </td>
+                    <td>{formatDate(o.experience_rated_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
       </Reveal>
 
       {selectedOnboarding && (

@@ -7,6 +7,7 @@ import type { DashboardResponse } from '../types/onboarding';
 import Reveal from '../components/Reveal';
 import JourneyTrack from '../components/JourneyTrack';
 import AnimatedProgressBar from '../components/AnimatedProgressBar';
+import OceanBanner from '../components/OceanBanner';
 
 const PRE_CHECKPOINT_STATUSES = ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'];
 
@@ -86,6 +87,7 @@ export default function StartHere() {
   const [submittingRating, setSubmittingRating] = useState(false);
   const [ratingSaved, setRatingSaved] = useState(false);
   const [entrancePhase, setEntrancePhase] = useState<'greeting' | 'dashboard'>('greeting');
+  const [timeOfDay, setTimeOfDay] = useState<number | null>(null);
   const entranceTimer = useRef<ReturnType<typeof setTimeout>>();
   const hasCelebratedCompletionRef = useRef(false);
 
@@ -206,13 +208,54 @@ export default function StartHere() {
       </div>
 
       <div className={`entrance-body${entrancePhase === 'dashboard' ? ' entrance-body--visible' : ''}`}>
-      <div className="greeting-banner">
+      {/* Ocean banner with overlay */}
+      <div style={{ margin: '0 0 0', borderRadius: 20, overflow: 'hidden', position: 'relative', height: 220 }}>
+        <OceanBanner height={220} timeOfDay={timeOfDay ?? undefined} />
+        <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', padding: '20px 36px', pointerEvents: 'none' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 'auto' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.9)', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '3px 10px', letterSpacing: '0.5px' }}>
+              {user?.role === 'superadmin_hr' ? 'HR / SuperAdmin' : user?.role === 'task_owner' ? 'Task Owner' : 'Employee'}
+            </span>
+          </div>
+          <h1 style={{ margin: '0 0 6px', fontSize: 34, fontWeight: 800, color: '#fff', textShadow: '0 2px 16px rgba(0,0,0,0.3)' }}>
+            {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{firstName}</span>
+          </h1>
+        </div>
+      </div>
+
+      {/* Time-of-day slider */}
+      <div style={{ margin: '12px 0 0', background: '#fff', border: '1px solid #e8e4dc', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>DAWN</span>
+        <input
+          type="range" min="0" max="1000"
+          value={Math.round((timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24) * 1000)}
+          onChange={e => setTimeOfDay(parseInt(e.target.value) / 1000)}
+          style={{ flex: 1, height: 4, borderRadius: 4, background: 'linear-gradient(90deg, #3a4a8a 0%, #6fa8d4 25%, #ffd27f 55%, #ff7e54 78%, #1a2244 100%)', outline: 'none', cursor: 'grab', WebkitAppearance: 'none', appearance: 'none' as never }}
+        />
+        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>NIGHT</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#e8930c', minWidth: 44, textAlign: 'center' }}>
+          {(() => { const t = timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
+        </span>
+      </div>
+
+      {/* Description */}
+      <p style={{ margin: '10px 0 0', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontSize: 15, color: '#6f6a62', lineHeight: 1.6 }}>
+        Welcome to AND Payments — your personalised onboarding journey starts here. Track progress &amp; explore all features right from this page.
+      </p>
+      <div className="greeting-banner warm-banner">
+        <div className="warm-banner-badge">
+          <span className="warm-banner-dot" />
+          AND Onboard
+        </div>
         <span className="eyebrow">
           {dashboard.progress.requiredCompleted} of {dashboard.progress.requiredTotal} steps done
         </span>
         <h1>
           {greeting()}, {firstName} 👋
         </h1>
+        <p className="warm-banner-desc">
+          Welcome to AND Payments — your personalised onboarding journey starts here.
+        </p>
         {dashboard.onboarding.status === 'completed' ? (
           <p className="onboarding-complete-banner">
             🎉 You've completed your onboarding — welcome aboard for real!
