@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
 import Modal from '../components/Modal';
-import Reveal from '../components/Reveal';
 import JourneyTrack from '../components/JourneyTrack';
 import TaskRoadmap, { type RoadmapItem } from '../components/TaskRoadmap';
 import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
@@ -35,6 +34,8 @@ export default function EmployeeTasks() {
   const [activeTask, setActiveTask] = useState<TaskRow | null>(null);
   const [completing, setCompleting] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
+  const heroRef = useRef<HTMLElement>(null);
+  const [heroStuck, setHeroStuck] = useState(false);
 
   const loadAll = useCallback(async () => {
     try {
@@ -51,6 +52,27 @@ export default function EmployeeTasks() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  /**
+   * Whether the hero has reached the top of the viewport, which is what
+   * condenses it. Read off the element rather than compared against a
+   * hardcoded scroll offset, because what stands above the hero is
+   * .app-main's padding and that changes with the layout.
+   */
+  useEffect(() => {
+    const read = () => {
+      const hero = heroRef.current;
+      if (!hero) return;
+      setHeroStuck(hero.getBoundingClientRect().top <= 0.5);
+    };
+    read();
+    window.addEventListener('scroll', read, { passive: true });
+    window.addEventListener('resize', read);
+    return () => {
+      window.removeEventListener('scroll', read);
+      window.removeEventListener('resize', read);
+    };
+  }, [dashboard]);
 
   /** A checklist finished the task for us — same celebration and cleanup as
    *  pressing "Mark done", since a completed task drops out of the actionable
@@ -168,12 +190,18 @@ export default function EmployeeTasks() {
     <div className="tasks-page">
       {error && <p className="error-text">{error}</p>}
 
-      <Reveal>
-        <header className="tasks-hero">
-          <span className="eyebrow">
-            <span className="tasks-eyebrow-dot" />
-            {doneSteps} of {totalSteps} steps done
-          </span>
+      <header
+        className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}
+        ref={heroRef}
+      >
+        <span className="eyebrow">
+          <span className="tasks-eyebrow-dot" />
+          {doneSteps} of {totalSteps} steps done
+        </span>
+        {/* The greeting, and only the greeting. It folds away once the hero
+            sticks — it says nothing that changes as the employee works,
+            and it is the one part of this panel worth trading for trail. */}
+        <div className="tasks-hero-greeting">
           <h1 className="tasks-title">
             {allDone ? 'You’re all set, ' : 'Your trail, '}
             <span className="tasks-title-script">{firstName}</span>
@@ -183,36 +211,36 @@ export default function EmployeeTasks() {
               ? 'Every step on your onboarding is complete. Look back through the trail any time.'
               : `Your onboarding is ${percent}% complete — ${remaining} step${remaining === 1 ? '' : 's'} to go.`}
           </p>
+        </div>
 
-          {/* One node per task rather than the five onboarding stages, so the
-              track and the trail below describe the same journey. Completion
-              is passed per node because tasks finish out of order. */}
-          <JourneyTrack
-            compact
-            stages={roadmapSteps.map((s, i) => ({
-              key: s.id,
-              label: `${i + 1}. ${s.title}`,
-              done: s.status === 'completed',
-            }))}
-            currentKey={currentStepId ?? ''}
-          />
+        {/* One node per task rather than the five onboarding stages, so the
+            track and the trail below describe the same journey. Completion
+            is passed per node because tasks finish out of order. */}
+        <JourneyTrack
+          compact
+          stages={roadmapSteps.map((s, i) => ({
+            key: s.id,
+            label: `${i + 1}. ${s.title}`,
+            done: s.status === 'completed',
+          }))}
+          currentKey={currentStepId ?? ''}
+        />
 
-          {doFirst && (
-            <div className="tasks-next">
-              <span className="tasks-live-dot" aria-hidden="true" />
-              <span className="tasks-next-text">
-                Up next: <strong>{doFirst.title}</strong>
-                {dueLabel(doFirst.due_date, doFirst.status) && (
-                  <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
-                )}
-              </span>
-              <button type="button" className="btn-solid btn-sm" onClick={() => openStep(doFirst.id)}>
-                Open
-              </button>
-            </div>
-          )}
-        </header>
-      </Reveal>
+        {doFirst && (
+          <div className="tasks-next">
+            <span className="tasks-live-dot" aria-hidden="true" />
+            <span className="tasks-next-text">
+              Up next: <strong>{doFirst.title}</strong>
+              {dueLabel(doFirst.due_date, doFirst.status) && (
+                <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
+              )}
+            </span>
+            <button type="button" className="btn-solid btn-sm" onClick={() => openStep(doFirst.id)}>
+              Open
+            </button>
+          </div>
+        )}
+      </header>
 
       {roadmapSteps.length === 0 ? (
         <p className="muted">No steps on your onboarding yet — check back shortly.</p>

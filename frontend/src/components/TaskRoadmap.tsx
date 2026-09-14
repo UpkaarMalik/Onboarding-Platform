@@ -106,6 +106,33 @@ const BOAT_SPEED = 170;
 const BOAT_MIN_DUR = 1.6;
 const BOAT_MAX_DUR = 11;
 
+/** Keys that scroll. Pressing one is the employee taking the wheel, and the
+ *  boat stops towing the page from that moment on. */
+const SCROLL_KEYS = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+  ' ',
+  'Spacebar',
+]);
+
+/**
+ * Where down the viewport the boat is held while the page follows it, as a
+ * fraction of the window height.
+ *
+ * A fraction of the WHOLE window, deliberately, and not "the middle of
+ * whatever the sticky hero leaves free". The hero's height depends on the
+ * scroll position — it condenses once it sticks — so a target computed from it
+ * is a loop: scrolling shrinks the hero, a shorter hero moves the target,
+ * moving the target scrolls, and the page hunts for a moment before it
+ * settles. 0.58 lands within a couple of pixels of that centre once the hero
+ * has condensed, and is simply a constant.
+ */
+const BOAT_VIEW_ANCHOR = 0.58;
+
 /**
  * The serpentine onboarding trail: every required task for this employee, in
  * order, as alternating left/right cards joined by a continuously curving
@@ -346,6 +373,14 @@ function RoadmapTrail({
   // getTotalLength/getPointAtLength are what move the boat.
   const routeRef = useRef<SVGPathElement>(null);
   const boatRef = useRef<SVGGElement>(null);
+  // The overlay, needed to turn the boat's position in the drawing into a
+  // position on the page.
+  const svgRef = useRef<SVGSVGElement>(null);
+  // Whether the page has been led to the boat yet. A voyage always leads;
+  // a boat that simply appears at its mooring leads only the first time, so
+  // that a re-measure after a resize doesn't yank the page out from under
+  // someone who has scrolled off to read an earlier step.
+  const ledRef = useRef(false);
 
   const pts = geom?.pts ?? [];
   const ready = !!geom && pts.length >= 2 && geom.w > 0;
@@ -424,24 +459,100 @@ function RoadmapTrail({
       boat.setAttribute('transform', `translate(${x},${y})`);
     };
 
-    // Nothing to sail: either the boat is already where it belongs, or this
-    // employee's current task is step one and there is no route behind it.
+    /**
+     * The page follows the boat.
+     *
+     * The task in play can be eight rows down a trail several screens tall,
+     * and a "you are here" marker the employee has to go hunting for is not a
+     * marker. So the boat tows the scroll position: it is held at a fixed
+     * height down the window (see BOAT_VIEW_ANCHOR) for the whole crossing,
+     * and by the time it moors the employee is already looking at the task.
+     *
+     * It lets go the instant they take the scroll themselves, which is watched
+     * two ways. Wheel, touch and the scrolling keys release it on the input
+     * itself, before the page has moved at all. And every scroll event is
+     * checked against the position this code last commanded: a scroll to
+     * somewhere we did not ask for is somebody else's, which is the only way
+     * to catch a scrollbar drag — dragging the bar produces no wheel, no
+     * touch and no keystroke. Reading the position BACK after each scrollTo
+     * rather than trusting the number we passed is what makes that comparison
+     * safe, since the browser clamps and rounds what it is given.
+     */
+    let towing = true;
+    let commanded = window.scrollY;
+    const yield_ = () => {
+      towing = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(e.key)) yield_();
+    };
+    const onScroll = () => {
+      if (Math.abs(window.scrollY - commanded) > 2) yield_();
+    };
+    window.addEventListener('wheel', yield_, { passive: true });
+    window.addEventListener('touchmove', yield_, { passive: true });
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    const unhook = () => {
+      window.removeEventListener('wheel', yield_);
+      window.removeEventListener('touchmove', yield_);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll);
+    };
+
+    // The furthest down the page the tow has pulled, so it can only ever pull
+    // further. A leg always runs from an earlier step to a later one, so the
+    // boat only ever sails DOWN the page and the page has no business going
+    // back up with it. Without this the hero condensing early in the voyage —
+    // which lifts the whole trail by its own height — reads as the page
+    // stuttering backwards before it sets off. Starts below zero rather than
+    // at the current scroll, so the very first pull can still bring someone
+    // back UP to a boat moored above where they happen to be sitting.
+    let towedTo = -1;
+
+    const follow = (y: number) => {
+      const svg = svgRef.current;
+      if (!towing || !svg) return;
+      // The overlay is drawn at one unit per pixel (viewBox `0 0 w h` on a
+      // w x h element), so the boat's own y needs no scaling — only the
+      // overlay's offset down the page.
+      const pageY = svg.getBoundingClientRect().top + window.scrollY + y;
+      const furthest = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const want = pageY - window.innerHeight * BOAT_VIEW_ANCHOR;
+      const target = Math.min(Math.max(0, want), furthest);
+      if (towedTo >= 0 && target <= towedTo) return;
+      towedTo = target;
+      window.scrollTo(0, target);
+      commanded = window.scrollY;
+    };
+
+    /** Nothing to sail — put the boat where it belongs and, if this is the
+     *  first time, take the page there too. */
+    const moor = () => {
+      if (!mooring) return unhook;
+      place(mooring.x, mooring.y);
+      if (!ledRef.current) {
+        ledRef.current = true;
+        follow(mooring.y);
+      }
+      return unhook;
+    };
+
+    // Either the boat is already where it belongs, or this employee's current
+    // task is step one and there is no route behind it.
     const path = routeRef.current;
-    if (!route || !path) {
-      if (mooring) place(mooring.x, mooring.y);
-      return;
-    }
+    if (!route || !path) return moor();
 
     const len = path.getTotalLength();
-    if (!len) {
-      if (mooring) place(mooring.x, mooring.y);
-      return;
-    }
+    if (!len) return moor();
+
+    ledRef.current = true;
 
     const end = path.getPointAtLength(len);
     if (reduced) {
       place(end.x, end.y);
-      return;
+      follow(end.y);
+      return unhook;
     }
 
     const dur =
@@ -461,13 +572,17 @@ function RoadmapTrail({
       const eased = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
       const p = path.getPointAtLength(eased * len);
       place(p.x, p.y);
+      follow(p.y);
       if (t < 1) raf = requestAnimationFrame(tick);
     };
 
     const first = path.getPointAtLength(0);
     place(first.x, first.y);
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      unhook();
+    };
     // mooring is a fresh object every render, so its coordinates are the deps:
     // a resize has to re-place a boat that is already tied up.
   }, [route, reduced, mooring?.x, mooring?.y]);
@@ -478,6 +593,7 @@ function RoadmapTrail({
 
   return (
     <svg
+      ref={svgRef}
       className="roadmap-trail"
       viewBox={`0 0 ${w} ${h}`}
       width={w}

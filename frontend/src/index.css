@@ -288,6 +288,13 @@ button.danger:hover:not(:disabled) {
 }
 .pulse-shimmer {
   animation: pulse-shimmer 3s ease-in-out infinite;
+  /* fill-box, or `center` below means the centre of the SVG's viewBox rather
+     than of this group. That is the default for SVG (transform-box: view-box)
+     and it is why this read as dead: the badge sits at x=120 in a 600-wide
+     viewBox, so scaling about x=300 slid it 7px sideways while growing it
+     barely 2 — a drift, swallowed whole by the parent's 15px bob, rather than
+     a pulse. */
+  transform-box: fill-box;
   transform-origin: center;
 }
 @keyframes pulse-shimmer {
@@ -3036,6 +3043,63 @@ li:hover .checkbox-mark {
   margin-bottom: 0;
   padding: 2.5rem 0 1rem;
   transform: none;
+}
+
+/* The hero stays on screen while the trail scrolls underneath it, so the
+   count, the per-step track and "up next" stay answerable without scrolling
+   back to the top. It condenses as it sticks: the title and the lede are a
+   greeting, read once, while everything under them is status — and only the
+   status is worth permanent space on a laptop screen.
+
+   Sticky rather than fixed, because fixed would take the hero out of flow and
+   drop the whole trail a screen-height up the moment the page loaded. */
+.tasks-hero {
+  position: sticky;
+  top: 0;
+  /* Over .tasks-page > *'s z-index: 1. Same specificity as that rule, so this
+     only wins by coming after it in the file — don't move it above. */
+  z-index: 3;
+  transition: padding 0.24s var(--ease), box-shadow 0.24s var(--ease);
+}
+/* .app-main's padding leaves a 1.75rem band above the hero that scrolling
+   cards would otherwise show through. This fills it with the page's own dot
+   field: same image and same 24px grid, and the same origin as
+   .tasks-page::before — both begin exactly 1.75rem up and left of
+   .tasks-page — so the dots continue the pattern instead of restarting it. */
+.tasks-hero::before {
+  content: '';
+  position: absolute;
+  left: -1.75rem;
+  right: -1.75rem;
+  bottom: 100%;
+  height: 1.75rem;
+  background-color: var(--color-bg);
+  background-image: radial-gradient(var(--dot-grid-ink) 1.25px, transparent 1.25px);
+  background-size: 24px 24px;
+  pointer-events: none;
+}
+.tasks-hero--stuck {
+  padding-top: 1.1rem;
+  padding-bottom: 1.1rem;
+  box-shadow: 0 14px 28px -22px rgba(58, 42, 24, 0.55);
+}
+/* Collapsed by max-height, not display: none, so the greeting slides away
+   instead of the trail jumping up by the height of a heading. */
+.tasks-hero-greeting {
+  overflow: hidden;
+  max-height: 22rem;
+  transition: max-height 0.28s var(--ease), opacity 0.2s var(--ease);
+}
+.tasks-hero--stuck .tasks-hero-greeting {
+  max-height: 0;
+  opacity: 0;
+}
+/* On a short viewport even the condensed hero would own most of the screen,
+   and a trail you can see two rows of is worse than one you scroll to. */
+@media (max-height: 560px) {
+  .tasks-hero {
+    position: static;
+  }
 }
 
 /* ============================================================
