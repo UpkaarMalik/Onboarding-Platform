@@ -121,7 +121,7 @@ button:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
 }
-button:active:not(/:disabled) {
+button:active:not(:disabled) {
   transform: translateY(0);
 }
 button:disabled {
@@ -173,6 +173,31 @@ button.danger:hover:not(:disabled) {
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
+}
+/* Backdrop fades only. The previous fadeInUp translated it, which slid the
+   whole dimmed overlay — and the dialog with it — up into place on open. */
+@keyframes backdropFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* The page-opening swing. It lands on a plain `rotateY(0)` rather than on
+   `none`, so the last frame doesn't snap out of 3D and resnap the text. */
+@keyframes pageOpen {
+  from {
+    opacity: 0;
+    transform: perspective(1400px) rotateY(-38deg) translateX(-4%) scale(0.965);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: perspective(1400px) rotateY(0deg) translateX(0) scale(1);
+  }
 }
 @keyframes scaleIn {
   from { opacity: 0; transform: scale(0.94) translateY(6px); }
@@ -271,6 +296,13 @@ button.danger:hover:not(:disabled) {
 }
 .pulse-shimmer {
   animation: pulse-shimmer 3s ease-in-out infinite;
+  /* fill-box, or `center` below means the centre of the SVG's viewBox rather
+     than of this group. That is the default for SVG (transform-box: view-box)
+     and it is why this read as dead: the badge sits at x=120 in a 600-wide
+     viewBox, so scaling about x=300 slid it 7px sideways while growing it
+     barely 2 — a drift, swallowed whole by the parent's 15px bob, rather than
+     a pulse. */
+  transform-box: fill-box;
   transform-origin: center;
 }
 @keyframes pulse-shimmer {
@@ -1498,16 +1530,25 @@ li:hover .checkbox-mark {
 }
 
 /* --- Modal / popup --- */
+/* Centred in the VIEWPORT, not in the page — a dialog is about the screen,
+   not about wherever the content that opened it happens to sit. It is
+   portalled into <body> (see Modal.tsx) so no page-level positioning rule
+   can take `fixed` away from it.
+   `position: fixed` also needs !important nowhere: the portal removes the
+   only rule that was beating it. */
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(26, 22, 17, 0.45);
-  backdrop-filter: blur(2px);
+  /* Deeper and blurrier than before: the point is that everything behind the
+     popup reads as out of play, and at 0.45/2px the dot field and the amber
+     cards still competed with the dialog for attention. */
+  background: rgba(26, 22, 17, 0.58);
+  backdrop-filter: blur(5px) saturate(0.85);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
-  animation: fadeInUp 0.15s var(--ease);
+  animation: backdropFade 0.26s var(--ease) both;
   padding: 1rem;
 }
 .modal {
@@ -1516,10 +1557,18 @@ li:hover .checkbox-mark {
   padding: 1.6rem;
   width: 100%;
   max-width: 420px;
-  max-height: calc(100vh - 3rem);
+  /* Viewport-relative, so a tall popup is capped by the screen rather than
+     by the page it was opened from. */
+  max-height: min(86vh, calc(100vh - 3rem));
   overflow-y: auto;
   box-shadow: var(--shadow-lg);
-  animation: scaleIn 0.22s var(--ease);
+  /* Swings open on its left edge like the cover of a book. The perspective
+     is inside the transform rather than on the backdrop: a `perspective`
+     property on the parent would also need `transform-style` and would put
+     every future child of the backdrop into 3D, whereas perspective() is
+     scoped to this one animation. */
+  transform-origin: left center;
+  animation: pageOpen 0.44s cubic-bezier(0.22, 0.78, 0.28, 1) both;
 }
 .modal form {
   display: flex;
@@ -1792,14 +1841,36 @@ li:hover .checkbox-mark {
 .journey-marker {
   position: absolute;
   top: 50%;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--color-accent-dark);
-  box-shadow: 0 0 0 4px rgba(232, 143, 48, 0.22), var(--shadow-sm);
+  background: radial-gradient(circle at 35% 30%, #fff6e6, var(--color-accent) 45%, var(--color-accent-dark));
+  /* Layered rings plus a real glow — the flat 4px ring read as a plain dot. */
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.9),
+    0 0 0 7px rgba(232, 143, 48, 0.28),
+    0 0 14px 4px rgba(232, 143, 48, 0.65),
+    0 0 28px 10px rgba(232, 143, 48, 0.35);
   transform: translate(-50%, -50%);
   transition: left 0.35s var(--ease);
-  animation: pulseRipple 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation: markerGlow 2.1s ease-in-out infinite;
+}
+@keyframes markerGlow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.9),
+      0 0 0 7px rgba(232, 143, 48, 0.28),
+      0 0 14px 4px rgba(232, 143, 48, 0.65),
+      0 0 28px 10px rgba(232, 143, 48, 0.32);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, 0.95),
+      0 0 0 10px rgba(232, 143, 48, 0.18),
+      0 0 20px 7px rgba(232, 143, 48, 0.8),
+      0 0 40px 16px rgba(232, 143, 48, 0.42);
+  }
 }
 .journey-nodes {
   display: flex;
@@ -1842,6 +1913,20 @@ li:hover .checkbox-mark {
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--color-muted);
+}
+/* One node per task: no labels (they would collide), smaller dots, and the
+   line keeps its full width so node N sits under fill percentage N. */
+.journey-track--compact .journey-line {
+  margin-bottom: 0.7rem;
+}
+.journey-track--compact .journey-dot {
+  width: 22px;
+  height: 22px;
+  font-size: 0.66rem;
+  cursor: default;
+}
+.journey-track--compact .journey-node {
+  gap: 0;
 }
 .journey-node.current .journey-label {
   color: var(--color-text);
@@ -2339,11 +2424,18 @@ li:hover .checkbox-mark {
    The serpentine task trail
    ============================================================ */
 .roadmap {
+  position: relative; /* the offsetParent every node is measured against */
   display: flex;
   flex-direction: column;
   align-items: center;
-  max-width: 46rem;
+  /* Was 46rem, which left wide empty gutters inside the main column and
+     squeezed each card to ~340px. */
+  max-width: 60rem;
   margin: 0 auto;
+  /* The breathing room the connectors sweep through. Used to come from a
+     .roadmap-gap element per pair; the trail is one overlay now, so the
+     spacing is plain layout. */
+  gap: 4.25rem;
 }
 .roadmap-item {
   display: flex;
@@ -2353,12 +2445,24 @@ li:hover .checkbox-mark {
   animation: fadeInUp 0.45s var(--ease) backwards;
   animation-delay: calc(var(--i, 0) * 0.07s);
 }
+/* The middle column is much wider than the 2.5rem node it holds: the node
+   sits at the edge nearest its own card (justify-self below), which puts
+   consecutive nodes at two different x positions and is what turns the
+   connectors into real diagonals instead of a straight vertical line. */
 .roadmap-row {
+  position: relative;
+  z-index: 1; /* over .roadmap-trail */
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr 9rem 1fr;
   align-items: center;
   gap: 1.25rem;
   width: 100%;
+}
+.roadmap-row--left > .roadmap-node {
+  justify-self: start;
+}
+.roadmap-row--right > .roadmap-node {
+  justify-self: end;
 }
 .roadmap-row--center {
   grid-template-columns: 1fr;
@@ -2384,6 +2488,8 @@ li:hover .checkbox-mark {
   background: var(--color-surface);
   border: 2px solid var(--color-border);
   color: var(--color-muted);
+  /* Above .roadmap-row::before so the rail reads as passing behind it. */
+  position: relative;
   z-index: 1;
 }
 .roadmap-node svg {
@@ -2427,6 +2533,8 @@ li:hover .checkbox-mark {
 }
 
 .roadmap-card {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   text-align: left;
@@ -2485,8 +2593,11 @@ li:hover .checkbox-mark {
   gap: 0.6rem;
   margin-bottom: 0.45rem;
 }
+/* Left-hand cards are right-aligned, but the label order stays "Step 01" then
+   the status badge — row-reverse swapped them, which read backwards. */
 .roadmap-row--left .roadmap-card-top {
-  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 0.55rem;
 }
 .roadmap-card-step {
   font-size: 0.65rem;
@@ -2639,46 +2750,198 @@ li:hover .checkbox-mark {
 }
 
 /* --- the curved connectors --- */
-.roadmap-gap {
-  position: relative;
-  /* width:100% is load-bearing — .roadmap-item is a centred flex column, so
-     without it the gap shrinks to fit its (empty) content and the curve
-     collapses into a stub instead of sweeping the full trail. */
-  width: 100%;
-  height: 5rem;
-  margin: -0.4rem 0;
-  pointer-events: none;
-}
-.roadmap-gap svg {
-  width: 100%;
-  height: 100%;
-  display: block;
+
+/* Absolutely positioned so it never affects the layout it was measured from,
+   and behind the rows so the curve reads as passing underneath each node. */
+.roadmap-trail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
   overflow: visible;
+  pointer-events: none;
 }
 .roadmap-spine {
   fill: none;
   stroke-linecap: round;
 }
+/* Solid and pale, so the route stays legible in the gaps between the dashes
+   riding on top of it — that two-tone texture is the whole look. */
 .roadmap-spine--rail {
   stroke: var(--color-amber-line);
-  stroke-width: 3.5;
+  stroke-width: 4;
+  opacity: 0.85;
 }
 .roadmap-spine--flow {
   stroke-width: 3.5;
-  stroke-dasharray: 8 11;
+  stroke-dasharray: 9 12;
   animation: trailFlow 1.9s linear infinite;
 }
+/* Completed stretch: emerald, same cadence as the mockup's finished trail. */
 .roadmap-spine--done {
   stroke: var(--color-success);
+  stroke-width: 4;
 }
+/* The segment feeding the current step — brightest and quickest, so the eye
+   is pulled along it toward where the employee actually is. */
 .roadmap-spine--active {
   stroke: var(--color-accent-dark);
+  animation-duration: 1.5s;
+}
+/* Still flowing, just slower and softer, so the route ahead reads as a route
+   rather than a dead end. */
+.roadmap-spine--upcoming {
+  stroke: #fb923c;
+  stroke-width: 3;
+  opacity: 0.75;
+  animation-duration: 2.6s;
 }
 
-/* Under 860px the trail straightens: the node sits at a fixed rem offset from
-   the left edge there, which isn't expressible as a robust percentage of a
-   fluid width, so the curve would drift away from it. */
+/* The boat that sails from the first task to the one in play and then moors
+   above it — the little white fishing boat from the reference: navy underbody,
+   dark sheer and rig, blue glass, one warm life ring.
+
+   The colours are literals rather than palette tokens because they describe a
+   specific illustration rather than a role in this design system. The one
+   exception is the life ring, which takes the page accent: the boat travels
+   over an amber trail and needs a single thread of that colour to belong to
+   it, and one small disc does that without tinting the hull — an amber HULL
+   with pale bars across it is what made an earlier version read as a bee. */
+:root {
+  --boat-white: #f7f5f1;
+  --boat-dark: #1d2430;
+  --boat-navy: #1b4f7a;
+  --boat-glass: #1a6d96;
+  --boat-sail: #a9d4ef;
+}
+
+/* One soft disc under the hull: it marks where the employee is. Smaller than
+   the boat on purpose — a glow wider than its source reads as a halo around
+   an insect rather than light under a boat. */
+/* The boat's route. Present only to be measured — getTotalLength and
+   getPointAtLength need a real path element, so it is rendered and made
+   invisible rather than kept off-screen. */
+.roadmap-route {
+  fill: none;
+  stroke: none;
+}
+.roadmap-boat-glow {
+  fill: var(--color-accent);
+  animation: runnerPulse 2.6s ease-in-out infinite;
+}
+/* Afloat: a slow, shallow roll, since there is no water drawn to imply it.
+   `transform-box: fill-box` is required, not cosmetic — SVG elements default
+   to `view-box`, which would resolve the origin against the whole overlay,
+   thousands of pixels away, and swing the boat off screen on the first
+   frame. */
+.roadmap-boat-body {
+  transform-box: fill-box;
+  transform-origin: 50% 78%;
+  animation: boatRoll 3.6s ease-in-out infinite;
+}
+
+.roadmap-boat-hull {
+  fill: var(--boat-white);
+  stroke: var(--boat-dark);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+/* Below the waterline. Clipped to the hull, so this straight-edged rect can
+   never spill past the planking. */
+.roadmap-boat-boot {
+  fill: var(--boat-navy);
+}
+.roadmap-boat-sheer {
+  fill: none;
+  stroke: var(--boat-dark);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.roadmap-boat-strake {
+  fill: none;
+  stroke: var(--boat-dark);
+  stroke-width: 0.6;
+  opacity: 0.28;
+}
+.roadmap-boat-port {
+  fill: var(--boat-dark);
+}
+.roadmap-boat-ring {
+  fill: var(--color-accent);
+}
+.roadmap-boat-stem {
+  stroke: var(--boat-dark);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.roadmap-boat-bollard,
+.roadmap-boat-lamp {
+  fill: var(--boat-white);
+  stroke: var(--boat-dark);
+  stroke-width: 0.7;
+}
+.roadmap-boat-cabin {
+  fill: var(--boat-white);
+  stroke: var(--boat-dark);
+  stroke-width: 1;
+}
+.roadmap-boat-cabin-roof {
+  fill: var(--boat-dark);
+}
+.roadmap-boat-window {
+  fill: var(--boat-glass);
+}
+.roadmap-boat-mast {
+  stroke: var(--boat-dark);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+}
+.roadmap-boat-spar {
+  fill: none;
+  stroke: var(--boat-dark);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+}
+.roadmap-boat-sail {
+  fill: var(--boat-sail);
+  opacity: 0.8;
+}
+.roadmap-boat-screen {
+  fill: var(--boat-sail);
+  opacity: 0.55;
+}
+.roadmap-boat-screen-frame {
+  fill: none;
+  stroke: var(--boat-dark);
+  stroke-width: 1;
+}
+
+@keyframes runnerPulse {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.42;
+  }
+}
+@keyframes boatRoll {
+  0%,
+  100% {
+    transform: rotate(-1.3deg) translateY(0.4px);
+  }
+  50% {
+    transform: rotate(1.3deg) translateY(-0.4px);
+  }
+}
+
+/* Under 860px the cards go full width with the node on their left. The
+   connectors need no special-casing: every node lands at the same x there,
+   so the measured path is simply a straight vertical line. */
 @media (max-width: 860px) {
+  .roadmap {
+    gap: 2.5rem;
+  }
   .roadmap-row {
     grid-template-columns: auto 1fr;
     gap: 0.9rem;
@@ -2692,37 +2955,15 @@ li:hover .checkbox-mark {
     flex-direction: row;
     justify-content: flex-start;
   }
-  .roadmap-row--left .roadmap-node {
+  .roadmap-row--left > .roadmap-node {
     order: -1;
+    justify-self: auto;
+  }
+  .roadmap-row--right > .roadmap-node {
+    justify-self: auto;
   }
   .roadmap-spacer {
     display: none;
-  }
-  .roadmap-gap {
-    height: 2.5rem;
-    margin-left: 1.15rem;
-  }
-  .roadmap-gap svg {
-    display: none;
-  }
-  .roadmap-gap::before {
-    content: '';
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    border-radius: 3px;
-    background: repeating-linear-gradient(
-      to bottom,
-      var(--color-amber-line) 0 8px,
-      transparent 8px 19px
-    );
-  }
-  .roadmap-gap--done::before {
-    background: repeating-linear-gradient(
-      to bottom,
-      var(--color-success) 0 8px,
-      transparent 8px 19px
-    );
   }
 }
 
@@ -2735,10 +2976,32 @@ li:hover .checkbox-mark {
   gap: 1.75rem;
 }
 .tasks-hero {
+  /* Full width, matching the trail block below it. The progress panel used to
+     be capped at 34rem, which left it visibly narrower than the journey it
+     described. */
+  background:
+    radial-gradient(420px 220px at 88% 0%, rgba(240, 166, 83, 0.22), transparent 70%),
+    var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1.8rem 2rem 1.6rem;
   text-align: center;
-  display: flex;
-  flex-direction: column;
+  animation: fadeInUp 0.35s var(--ease);
+}
+.tasks-hero .eyebrow {
+  display: inline-flex;
   align-items: center;
+  gap: 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--color-accent-dark);
+  background: var(--color-amber-wash);
+  border: 1px solid var(--color-amber-line);
+  border-radius: var(--radius-pill);
+  padding: 0.34rem 0.85rem;
+  margin-bottom: 0.9rem;
 }
 .tasks-eyebrow,
 .overview-eyebrow {
@@ -2763,13 +3026,14 @@ li:hover .checkbox-mark {
   height: 0.4rem;
   border-radius: 50%;
   background: var(--color-accent);
+  flex-shrink: 0;
   animation: softPulse 2s var(--ease) infinite;
 }
 .tasks-title {
   font-size: clamp(1.9rem, 3.6vw, 2.7rem);
   font-weight: 800;
   letter-spacing: -0.03em;
-  margin: 0 0 0.6rem;
+  margin: 0 0 0.5rem;
 }
 .tasks-title-script {
   font-family: 'Caveat', 'Outfit', cursive;
@@ -2782,82 +3046,24 @@ li:hover .checkbox-mark {
 }
 .tasks-lede {
   color: var(--color-muted);
-  max-width: 52ch;
-  margin: 0 0 1.6rem;
+  max-width: 54ch;
+  margin: 0 auto 1.4rem;
   line-height: 1.6;
 }
-.tasks-progress {
-  width: 100%;
-  max-width: 34rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 1.1rem 1.25rem;
-  box-shadow: var(--shadow-sm);
-  text-align: left;
-}
-.tasks-progress-top {
+/* The "up next" strip sits under the bar and the stage track, separated so it
+   reads as an action rather than part of the measurement. */
+.tasks-next {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.7rem;
-}
-.tasks-progress-count {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-.tasks-progress-badge {
-  width: 1.6rem;
-  height: 1.6rem;
-  border-radius: 50%;
-  background: var(--color-amber-wash);
-  border: 1px solid var(--color-amber-line);
-  color: var(--color-accent-dark);
-  font-weight: 800;
-  font-size: 0.8rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.tasks-progress-pct {
-  font-size: 0.78rem;
-  font-weight: 800;
-  color: var(--color-accent-dark);
-  background: var(--color-amber-wash);
-  border: 1px solid var(--color-amber-line);
-  border-radius: var(--radius-sm);
-  padding: 0.22rem 0.55rem;
-}
-.tasks-progress-track {
-  display: block;
-  height: 0.55rem;
-  border-radius: var(--radius-pill);
-  background: #f1eae1;
-  overflow: hidden;
-}
-.tasks-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--gradient-accent);
-  transition: width 0.8s var(--ease);
-}
-.tasks-progress-foot {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin-top: 0.9rem;
-  padding-top: 0.8rem;
+  gap: 0.7rem;
+  margin-top: 1.2rem;
+  padding-top: 1rem;
   border-top: 1px solid var(--color-border);
-  font-size: 0.85rem;
+  font-size: 0.88rem;
+  text-align: left;
   flex-wrap: wrap;
 }
-.tasks-progress-foot > span:nth-child(2) {
+.tasks-next-text {
   flex: 1;
   min-width: 12rem;
 }
@@ -2870,11 +3076,102 @@ li:hover .checkbox-mark {
   box-shadow: 0 0 0 0 rgba(232, 143, 48, 0.6);
   animation: liveRing 2s var(--ease) infinite;
 }
-.tasks-trail {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 2rem 1rem;
+/* The trail no longer has a container of its own — the dot field is painted
+   on the page behind the whole Tasks view instead, so the journey reads as
+   sitting on the page rather than inside a box. Bleeds past .app-main's
+   padding so the dots reach the edges. */
+.tasks-page {
+  position: relative;
+}
+.tasks-page::before {
+  content: '';
+  position: absolute;
+  /* z-index 0 with the children lifted to 1, NOT z-index:-1 — a negative
+     index drops the pseudo-element into the nearest stacking context's
+     negative layer, which put it behind the page background entirely and
+     made the dots invisible. */
+  z-index: 0;
+  /* out to the edges of the main column, past its padding */
+  inset: -1.75rem -1.75rem -3rem;
+  background-image: radial-gradient(var(--dot-grid-ink) 1.25px, transparent 1.25px);
+  background-size: 24px 24px;
+  pointer-events: none;
+}
+.tasks-page > * {
+  position: relative;
+  z-index: 1;
+}
+/* Opts out of the global `section` card style (background, border, radius,
+   shadow, margin) — the trail is meant to sit directly on the page's dot
+   field, not inside a card. Also cancels `section:hover`'s transform: a
+   scaling ancestor re-rasterises the connector SVGs and makes the dashed
+   strokes shimmer. */
+.tasks-trail,
+.tasks-trail:hover {
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin-bottom: 0;
+  padding: 2.5rem 0 1rem;
+  transform: none;
+}
+
+/* The hero stays on screen while the trail scrolls underneath it, so the
+   count, the per-step track and "up next" stay answerable without scrolling
+   back to the top. It condenses as it sticks: the title and the lede are a
+   greeting, read once, while everything under them is status — and only the
+   status is worth permanent space on a laptop screen.
+
+   Sticky rather than fixed, because fixed would take the hero out of flow and
+   drop the whole trail a screen-height up the moment the page loaded. */
+.tasks-hero {
+  position: sticky;
+  top: 0;
+  /* Over .tasks-page > *'s z-index: 1. Same specificity as that rule, so this
+     only wins by coming after it in the file — don't move it above. */
+  z-index: 3;
+  transition: padding 0.24s var(--ease), box-shadow 0.24s var(--ease);
+}
+/* .app-main's padding leaves a 1.75rem band above the hero that scrolling
+   cards would otherwise show through. This fills it with the page's own dot
+   field: same image and same 24px grid, and the same origin as
+   .tasks-page::before — both begin exactly 1.75rem up and left of
+   .tasks-page — so the dots continue the pattern instead of restarting it. */
+.tasks-hero::before {
+  content: '';
+  position: absolute;
+  left: -1.75rem;
+  right: -1.75rem;
+  bottom: 100%;
+  height: 1.75rem;
   background-color: var(--color-bg);
+  background-image: radial-gradient(var(--dot-grid-ink) 1.25px, transparent 1.25px);
+  background-size: 24px 24px;
+  pointer-events: none;
+}
+.tasks-hero--stuck {
+  padding-top: 1.1rem;
+  padding-bottom: 1.1rem;
+  box-shadow: 0 14px 28px -22px rgba(58, 42, 24, 0.55);
+}
+/* Collapsed by max-height, not display: none, so the greeting slides away
+   instead of the trail jumping up by the height of a heading. */
+.tasks-hero-greeting {
+  overflow: hidden;
+  max-height: 22rem;
+  transition: max-height 0.28s var(--ease), opacity 0.2s var(--ease);
+}
+.tasks-hero--stuck .tasks-hero-greeting {
+  max-height: 0;
+  opacity: 0;
+}
+/* On a short viewport even the condensed hero would own most of the screen,
+   and a trail you can see two rows of is worse than one you scroll to. */
+@media (max-height: 560px) {
+  .tasks-hero {
+    position: static;
+  }
 }
 
 /* ============================================================
@@ -5522,7 +5819,16 @@ li:hover .checkbox-mark {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* The boat is NOT hidden here. Its travel and rowing are SMIL, which
+     `animation: none` cannot stop, so TaskRoadmap reads the preference itself
+     and renders the boat already moored — hiding it outright would take the
+     position marker away along with the movement. Only its glow is CSS. */
+  .roadmap-boat-glow,
+  .roadmap-boat-body,
+  .modal,
+  .modal-backdrop,
   .roadmap-spine--flow,
+  .journey-marker,
   .roadmap-item,
   .roadmap-node--active,
   .overview-eyebrow-dot,

@@ -26,6 +26,7 @@ import {
   assertUuidIfPresent,
   parseSort,
 } from '../common/list-query.util';
+import { applySequenceGate, orderForTrail } from './utils/trail-order.util';
 
 const ONBOARDING_STATUS_VALUES = [
   'pre_onboarding',
@@ -1077,12 +1078,19 @@ export class OnboardingsService {
       [onboarding.id],
     );
 
+    // Presented in trail order, with the sequential gate applied: exactly one
+    // step is open and the rest are locked behind it. Both come from
+    // trail-order.util, which the completion guard also reads — the trail can
+    // therefore never offer a step that OnboardingTasksService would refuse.
+    // The ORDER BY above is not redundant: it is the tiebreak inside each band.
+    const orderedSteps = applySequenceGate(orderForTrail(steps));
+
     return {
       onboarding,
       today: bucketedTasks.filter((t) => t.bucket === 'today'),
       upcoming: bucketedTasks.filter((t) => t.bucket === 'upcoming'),
       overdue: bucketedTasks.filter((t) => t.bucket === 'overdue'),
-      steps,
+      steps: orderedSteps,
       progress: {
         requiredTotal,
         requiredCompleted,

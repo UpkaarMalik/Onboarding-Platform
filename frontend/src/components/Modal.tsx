@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Generic popup shell used whenever selecting a row/card should open a detail
@@ -12,6 +13,15 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
  * `busy` blocks dismissal. Without it, a backdrop click or Escape mid-upload
  * unmounts the child while its multipart request is still in flight, and the
  * user never finds out whether a 10 MB file landed.
+ *
+ * Rendered through a portal into <body>, which is not decoration: a modal
+ * left in the tree of the page that opened it inherits that page's stacking
+ * and positioning rules. `.tasks-page > *` sets `position: relative` to lift
+ * its children over the dot-field pseudo-element, matched `.modal-backdrop`
+ * at equal specificity, and won on source order — so the backdrop lost
+ * `position: fixed` and laid out in normal flow, opening the task popup at
+ * the bottom of the trail instead of centred over it. A portal puts the
+ * dialog out of reach of every such rule, for every page, permanently.
  */
 export default function Modal({
   title,
@@ -53,7 +63,25 @@ export default function Modal({
     dialogRef.current?.focus();
   }, []);
 
-  return (
+  // Hold the page still underneath. Scrolling the background while a centred
+  // dialog stays put looks like a rendering fault, and on the Tasks page it
+  // also drags the trail out from behind the popup. The padding compensates
+  // for the scrollbar the lock removes, so the layout doesn't jump sideways
+  // on platforms that reserve space for one.
+  useEffect(() => {
+    const { body } = document;
+    const gap = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = body.style.overflow;
+    const prevPad = body.style.paddingRight;
+    body.style.overflow = 'hidden';
+    if (gap > 0) body.style.paddingRight = `${gap}px`;
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPad;
+    };
+  }, []);
+
+  return createPortal(
     <div
       className="modal-backdrop"
       onClick={(e) => {
@@ -93,6 +121,7 @@ export default function Modal({
 
         {actions && <div className="modal-actions">{actions}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -3,6 +3,7 @@ import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
 import { fireConfetti } from '../lib/confetti';
+import { JOURNEY_STAGES } from '../lib/journey';
 import type { DashboardResponse } from '../types/onboarding';
 import Reveal from '../components/Reveal';
 import JourneyTrack from '../components/JourneyTrack';
@@ -11,13 +12,6 @@ import OceanBanner from '../components/OceanBanner';
 
 const PRE_CHECKPOINT_STATUSES = ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'];
 
-const JOURNEY_STAGES = [
-  { key: 'pre_onboarding', label: 'Pre-joining' },
-  { key: 'email_provisioned', label: 'Email' },
-  { key: 'checkpoint_pending', label: 'Checkpoint' },
-  { key: 'active', label: 'Active' },
-  { key: 'completed', label: 'Completed' },
-];
 
 /** A new-to-Mac tip sheet — separate from the pre-checkpoint knowledge
  *  articles (which are department-scoped, come from the backend) since

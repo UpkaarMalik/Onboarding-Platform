@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import { dueLabel } from '../lib/format';
 
 export interface RoadmapItem {
@@ -14,13 +15,16 @@ export interface RoadmapItem {
 
 type VisualState = 'done' | 'active' | 'queued' | 'upcoming' | 'blocked';
 
+/**
+ * The server sends steps already in trail order with one step open and the
+ * rest locked behind it (see backend trail-order.util), so this is a straight
+ * reading of what it said — no second opinion about what the employee can do
+ * next.
+ */
 function visualState(step: RoadmapItem, currentId: string | null): VisualState {
   if (step.status === 'completed') return 'done';
   if (step.status === 'blocked') return 'blocked';
   if (step.id === currentId) return 'active';
-  // Phase-2 tasks start 'locked' until the checkpoint task is done
-  // (OnboardingsService.insertOnboardingTask) — genuinely not actionable yet,
-  // distinct from a task that's simply next in line.
   if (step.status === 'locked') return 'upcoming';
   return 'queued';
 }
@@ -42,38 +46,117 @@ const STATE_LABEL: Record<VisualState, string> = {
   blocked: 'Blocked',
 };
 
+interface Point {
+  x: number;
+  y: number;
+}
+interface Geometry {
+  w: number;
+  h: number;
+  pts: Point[];
+}
+
+/**
+ * Distance from `el` to `root` in LAYOUT pixels, by walking the offsetParent
+ * chain rather than diffing getBoundingClientRect().
+ *
+ * That distinction is load-bearing: `.roadmap-item` runs a fadeInUp entrance
+ * animation and the cards lift on hover, both of which are transforms.
+ * Client rects include every ancestor transform, so a rect-based measurement
+ * taken while the entrance animation is mid-flight bakes the translate into
+ * the curve and leaves it permanently offset. offsetTop/offsetLeft are pure
+ * layout values and ignore transforms entirely.
+ *
+ * Requires `root` to be positioned so it is guaranteed to appear in the chain.
+ */
+function offsetWithin(el: HTMLElement, root: HTMLElement): Point {
+  let x = 0;
+  let y = 0;
+  let node: HTMLElement | null = el;
+  while (node && node !== root) {
+    x += node.offsetLeft;
+    y += node.offsetTop;
+    node = node.offsetParent as HTMLElement | null;
+  }
+  return { x, y };
+}
+
+function sameGeometry(a: Geometry | null, b: Geometry): boolean {
+  if (!a || a.w !== b.w || a.h !== b.h || a.pts.length !== b.pts.length) return false;
+  return a.pts.every((p, i) => p.x === b.pts[i].x && p.y === b.pts[i].y);
+}
+
+/**
+ * One smooth S between two adjacent nodes. Both control points sit directly
+ * below/above their own endpoint, which makes the tangent vertical at every
+ * node — so consecutive segments meet without a visible kink, and the whole
+ * trail reads as one continuous route even though it is drawn in pieces.
+ */
+function segmentPath(a: Point, b: Point): string {
+  const dy = b.y - a.y;
+  const pull = Math.max(dy * 0.5, 1);
+  return `M${a.x},${a.y} C${a.x},${a.y + pull} ${b.x},${b.y - pull} ${b.x},${b.y}`;
+}
+
+/** Pixels a second the boat makes good. Speed rather than a fixed duration,
+ *  so a one-step hop and a ten-step maiden voyage feel like the same boat. */
+const BOAT_SPEED = 170;
+/** Clamped either side of it: below this a hop is a twitch, above it the trail
+ *  is long enough that watching the whole crossing becomes a chore. */
+const BOAT_MIN_DUR = 1.6;
+const BOAT_MAX_DUR = 11;
+
+/** Keys that scroll. Pressing one is the employee taking the wheel, and the
+ *  boat stops towing the page from that moment on. */
+const SCROLL_KEYS = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+  ' ',
+  'Spacebar',
+]);
+
+/**
+ * Where down the viewport the boat is held while the page follows it, as a
+ * fraction of the window height.
+ *
+ * A fraction of the WHOLE window, deliberately, and not "the middle of
+ * whatever the sticky hero leaves free". The hero's height depends on the
+ * scroll position — it condenses once it sticks — so a target computed from it
+ * is a loop: scrolling shrinks the hero, a shorter hero moves the target,
+ * moving the target scrolls, and the page hunts for a moment before it
+ * settles. 0.58 lands within a couple of pixels of that centre once the hero
+ * has condensed, and is simply a constant.
+ */
+const BOAT_VIEW_ANCHOR = 0.58;
+
 /**
  * The serpentine onboarding trail: every required task for this employee, in
  * order, as alternating left/right cards joined by a continuously curving
- * dashed spine that flows behind them.
+ * dashed spine that flows behind them, with a glowing boat that sails the
+ * route already walked and lands on the task currently in play.
  *
- * ON THE SVG GEOMETRY — this is the whole reason the component is shaped this
- * way. The obvious implementation is one big SVG behind the cards with
- * hand-plotted waypoints, and it cannot work here: the cards are rem-sized and
- * the container is fluid, so a uniformly-scaled SVG drifts away from them at
- * every width, and the height depends on the step count and on whether each
- * card has a description. Measuring with getBoundingClientRect instead trades
- * that for a re-measure pipeline that has to survive font loading, reflow, and
- * the `scale()` transform an ancestor applies on hover.
+ * ON THE GEOMETRY — the connectors span node centre to node centre, which
+ * means they cross the cards rather than living in the space between them
+ * (a card is far taller than its 2.5rem node, so a between-rows-only curve
+ * leaves a visible break beside every card). Node centres depend on card
+ * heights, which depend on whether each task has a description, so there is
+ * no percentage that expresses them: this measures.
  *
- * So: ONE SMALL SVG PER GAP. Each spans only the space between two adjacent
- * nodes and never crosses a card, so no coordinate ever needs to know a card's
- * rendered height. `viewBox="0 0 100 100"` with `preserveAspectRatio="none"`
- * makes x a pure percentage of width and y a pure percentage of the gap's fixed
- * height — exact at every width, for any number of steps, with no measurement.
- * `vector-effect="non-scaling-stroke"` is what makes that safe: it keeps the
- * stroke width and the dash pattern true under the anisotropic scale, which is
- * otherwise the one thing that would disqualify this approach.
+ * The measurement is kept honest by three things. It reads offsetTop/
+ * offsetLeft, not client rects, so the entrance and hover transforms can't
+ * corrupt it (see offsetWithin). A ResizeObserver on the container re-runs it
+ * on any reflow, and `document.fonts.ready` covers the one reflow that fires
+ * before the observer is useful. And the result is compared before it is
+ * stored, so an observation that changes nothing can't drive a render loop.
  *
- * Nodes always sit in the grid's centre column, so every gap's endpoints are
- * x=50 by construction. The curve bows toward whichever side the card above
- * occupied, which is what produces the serpentine.
- *
- * There is deliberately no travelling beacon: SMIL <animateMotion> and CSS
- * `offset-path` both refuse to restart when the path they reference changes, so
- * either would need a remount hack every time a task completes. The flowing
- * dash offset plus a pulsing active node reads as "you are here" with no
- * coordinate coupling at all.
+ * The curve is drawn once as an absolutely-positioned overlay behind the
+ * cards — one <path> pair per gap (pale rail + animated dashes on top, so the
+ * rail shows through the dash gaps) plus one invisible concatenated path that
+ * exists only as the motion track for the boat.
  */
 export default function TaskRoadmap({
   steps,
@@ -84,12 +167,54 @@ export default function TaskRoadmap({
   currentId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [geom, setGeom] = useState<Geometry | null>(null);
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-roadmap-node]'));
+      const next: Geometry = {
+        w: root.offsetWidth,
+        h: root.offsetHeight,
+        pts: nodes.map((n) => {
+          const o = offsetWithin(n, root);
+          return { x: o.x + n.offsetWidth / 2, y: o.y + n.offsetHeight / 2 };
+        }),
+      };
+      setGeom((prev) => (sameGeometry(prev, next) ? prev : next));
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(measure);
+    };
+
+    measure();
+    const ro = new ResizeObserver(schedule);
+    ro.observe(root);
+    // Web fonts land after first paint and change every card's height.
+    document.fonts?.ready.then(schedule).catch(() => {});
+
+    return () => {
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [steps]);
+
   if (steps.length === 0) return null;
 
+  const states = steps.map((s) => visualState(s, currentId));
+  const currentIndex = steps.findIndex((s) => s.id === currentId);
+
   return (
-    <div className="roadmap">
+    <div className="roadmap" ref={rootRef}>
+      <RoadmapTrail geom={geom} states={states} currentIndex={currentIndex} />
+
       {steps.map((step, i) => {
-        const state = visualState(step, currentId);
+        const state = states[i];
         const isLast = i === steps.length - 1;
         const isFinal = isLast && step.is_checkpoint;
         const side: 'left' | 'right' = i % 2 === 0 ? 'left' : 'right';
@@ -97,31 +222,25 @@ export default function TaskRoadmap({
         const card = (
           <RoadmapCard step={step} state={state} index={i} onSelect={onSelect} final={isFinal} />
         );
+        const node = (
+          <span className={`roadmap-node roadmap-node--${state}${isFinal ? ' roadmap-node--final' : ''}`} data-roadmap-node="">
+            {state === 'done' ? <CheckIcon /> : i + 1}
+          </span>
+        );
 
         return (
           <div key={step.id} className="roadmap-item" style={{ ['--i' as string]: i }}>
             {isFinal ? (
               <div className="roadmap-row roadmap-row--center">
-                <span className={`roadmap-node roadmap-node--${state} roadmap-node--final`}>
-                  {state === 'done' ? <CheckIcon /> : i + 1}
-                </span>
+                {node}
                 {card}
               </div>
             ) : (
               <div className={`roadmap-row roadmap-row--${side}`}>
                 {side === 'left' ? card : <div className="roadmap-spacer" />}
-                <span className={`roadmap-node roadmap-node--${state}`}>
-                  {state === 'done' ? <CheckIcon /> : i + 1}
-                </span>
+                {node}
                 {side === 'right' ? card : <div className="roadmap-spacer" />}
               </div>
-            )}
-
-            {!isLast && (
-              <RoadmapGap
-                state={connectorState(state, visualState(steps[i + 1], currentId))}
-                bowToward={side}
-              />
             )}
           </div>
         );
@@ -131,40 +250,390 @@ export default function TaskRoadmap({
 }
 
 /**
- * One curved segment of the trail. Two stacked paths on identical geometry: a
- * static pale rail underneath so the route is legible even where no progress
- * has been made, and a dashed one on top whose offset animates to make the
- * dashes travel. The flowing layer is omitted entirely for stretches that lie
- * ahead of the employee — nothing should appear to be moving there.
+ * The boat, drawn from the side after the reference illustration: a small
+ * white fishing boat with a navy underbody, a wheelhouse, a mast and sail,
+ * and a life ring on the bow. Coordinates are local to the motion point, with
+ * the waterline on y = 0 and the bow to the left.
+ *
+ * Side-on, not overhead, which settles two things that an overhead boat had
+ * the opposite answer for. The travel must NOT rotate to the tangent —
+ * rotate="auto" would stand this hull on its bow as it went down the page — so
+ * the boat stays upright and the route bends around it. And it moors ABOVE the
+ * node in page coordinates rather than back along its own axis, which is why
+ * BOAT_BERTH is applied to the path's endpoint instead of to the boat.
+ *
+ * The hull is a constant because the navy underbody is the same outline used
+ * as a clip: rather than draw a second path along the waterline and keep the
+ * two in sync by hand, a straight rect below the waterline is clipped to the
+ * hull, so the paint follows the hull exactly whatever the hull does next.
  */
-function RoadmapGap({
-  state,
-  bowToward,
+const BOAT_HULL =
+  'M-22.6,-5 C-17.6,-3 -10,-2.3 -1,-2.2 C8,-2.1 16,-2.5 22.4,-3.2 ' +
+  'L21,4.6 C16,6.4 6,6.9 -3,6.7 C-11,6.5 -18.2,3.2 -22.6,-5 Z';
+/** The sheer — the boat's top edge. Stroked dark over the hull, and over the
+ *  life ring, which is what turns the ring into a dome above the gunwale. */
+const BOAT_SHEER = 'M-22.6,-5 C-17.6,-3 -10,-2.3 -1,-2.2 C8,-2.1 16,-2.5 22.4,-3.2';
+
+/**
+ * How far above the node the boat ties up, in page pixels. Applied to the end
+ * of its route, not to the boat: the trail's tangent is vertical at every node
+ * (see segmentPath), so an endpoint lifted straight up still arrives
+ * vertically, and the boat ends up floating over the step number with the
+ * curve running on underneath it. 32 clears the node's 20px radius and the
+ * boat's own 7px of keel.
+ */
+const BOAT_BERTH = 32;
+
+/** The boat itself, with no notion of where it is — placing it is the
+ *  caller's job, either by animateMotion or by a static transform. */
+function BoatShape() {
+  return (
+    <g className="roadmap-boat">
+      {/* A soft lamp-glow under the hull, and only that: it marks where the
+          employee is without tinting the boat. */}
+      <circle className="roadmap-boat-glow" r="14" filter="url(#roadmapRunnerGlow)" />
+      <g className="roadmap-boat-body">
+        {/* Rig first: the sail sits behind the mast, and both sit behind the
+            wheelhouse, so the mast reads as stepped on the cabin roof. */}
+        <path className="roadmap-boat-sail" d="M8.6,-30.6 L14.8,-17.2 L2.4,-17.2 Z" />
+        <path className="roadmap-boat-mast" d="M8.6,-14 L8.6,-31.6" />
+        <path className="roadmap-boat-spar" d="M4,-24.6 L13.4,-24.6" />
+        <ellipse className="roadmap-boat-lamp" cx="8.6" cy="-20.2" rx="2.3" ry="1.8" />
+        <path className="roadmap-boat-spar" d="M-5.4,-17 L-8.8,-19.8" />
+        <circle className="roadmap-boat-lamp" cx="-9.4" cy="-20.3" r="1.1" />
+
+        {/* Stern screen */}
+        <path className="roadmap-boat-screen" d="M15,-2.6 L15.4,-9.2 L20.8,-8.4 L20.6,-2.9 Z" />
+        <path className="roadmap-boat-screen-frame" d="M15,-2.6 L15.4,-9.2 L20.8,-8.4 L20.6,-2.9" />
+        <path className="roadmap-boat-screen-frame" d="M18,-8.8 L18,-2.75" />
+
+        {/* Hull, then the paint below the waterline clipped to it. */}
+        <path className="roadmap-boat-hull" d={BOAT_HULL} />
+        <rect
+          className="roadmap-boat-boot"
+          x="-26"
+          y="2.8"
+          width="50"
+          height="8"
+          clipPath="url(#roadmapBoatHull)"
+        />
+        <path className="roadmap-boat-strake" d="M-12,0.8 C-3,1.8 8,1.6 17.4,0.6" />
+        <circle className="roadmap-boat-port" cx="16.4" cy="0.4" r="1" />
+
+        {/* The life ring: the one warm note on the boat, and the only place
+            the page's accent colour touches it. Drawn before the sheer so the
+            gunwale cuts it into a dome. */}
+        <circle className="roadmap-boat-ring" cx="-7.6" cy="-3" r="3" />
+        <path className="roadmap-boat-sheer" d={BOAT_SHEER} />
+
+        {/* Stem post and bow bollard */}
+        <path className="roadmap-boat-stem" d="M-23.6,-7 L-22.3,-3" />
+        <rect
+          className="roadmap-boat-bollard"
+          x="-24.2"
+          y="-11.2"
+          width="3.4"
+          height="5.6"
+          rx="1.7"
+        />
+
+        {/* Wheelhouse */}
+        <rect className="roadmap-boat-cabin" x="-4.6" y="-15.6" width="17" height="13.2" rx="1" />
+        <rect className="roadmap-boat-cabin-roof" x="-6.6" y="-17.4" width="21" height="2.3" rx="1.15" />
+        <rect className="roadmap-boat-window" x="-3" y="-13.8" width="3.4" height="4" rx="0.9" />
+        <rect className="roadmap-boat-window" x="1" y="-13.8" width="3.4" height="4" rx="0.9" />
+        <rect className="roadmap-boat-window" x="5" y="-13.8" width="3.4" height="4" rx="0.9" />
+        <rect className="roadmap-boat-window" x="9.4" y="-13.2" width="1.9" height="6.6" rx="0.95" />
+      </g>
+    </g>
+  );
+}
+
+/**
+ * The drawn trail. Renders nothing until the first measurement lands, which
+ * is one frame — the cards are already on screen by then, so the curve fades
+ * in rather than popping the layout.
+ */
+function RoadmapTrail({
+  geom,
+  states,
+  currentIndex,
 }: {
-  state: 'done' | 'active' | 'upcoming';
-  bowToward: 'left' | 'right';
+  geom: Geometry | null;
+  states: VisualState[];
+  currentIndex: number;
 }) {
-  // The control points pull the curve toward the card it just left. Both
-  // endpoints stay at x=50 (the node column), so consecutive gaps meet exactly.
-  // A moderate lobe: the full-width sweep of the reference mockup assumed far
-  // more vertical space between cards than a 5rem gap gives, and an extreme
-  // bow over a short gap reads as a kink rather than a curve.
-  const bow = bowToward === 'left' ? 26 : 74;
-  const d = `M50,0 C${bow},28 ${bow},72 50,100`;
+  // Which leg the boat still has to sail. This is held rather than derived,
+  // because it depends on where the boat already IS: on the first render it
+  // sails the whole route walked so far, and from then on only the leg it has
+  // just gained. Deriving it from currentIndex alone would replay the journey
+  // from step one every time a task was completed.
+  const legRef = useRef<{ from: number; to: number } | null>(null);
+  // The route, rendered invisibly into the SVG purely so it can be measured:
+  // getTotalLength/getPointAtLength are what move the boat.
+  const routeRef = useRef<SVGPathElement>(null);
+  const boatRef = useRef<SVGGElement>(null);
+  // The overlay, needed to turn the boat's position in the drawing into a
+  // position on the page.
+  const svgRef = useRef<SVGSVGElement>(null);
+  // Whether the page has been led to the boat yet. A voyage always leads;
+  // a boat that simply appears at its mooring leads only the first time, so
+  // that a re-measure after a resize doesn't yank the page out from under
+  // someone who has scrolled off to read an earlier step.
+  const ledRef = useRef(false);
+
+  const pts = geom?.pts ?? [];
+  const ready = !!geom && pts.length >= 2 && geom.w > 0;
+
+  // Reduced motion is honoured here rather than in CSS, because the boat is
+  // also the "you are here" marker: the voyage is what has to go, not the
+  // boat. It is placed at its mooring directly instead.
+  const reduced =
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  let route: string | null = null;
+  let mooring: Point | null = null;
+  let segments: Array<{ d: string; state: 'done' | 'active' | 'upcoming' }> = [];
+
+  if (ready) {
+    segments = pts.slice(0, -1).map((pt, k) => ({
+      d: segmentPath(pt, pts[k + 1]),
+      state: connectorState(states[k] ?? 'queued', states[k + 1] ?? 'queued'),
+    }));
+
+    // Where the boat belongs: moored at the task in play, or at step one when
+    // nothing has started yet. There is always such a place, so the boat is
+    // always on the trail — it is the "you are here" marker, and a marker that
+    // vanishes for the employee who has only just begun is no marker at all.
+    const berth = currentIndex >= 0 ? Math.min(currentIndex, pts.length - 1) : 0;
+    if (legRef.current === null) legRef.current = { from: 0, to: berth };
+    else if (legRef.current.to !== berth) legRef.current = { from: legRef.current.to, to: berth };
+    const leg = legRef.current;
+
+    mooring = { x: pts[leg.to].x, y: pts[leg.to].y - BOAT_BERTH };
+
+    if (leg.from < leg.to) {
+      // Both ends raised to mooring height: it casts off from where it was
+      // tied up and arrives at where it will tie up, so there is no BOAT_BERTH
+      // drop as it leaves and none as it lands. Every point between is on the
+      // trail itself.
+      const legPts = pts
+        .slice(leg.from, leg.to + 1)
+        .map((pt, k, all) =>
+          k === 0 || k === all.length - 1 ? { x: pt.x, y: pt.y - BOAT_BERTH } : pt,
+        );
+      // ONE continuous path: a single M followed by curves that each pick up
+      // where the last left off. segmentPath emits its own M, which would give
+      // the route as many subpaths as it has legs.
+      route =
+        `M${legPts[0].x},${legPts[0].y} ` +
+        legPts
+          .slice(0, -1)
+          .map((pt, k) => segmentPath(pt, legPts[k + 1]).replace(/^M[^C]*/, ''))
+          .join(' ');
+    }
+  }
+
+  /**
+   * The voyage.
+   *
+   * This is a requestAnimationFrame loop walking getPointAtLength, and not the
+   * <animateMotion> element it replaced, because that element does not work.
+   * SMIL path motion is unevenly implemented: in this app's own runtime it
+   * froze the boat at the start for the full duration and then jumped it to
+   * the finish in one frame — a silent failure, since the element is valid,
+   * the timeline runs, and fill="freeze" lands the boat in exactly the right
+   * place. Only sampling the painted position mid-flight shows it never moved.
+   *
+   * Measuring the real path also means the duration can come from the real
+   * arc length rather than an estimate, and the easing is ours: the boat leans
+   * into the crossing and comes alongside rather than starting and stopping at
+   * full speed.
+   */
+  useLayoutEffect(() => {
+    const boat = boatRef.current;
+    if (!boat) return;
+
+    const place = (x: number, y: number) => {
+      boat.setAttribute('transform', `translate(${x},${y})`);
+    };
+
+    /**
+     * The page follows the boat.
+     *
+     * The task in play can be eight rows down a trail several screens tall,
+     * and a "you are here" marker the employee has to go hunting for is not a
+     * marker. So the boat tows the scroll position: it is held at a fixed
+     * height down the window (see BOAT_VIEW_ANCHOR) for the whole crossing,
+     * and by the time it moors the employee is already looking at the task.
+     *
+     * It lets go the instant they take the scroll themselves, which is watched
+     * two ways. Wheel, touch and the scrolling keys release it on the input
+     * itself, before the page has moved at all. And every scroll event is
+     * checked against the position this code last commanded: a scroll to
+     * somewhere we did not ask for is somebody else's, which is the only way
+     * to catch a scrollbar drag — dragging the bar produces no wheel, no
+     * touch and no keystroke. Reading the position BACK after each scrollTo
+     * rather than trusting the number we passed is what makes that comparison
+     * safe, since the browser clamps and rounds what it is given.
+     */
+    let towing = true;
+    let commanded = window.scrollY;
+    const yield_ = () => {
+      towing = false;
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(e.key)) yield_();
+    };
+    const onScroll = () => {
+      if (Math.abs(window.scrollY - commanded) > 2) yield_();
+    };
+    window.addEventListener('wheel', yield_, { passive: true });
+    window.addEventListener('touchmove', yield_, { passive: true });
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    const unhook = () => {
+      window.removeEventListener('wheel', yield_);
+      window.removeEventListener('touchmove', yield_);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll);
+    };
+
+    // The furthest down the page the tow has pulled, so it can only ever pull
+    // further. A leg always runs from an earlier step to a later one, so the
+    // boat only ever sails DOWN the page and the page has no business going
+    // back up with it. Without this the hero condensing early in the voyage —
+    // which lifts the whole trail by its own height — reads as the page
+    // stuttering backwards before it sets off. Starts below zero rather than
+    // at the current scroll, so the very first pull can still bring someone
+    // back UP to a boat moored above where they happen to be sitting.
+    let towedTo = -1;
+
+    const follow = (y: number) => {
+      const svg = svgRef.current;
+      if (!towing || !svg) return;
+      // The overlay is drawn at one unit per pixel (viewBox `0 0 w h` on a
+      // w x h element), so the boat's own y needs no scaling — only the
+      // overlay's offset down the page.
+      const pageY = svg.getBoundingClientRect().top + window.scrollY + y;
+      const furthest = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+      const want = pageY - window.innerHeight * BOAT_VIEW_ANCHOR;
+      const target = Math.min(Math.max(0, want), furthest);
+      if (towedTo >= 0 && target <= towedTo) return;
+      towedTo = target;
+      window.scrollTo(0, target);
+      commanded = window.scrollY;
+    };
+
+    /** Nothing to sail — put the boat where it belongs and, if this is the
+     *  first time, take the page there too. */
+    const moor = () => {
+      if (!mooring) return unhook;
+      place(mooring.x, mooring.y);
+      if (!ledRef.current) {
+        ledRef.current = true;
+        follow(mooring.y);
+      }
+      return unhook;
+    };
+
+    // Either the boat is already where it belongs, or this employee's current
+    // task is step one and there is no route behind it.
+    const path = routeRef.current;
+    if (!route || !path) return moor();
+
+    const len = path.getTotalLength();
+    if (!len) return moor();
+
+    ledRef.current = true;
+
+    const end = path.getPointAtLength(len);
+    if (reduced) {
+      place(end.x, end.y);
+      follow(end.y);
+      return unhook;
+    }
+
+    const dur =
+      Math.min(BOAT_MAX_DUR, Math.max(BOAT_MIN_DUR, len / BOAT_SPEED)) * 1000;
+    // The clock starts on the FIRST FRAME, not here. requestAnimationFrame is
+    // paused while the page is hidden, but performance.now() is not: timing
+    // from effect time means a Tasks page opened in a background tab spends
+    // its whole voyage hidden and is already moored by the time anyone looks.
+    // Starting on the first frame turns that into a delayed departure instead.
+    let started = 0;
+    let raf = 0;
+
+    const tick = (now: number) => {
+      if (!started) started = now;
+      const t = Math.min(1, (now - started) / dur);
+      // ease-in-out
+      const eased = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
+      const p = path.getPointAtLength(eased * len);
+      place(p.x, p.y);
+      follow(p.y);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+
+    const first = path.getPointAtLength(0);
+    place(first.x, first.y);
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      unhook();
+    };
+    // mooring is a fresh object every render, so its coordinates are the deps:
+    // a resize has to re-place a boat that is already tied up.
+  }, [route, reduced, mooring?.x, mooring?.y]);
+
+  if (!ready || !geom) return null;
+
+  const { w, h } = geom;
 
   return (
-    <div className={`roadmap-gap roadmap-gap--${state}`} aria-hidden="true">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-        <path className="roadmap-spine roadmap-spine--rail" d={d} vectorEffect="non-scaling-stroke" />
-        {state !== 'upcoming' && (
-          <path
-            className={`roadmap-spine roadmap-spine--flow roadmap-spine--${state}`}
-            d={d}
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
-      </svg>
-    </div>
+    <svg
+      ref={svgRef}
+      className="roadmap-trail"
+      viewBox={`0 0 ${w} ${h}`}
+      width={w}
+      height={h}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <defs>
+        <filter id="roadmapRunnerGlow" x="-200%" y="-200%" width="500%" height="500%">
+          <feGaussianBlur stdDeviation="4.5" />
+        </filter>
+        {/* The hull, reused as a clip so the paint below the waterline follows
+            it exactly — see BOAT_HULL. */}
+        <clipPath id="roadmapBoatHull">
+          <path d={BOAT_HULL} />
+        </clipPath>
+      </defs>
+
+      {segments.map((seg, i) => (
+        <g key={i}>
+          <path className="roadmap-spine roadmap-spine--rail" d={seg.d} />
+          {/* Every segment flows, including the ones ahead — the trail reads
+              as one continuous moving route rather than stopping dead at the
+              current step. Colour and speed carry the state instead. */}
+          <path className={`roadmap-spine roadmap-spine--flow roadmap-spine--${seg.state}`} d={seg.d} />
+        </g>
+      ))}
+
+      {/* The route: never painted, only measured. */}
+      {route && <path ref={routeRef} className="roadmap-route" d={route} />}
+
+      {/* Moored or under way, the boat is always on the trail, and its position
+          comes from the effect above rather than from an attribute here — one
+          source of truth for where it is. */}
+      <g className="roadmap-runner">
+        <g ref={boatRef}>
+          <BoatShape />
+        </g>
+      </g>
+    </svg>
   );
 }
 
@@ -189,9 +658,9 @@ function RoadmapCard({
   onSelect: (id: string) => void;
   final?: boolean;
 }) {
-  // A 'locked' task genuinely isn't actionable yet — the checkpoint has to be
-  // confirmed before the backend unlocks it — so inviting a click would only
-  // produce a 403.
+  // A locked step is one the employee hasn't reached yet: steps open one at a
+  // time, so inviting a click on a later one would promise something the
+  // journey doesn't allow.
   const clickable = state !== 'upcoming';
   const Tag = clickable ? 'button' : 'div';
 
@@ -257,7 +726,7 @@ function RoadmapCard({
       {state === 'upcoming' && (
         <span className="roadmap-card-locked">
           <LockIcon />
-          Unlocks after the checkpoint
+          Opens once the step before it is done
         </span>
       )}
     </Tag>

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
 import Modal from '../components/Modal';
-import Reveal from '../components/Reveal';
+import JourneyTrack from '../components/JourneyTrack';
 import TaskRoadmap, { type RoadmapItem } from '../components/TaskRoadmap';
 import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
 import DocumentChecklist from '../components/tasks/DocumentChecklist';
@@ -34,6 +34,8 @@ export default function EmployeeTasks() {
   const [activeTask, setActiveTask] = useState<TaskRow | null>(null);
   const [completing, setCompleting] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
+  const heroRef = useRef<HTMLElement>(null);
+  const [heroStuck, setHeroStuck] = useState(false);
 
   const loadAll = useCallback(async () => {
     try {
@@ -50,6 +52,27 @@ export default function EmployeeTasks() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  /**
+   * Whether the hero has reached the top of the viewport, which is what
+   * condenses it. Read off the element rather than compared against a
+   * hardcoded scroll offset, because what stands above the hero is
+   * .app-main's padding and that changes with the layout.
+   */
+  useEffect(() => {
+    const read = () => {
+      const hero = heroRef.current;
+      if (!hero) return;
+      setHeroStuck(hero.getBoundingClientRect().top <= 0.5);
+    };
+    read();
+    window.addEventListener('scroll', read, { passive: true });
+    window.addEventListener('resize', read);
+    return () => {
+      window.removeEventListener('scroll', read);
+      window.removeEventListener('resize', read);
+    };
+  }, [dashboard]);
 
   /** A checklist finished the task for us — same celebration and cleanup as
    *  pressing "Mark done", since a completed task drops out of the actionable
@@ -80,14 +103,16 @@ export default function EmployeeTasks() {
 
   const firstName = user?.full_name?.split(' ')[0] ?? 'there';
   const actionable = [...dashboard.overdue, ...dashboard.today, ...dashboard.upcoming];
-  const doFirst = actionable.find((t) => t.status !== 'completed') ?? null;
-  const currentStepId =
-    doFirst?.id ?? dashboard.steps.find((s) => s.status !== 'completed')?.id ?? null;
 
   // `steps` carries the full journey; the actionable buckets carry the richer
   // row for whichever of them is currently open. Merge so a card can show its
   // description and subtask counts regardless of which side it came from.
   const richById = new Map(actionable.map((t) => [t.id, t]));
+  // Rendered in the order the server sends, which is already the trail's order
+  // (paperwork, reading, kit, installs, then the rest) with the sequential gate
+  // applied — see backend trail-order.util. Sorting again here would be a
+  // second opinion on the same question, and the one that loses an argument
+  // with the API is the one the employee is looking at.
   const roadmapSteps: RoadmapItem[] = dashboard.steps.map((s) => {
     const rich = richById.get(s.id);
     return {
@@ -126,9 +151,36 @@ export default function EmployeeTasks() {
     });
   }
 
-  const { requiredCompleted, requiredTotal, percent } = dashboard.progress;
-  const remaining = requiredTotal - requiredCompleted;
-  const allDone = requiredTotal > 0 && remaining === 0;
+  /**
+   * The "you are here" step, taken from the trail's OWN order.
+   *
+   * This used to be the first entry of [...overdue, ...today, ...upcoming],
+   * which is ordered by due_date with ties broken arbitrarily by Postgres — so
+   * on an onboarding where several tasks share a due date it could mark step 2
+   * ACTIVE while step 1 was still open, and the "Up next" line would name a
+   * task the employee hadn't reached. Walking roadmapSteps instead means the
+   * highlight and the numbering can never disagree.
+   *
+   * Nothing is skipped: the server opens exactly one step at a time and the
+   * trail marks that one, so the highlight, the numbering and the boat all
+   * land on the step the employee is actually on.
+   */
+  const currentStep =
+    roadmapSteps.find((s) => s.status !== 'completed' && s.status !== 'cancelled') ?? null;
+  const currentStepId = currentStep?.id ?? null;
+  // The richer bucketed row when there is one — it carries priority and the
+  // overdue flag that `steps` doesn't.
+  const doFirst = currentStep ? richById.get(currentStep.id) ?? currentStep : null;
+
+  // Counted off the SAME array the trail renders rather than the backend's
+  // separate progress aggregate. Both currently agree, but deriving them from
+  // one source means the bar can never claim a number the cards below it
+  // contradict — which is the one way this panel could lie.
+  const totalSteps = roadmapSteps.length;
+  const doneSteps = roadmapSteps.filter((s) => s.status === 'completed').length;
+  const percent = totalSteps === 0 ? 0 : Math.round((doneSteps / totalSteps) * 100);
+  const remaining = totalSteps - doneSteps;
+  const allDone = totalSteps > 0 && remaining === 0;
 
   const activeIsDocuments = activeTask?.system_key === 'document_upload';
   const activeHasSubtasks = (activeTask?.subtask_count ?? 0) > 0;
@@ -138,55 +190,62 @@ export default function EmployeeTasks() {
     <div className="tasks-page">
       {error && <p className="error-text">{error}</p>}
 
-      <Reveal>
-        <header className="tasks-hero">
-          <span className="tasks-eyebrow">
-            <span className="tasks-eyebrow-dot" />
-            Your onboarding journey
-          </span>
+      <header
+        className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}
+        ref={heroRef}
+      >
+        <span className="eyebrow">
+          <span className="tasks-eyebrow-dot" />
+          {doneSteps} of {totalSteps} steps done
+        </span>
+        {/* The greeting, and only the greeting. It folds away once the hero
+            sticks — it says nothing that changes as the employee works,
+            and it is the one part of this panel worth trading for trail. */}
+        <div className="tasks-hero-greeting">
           <h1 className="tasks-title">
             {allDone ? 'You’re all set, ' : 'Your trail, '}
             <span className="tasks-title-script">{firstName}</span>
           </h1>
           <p className="tasks-lede">
             {allDone
-              ? 'Every required step on your onboarding is complete. Have a look back through the trail any time.'
-              : `Follow the trail below. ${remaining} step${remaining === 1 ? '' : 's'} left to be fully set up.`}
+              ? 'Every step on your onboarding is complete. Look back through the trail any time.'
+              : `Your onboarding is ${percent}% complete — ${remaining} step${remaining === 1 ? '' : 's'} to go.`}
           </p>
+        </div>
 
-          <div className="tasks-progress">
-            <div className="tasks-progress-top">
-              <span className="tasks-progress-count">
-                <span className="tasks-progress-badge">{requiredCompleted}</span>
-                of {requiredTotal} steps complete
-              </span>
-              <span className="tasks-progress-pct">{percent}%</span>
-            </div>
-            <span className="tasks-progress-track">
-              <span className="tasks-progress-fill" style={{ width: `${percent}%` }} />
+        {/* One node per task rather than the five onboarding stages, so the
+            track and the trail below describe the same journey. Completion
+            is passed per node because tasks finish out of order. */}
+        <JourneyTrack
+          compact
+          stages={roadmapSteps.map((s, i) => ({
+            key: s.id,
+            label: `${i + 1}. ${s.title}`,
+            done: s.status === 'completed',
+          }))}
+          currentKey={currentStepId ?? ''}
+        />
+
+        {doFirst && (
+          <div className="tasks-next">
+            <span className="tasks-live-dot" aria-hidden="true" />
+            <span className="tasks-next-text">
+              Up next: <strong>{doFirst.title}</strong>
+              {dueLabel(doFirst.due_date, doFirst.status) && (
+                <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
+              )}
             </span>
-            {doFirst && (
-              <div className="tasks-progress-foot">
-                <span className="tasks-live-dot" aria-hidden="true" />
-                <span>
-                  Up next: <strong>{doFirst.title}</strong>
-                  {dueLabel(doFirst.due_date, doFirst.status) && (
-                    <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
-                  )}
-                </span>
-                <button type="button" className="btn-solid btn-sm" onClick={() => openStep(doFirst.id)}>
-                  Open
-                </button>
-              </div>
-            )}
+            <button type="button" className="btn-solid btn-sm" onClick={() => openStep(doFirst.id)}>
+              Open
+            </button>
           </div>
-        </header>
-      </Reveal>
+        )}
+      </header>
 
       {roadmapSteps.length === 0 ? (
         <p className="muted">No steps on your onboarding yet — check back shortly.</p>
       ) : (
-        <section className="tasks-trail dot-grid">
+        <section className="tasks-trail">
           <TaskRoadmap steps={roadmapSteps} currentId={currentStepId} onSelect={openStep} />
         </section>
       )}
@@ -214,10 +273,10 @@ export default function EmployeeTasks() {
                   finish one task. */}
               {activeTask.status !== 'completed' && !activeIsChecklistDriven && (
                 <button
+                  type="button"
                   className="btn-solid"
                   disabled={completing}
                   onClick={() => completeTask(activeTask.id)}
-                  
                 >
                   {completing ? 'Marking done…' : 'Mark done'}
                 </button>
