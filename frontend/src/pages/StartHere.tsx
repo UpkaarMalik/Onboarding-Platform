@@ -232,10 +232,6 @@ export default function StartHere() {
         </span>
       </div>
 
-      {/* Description */}
-      <p style={{ margin: '10px 0 0', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontSize: 15, color: '#6f6a62', lineHeight: 1.6 }}>
-        Welcome to AND Payments — your personalised onboarding journey starts here. Track progress &amp; explore all features right from this page.
-      </p>
       <div className="greeting-banner warm-banner">
         <div className="warm-banner-badge">
           <span className="warm-banner-dot" />

@@ -11,6 +11,11 @@ import { fireConfetti } from '../lib/confetti';
 import { dueLabel, formatDate } from '../lib/format';
 import type { DashboardResponse, TaskRow } from '../types/onboarding';
 
+/** How far past the hero's resting place the page must scroll before the hero
+ *  condenses. Enough that a nudge of the wheel doesn't fold the greeting away,
+ *  small enough that it is gone by the time the trail needs the room. */
+const HERO_CONDENSE_AFTER = 24;
+
 /**
  * The employee's Tasks tab: their whole onboarding as a serpentine trail.
  *
@@ -34,7 +39,7 @@ export default function EmployeeTasks() {
   const [activeTask, setActiveTask] = useState<TaskRow | null>(null);
   const [completing, setCompleting] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
-  const heroRef = useRef<HTMLElement>(null);
+  const heroAnchorRef = useRef<HTMLDivElement>(null);
   const [heroStuck, setHeroStuck] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -54,16 +59,25 @@ export default function EmployeeTasks() {
   }, [loadAll]);
 
   /**
-   * Whether the hero has reached the top of the viewport, which is what
-   * condenses it. Read off the element rather than compared against a
-   * hardcoded scroll offset, because what stands above the hero is
-   * .app-main's padding and that changes with the layout.
+   * Whether the page has scrolled past where the hero naturally sits, which is
+   * what condenses it.
+   *
+   * Measured off a zero-height anchor pinned at the top of .tasks-page rather
+   * than off the hero itself. The hero is the wrong thing to ask: once it is
+   * sticking, its top is 0 by definition and its offsetTop tracks the scroll,
+   * so both say "stuck" forever. The anchor stays where the layout put it and
+   * simply scrolls away, which is the actual question.
+   *
+   * The threshold is what stops it condensing at rest. In this shell the hero
+   * begins flush against the top of the window, so "has it touched the top"
+   * is true before anyone has scrolled at all — the greeting would never once
+   * be seen.
    */
   useEffect(() => {
     const read = () => {
-      const hero = heroRef.current;
-      if (!hero) return;
-      setHeroStuck(hero.getBoundingClientRect().top <= 0.5);
+      const anchor = heroAnchorRef.current;
+      if (!anchor) return;
+      setHeroStuck(anchor.getBoundingClientRect().top <= -HERO_CONDENSE_AFTER);
     };
     read();
     window.addEventListener('scroll', read, { passive: true });
@@ -188,12 +202,18 @@ export default function EmployeeTasks() {
 
   return (
     <div className="tasks-page">
+      {/* Out of flow on purpose: .tasks-page is a flex column with a gap, so
+          an in-flow marker would push the whole page down by one gap. The
+          inline style is what beats `.tasks-page > * { position: relative }`. */}
+      <div
+        ref={heroAnchorRef}
+        aria-hidden="true"
+        style={{ position: 'absolute', top: 0, left: 0, width: 0, height: 0 }}
+      />
+
       {error && <p className="error-text">{error}</p>}
 
-      <header
-        className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}
-        ref={heroRef}
-      >
+      <header className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}>
         <span className="eyebrow">
           <span className="tasks-eyebrow-dot" />
           {doneSteps} of {totalSteps} steps done
