@@ -721,7 +721,14 @@ button.danger:hover:not(:disabled) {
   background-image: radial-gradient(circle, #e8930c40 1.2px, transparent 1.2px);
   background-size: 20px 20px;
   transition: filter 0.3s ease;
-  overflow-x: hidden;
+  /* clip, NOT hidden. Both hide sideways overflow, but `hidden` makes this a
+     scroll container — overflow-y computes to `auto` alongside it — and a
+     scroll container captures every `position: sticky` descendant. That is
+     what stopped .tasks-hero sticking: it was pinning itself to .app-main's
+     own scrollport, which barely scrolls, while the window did the scrolling.
+     `clip` hides the same overflow without creating a scrollport, so sticky
+     children keep answering to the window. */
+  overflow-x: clip;
   box-sizing: border-box;
 }
 .nav-hovered .app-main {
@@ -3133,23 +3140,11 @@ li:hover .checkbox-mark {
   z-index: 3;
   transition: padding 0.24s var(--ease), box-shadow 0.24s var(--ease);
 }
-/* .app-main's padding leaves a 1.75rem band above the hero that scrolling
-   cards would otherwise show through. This fills it with the page's own dot
-   field: same image and same 24px grid, and the same origin as
-   .tasks-page::before — both begin exactly 1.75rem up and left of
-   .tasks-page — so the dots continue the pattern instead of restarting it. */
-.tasks-hero::before {
-  content: '';
-  position: absolute;
-  left: -1.75rem;
-  right: -1.75rem;
-  bottom: 100%;
-  height: 1.75rem;
-  background-color: var(--color-bg);
-  background-image: radial-gradient(var(--dot-grid-ink) 1.25px, transparent 1.25px);
-  background-size: 24px 24px;
-  pointer-events: none;
-}
+/* There was a filler strip here, painting the page's dot field into the band
+   .app-main's 1.75rem top padding left above the hero, so scrolling cards
+   could not show through it. The shell rewrite took that padding away
+   (.app-main is `padding: 0 36px` now), so the hero starts flush at the top of
+   the page and there is no band left to fill. */
 .tasks-hero--stuck {
   padding-top: 1.1rem;
   padding-bottom: 1.1rem;
