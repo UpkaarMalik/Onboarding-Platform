@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
@@ -65,6 +66,8 @@ function knowledgeIcon(title: string) {
  * opens it in a popup rather than acting on the row directly, so
  * there's always a moment to see the full detail before confirming.
  */
+let hasPlayedEntrance = false;
+
 export default function StartHere() {
   const authedFetch = useAuthedFetch();
   const { user } = useAuth();
@@ -80,8 +83,9 @@ export default function StartHere() {
   const [ratingComment, setRatingComment] = useState('');
   const [submittingRating, setSubmittingRating] = useState(false);
   const [ratingSaved, setRatingSaved] = useState(false);
-  const [entrancePhase, setEntrancePhase] = useState<'greeting' | 'dashboard'>('greeting');
+  const [entrancePhase, setEntrancePhase] = useState<'greeting' | 'dashboard'>(hasPlayedEntrance ? 'dashboard' : 'greeting');
   const [timeOfDay, setTimeOfDay] = useState<number | null>(null);
+  const [clockOpen, setClockOpen] = useState(false);
   const entranceTimer = useRef<ReturnType<typeof setTimeout>>();
   const hasCelebratedCompletionRef = useRef(false);
 
@@ -126,7 +130,11 @@ export default function StartHere() {
   }, []);
 
   useEffect(() => {
-    entranceTimer.current = setTimeout(() => setEntrancePhase('dashboard'), 1400);
+    if (hasPlayedEntrance) return;
+    entranceTimer.current = setTimeout(() => {
+      setEntrancePhase('dashboard');
+      hasPlayedEntrance = true;
+    }, 1400);
     return () => clearTimeout(entranceTimer.current);
   }, []);
 
@@ -211,25 +219,36 @@ export default function StartHere() {
               {user?.role === 'superadmin_hr' ? 'HR / SuperAdmin' : user?.role === 'task_owner' ? 'Task Owner' : 'Employee'}
             </span>
           </div>
-          <h1 style={{ margin: '0 0 6px', fontSize: 34, fontWeight: 800, color: '#fff', textShadow: '0 2px 16px rgba(0,0,0,0.3)' }}>
-            {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{firstName}</span>
-          </h1>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <h1 style={{ margin: '0 0 6px', fontSize: 34, fontWeight: 800, color: '#fff', textShadow: '0 2px 16px rgba(0,0,0,0.3)' }}>
+              {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{firstName}</span>
+            </h1>
+            <Link to="/tasks" style={{ pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 24px', fontSize: 14, fontWeight: 700, color: '#fff', background: 'var(--gradient-accent)', border: 'none', borderRadius: 12, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: '0 2px 12px rgba(232,147,12,0.35)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s', flexShrink: 0, marginBottom: 6 }}>
+              {dashboard.onboarding.status === 'completed' ? 'My Tasks ✓' : 'Start Here →'}
+            </Link>
+          </div>
         </div>
-      </div>
-
-      {/* Time-of-day slider */}
-      <div style={{ margin: '12px 0 0', background: '#fff', border: '1px solid #e8e4dc', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>DAWN</span>
-        <input
-          type="range" min="0" max="1000"
-          value={Math.round((timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24) * 1000)}
-          onChange={e => setTimeOfDay(parseInt(e.target.value) / 1000)}
-          style={{ flex: 1, height: 4, borderRadius: 4, background: 'linear-gradient(90deg, #3a4a8a 0%, #6fa8d4 25%, #ffd27f 55%, #ff7e54 78%, #1a2244 100%)', outline: 'none', cursor: 'grab', WebkitAppearance: 'none', appearance: 'none' as never }}
-        />
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>NIGHT</span>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#e8930c', minWidth: 44, textAlign: 'center' }}>
-          {(() => { const t = timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
-        </span>
+        {/* Frosted glass time card */}
+        <div className="hr-hero-clock">
+          <div className="hr-time-card" onClick={() => setClockOpen(!clockOpen)}>
+            <span className="hr-time-card-icon">☀️</span>
+            <span className="hr-time-card-value">
+              {(() => { const t = timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
+            </span>
+            {clockOpen && (
+              <div className="hr-time-card-slider" onClick={e => e.stopPropagation()}>
+                <span>DAWN</span>
+                <input
+                  type="range" min="0" max="1000"
+                  value={Math.round((timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24) * 1000)}
+                  onChange={e => setTimeOfDay(parseInt(e.target.value) / 1000)}
+                  aria-label="Time of day"
+                />
+                <span>NIGHT</span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="greeting-banner warm-banner">
