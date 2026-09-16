@@ -18,13 +18,24 @@ import {
   OTP_MAX_ATTEMPTS,
 } from './utils/otp';
 import { TokenService } from './tokens/token.service';
+import { SessionsService, IssuedSession } from './sessions/sessions.service';
 
 const BCRYPT_ROUNDS = 12;
 
-type AuthenticatedResult = {
+/**
+ * The return shape from a successful login. The three raw cookie
+ * values (`accessToken`, `refreshToken`, `csrfToken`) never reach the
+ * response body — the controller writes them straight into Set-Cookie
+ * headers and hands the caller `user` plus the session's expiry
+ * timestamps for UI purposes.
+ */
+export type AuthenticatedResult = {
   status: 'authenticated';
   accessToken: string;
   refreshToken: string;
+  csrfToken: string;
+  absoluteExpiresAt: Date;
+  idleExpiresAt: Date;
   user: ReturnType<UsersService['toPublicUser']>;
 };
 
@@ -43,6 +54,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly tokens: TokenService,
     private readonly activityLog: ActivityLogService,
+    private readonly sessions: SessionsService,
   ) {}
 
   async createUser(dto: CreateUserDto, actorId: string) {
@@ -148,16 +160,22 @@ export class AuthService {
 
   /** Shared by every path that ends in a real session: activates a
    *  still-'invited' account on its very first successful login (by
-   *  either method) and signs the real token pair. */
-  private async issueTokens(user: UserRow): Promise<AuthenticatedResult> {
+   *  either method), opens a `user_sessions` row, and mints the access
+   *  JWT bound to that row's id. The controller lifts the three token
+   *  strings into Set-Cookie and drops them before responding. */
+  private async issueTokens(user: UserRow, userAgent: string | null): Promise<AuthenticatedResult> {
     if (user.status === 'invited') {
       await this.usersService.activateUser(user.id);
-      user.status = 'active'; // keep the response consistent with what we just wrote
+      user.status = 'active';
     }
+    const session: IssuedSession = await this.sessions.createSession(user.id, userAgent);
     return {
       status: 'authenticated',
-      accessToken: this.tokens.signAccessToken(user),
-      refreshToken: this.tokens.signRefreshToken(user),
+      accessToken: this.tokens.signAccessToken(user, session.sessionId),
+      refreshToken: session.refreshToken,
+      csrfToken: session.csrfToken,
+      absoluteExpiresAt: session.absoluteExpiresAt,
+      idleExpiresAt: session.idleExpiresAt,
       user: this.usersService.toPublicUser(user),
     };
   }
@@ -190,7 +208,11 @@ export class AuthService {
   // Method 1 — Joinee ID + password. No company email, no OTP.
   // ============================================================
 
-  async loginWithPassword(joineeId: string, password: string): Promise<PasswordLoginResult> {
+  async loginWithPassword(
+    joineeId: string,
+    password: string,
+    userAgent: string | null,
+  ): Promise<PasswordLoginResult> {
     const user = await this.usersService.findByJoineeId(joineeId);
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (user.status === 'disabled') {
@@ -206,7 +228,7 @@ export class AuthService {
         preAuthToken: this.tokens.signPreAuth(user.id, 'password_reset'),
       };
     }
-    return this.issueTokens(user);
+    return this.issueTokens(user, userAgent);
   }
 
   /**
@@ -226,6 +248,14 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await this.usersService.setPasswordHash(userId, passwordHash, false);
+
+    // Password change is a security event: every live session for this
+    // user is killed before the response goes out, so any credential
+    // stolen before the reset stops working immediately. The user is
+    // sent back to the login page and re-authenticates with the new
+    // password (see the comment above about why this method
+    // deliberately doesn't return tokens).
+    await this.sessions.revokeAllForUser(userId, 'password_reset', userId);
 
     await this.activityLog.log({
       actorId: userId,
@@ -256,7 +286,11 @@ export class AuthService {
     return { preAuthToken: this.tokens.signPreAuth(user.id, 'otp_login') };
   }
 
-  async verifyMobileOtp(userId: string, code: string): Promise<PasswordLoginResult> {
+  async verifyMobileOtp(
+    userId: string,
+    code: string,
+    userAgent: string | null,
+  ): Promise<PasswordLoginResult> {
     const user = await this.usersService.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
@@ -293,7 +327,7 @@ export class AuthService {
       };
     }
 
-    return this.issueTokens(user);
+    return this.issueTokens(user, userAgent);
   }
 
   async resendMobileOtp(userId: string): Promise<{ sent: true }> {
@@ -304,23 +338,49 @@ export class AuthService {
   }
 
   // ============================================================
-  // Token refresh
+  // Token refresh — DB-backed, with rotation.
   // ============================================================
 
-  async refreshAccessToken(userId: string) {
-    const user = await this.usersService.findById(userId);
+  /**
+   * Accepts the raw refresh cookie value the browser sent, atomically
+   * rotates the underlying session row (SessionsService does the
+   * hash+expiry checks in a single UPDATE), and mints a new access JWT
+   * bound to the same session id. Returns null when the cookie is
+   * stale/revoked/expired — the controller turns that into 401 plus a
+   * cookie-clear, and the frontend interceptor redirects to the login
+   * page. That is the "session timeout → redirect" path end-to-end.
+   */
+  async refreshAccessToken(
+    presentedRefreshToken: string,
+  ): Promise<AuthenticatedResult | null> {
+    const rotated = await this.sessions.rotateSession(presentedRefreshToken);
+    if (!rotated) return null;
+    const user = await this.usersService.findById(await this.userIdForSession(rotated.sessionId));
     if (!user || user.status !== 'active') {
-      throw new UnauthorizedException('Invalid refresh token');
+      // Rare race: the session existed a moment ago but the user has
+      // just been disabled. Kill the freshly-rotated session so the
+      // caller can't use its new cookies.
+      await this.sessions.revokeSession(rotated.sessionId, 'admin_disabled');
+      return null;
     }
     return {
-      accessToken: this.tokens.signAccessToken(user),
-      // Rotated on every refresh. Note: this is stateless rotation —
-      // there's no server-side record of issued/revoked refresh tokens
-      // yet, so an old refresh token technically still verifies until
-      // it expires on its own. A refresh_tokens table with a revoked
-      // flag would close that gap; flagging it rather than pretending
-      // rotation alone is full revocation.
-      refreshToken: this.tokens.signRefreshToken(user),
+      status: 'authenticated',
+      accessToken: this.tokens.signAccessToken(user, rotated.sessionId),
+      refreshToken: rotated.refreshToken,
+      csrfToken: rotated.csrfToken,
+      absoluteExpiresAt: rotated.absoluteExpiresAt,
+      idleExpiresAt: rotated.idleExpiresAt,
+      user: this.usersService.toPublicUser(user),
     };
+  }
+
+  /** Small helper — SessionsService.rotateSession already loaded the
+   *  row, but its return type doesn't include user_id (nothing else
+   *  needs it). Read the row a second time by id — cheap, keyed on
+   *  primary key. */
+  private async userIdForSession(sessionId: string): Promise<string> {
+    const session = await this.sessions.findLiveSessionById(sessionId);
+    if (!session) throw new UnauthorizedException('Session vanished mid-refresh');
+    return session.user_id;
   }
 }

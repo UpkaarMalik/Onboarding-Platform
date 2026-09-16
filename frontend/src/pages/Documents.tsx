@@ -183,7 +183,7 @@ function policySectionsFor(title: string): PolicySection[] {
 /* ================================================================== */
 export default function Documents() {
   const authedFetch = useAuthedFetch();
-  const { accessToken, user } = useAuth();
+  const { user } = useAuth();
   const [docs, setDocs] = useState<DocumentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -212,7 +212,7 @@ export default function Documents() {
   async function handleDownload(doc: DocumentRow) {
     setDownloadingId(doc.id);
     try {
-      await downloadFile(`/documents/${doc.id}/download`, accessToken, `${doc.title}.pdf`);
+      await downloadFile(`/documents/${doc.id}/download`, `${doc.title}.pdf`);
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {
@@ -231,7 +231,7 @@ export default function Documents() {
     }
     setOpeningId(doc.id);
     try {
-      await openFileInline(`/documents/${doc.id}/download`, accessToken);
+      await openFileInline(`/documents/${doc.id}/download`);
     } catch (err) {
       alert(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {
@@ -499,7 +499,7 @@ export default function Documents() {
                     onClick={async () => {
                       setOpeningId(modalDoc.id);
                       try {
-                        await openFileInline(`/documents/${modalDoc.id}/download`, accessToken);
+                        await openFileInline(`/documents/${modalDoc.id}/download`);
                       } catch (err) {
                         alert(err instanceof ApiError ? err.message : 'Something went wrong');
                       } finally {

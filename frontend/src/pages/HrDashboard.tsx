@@ -1213,7 +1213,6 @@ function EmployeeProfileModal({
   onChanged: () => void;
 }) {
   const authedFetch = useAuthedFetch();
-  const { accessToken } = useAuth();
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingAssignments, setEditingAssignments] = useState(false);
@@ -1436,15 +1435,15 @@ function EmployeeProfileModal({
                       <span className="field-hint">Rejection note: {doc.review_note}</span>
                     )}
                     <div className="doc-list__actions">
-                      {/* The file needs a Bearer token, which a plain
-                          <a href> can't attach — openFileInline fetches
-                          it and hands the blob to a new tab. */}
+                      {/* Cookie-authenticated; a plain <a href> would work
+                          in principle, but openFileInline fetches the blob
+                          and hands it to a new tab so the download-vs-view
+                          decision stays with the browser's PDF viewer. */}
                       <button
                         type="button"
                         onClick={() =>
                           openFileInline(
                             `/joinee-documents/uploads/${doc.upload_id}/file`,
-                            accessToken,
                           ).catch(() => setError('Could not open this document'))
                         }
                       >
