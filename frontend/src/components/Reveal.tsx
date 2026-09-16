@@ -1,31 +1,34 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 
-/**
- * Wraps a section/card so it animates in the first time it scrolls
- * into view, instead of only on initial page load — the same
- * fadeInUp everything already uses on mount, just re-triggered by
- * scroll position. Unobserves itself once shown, so scrolling back up
- * and down again doesn't replay it.
- */
+const shownIds = new Set<string>();
+
 export default function Reveal({
   children,
   delay = 0,
   className = '',
+  id,
 }: {
   children: ReactNode;
   delay?: number;
   className?: string;
+  id?: string;
 }) {
+  const autoId = useId();
+  const key = id ?? autoId;
+  const alreadyShown = shownIds.has(key);
+
   const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(alreadyShown);
 
   useEffect(() => {
+    if (alreadyShown) return;
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           setVisible(true);
+          shownIds.add(key);
           observer.unobserve(el);
         }
       },
@@ -33,13 +36,13 @@ export default function Reveal({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [alreadyShown, key]);
 
   return (
     <div
       ref={ref}
       className={`reveal ${visible ? 'reveal-visible' : ''} ${className}`.trim()}
-      style={{ transitionDelay: `${delay}s` }}
+      style={alreadyShown ? undefined : { transitionDelay: `${delay}s` }}
     >
       {children}
     </div>

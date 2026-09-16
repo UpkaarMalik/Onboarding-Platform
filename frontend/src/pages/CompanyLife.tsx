@@ -348,7 +348,7 @@ export default function CompanyLife() {
           background: #191919;
           border-radius: 12px;
           overflow: hidden;
-          aspect-ratio: 16 / 10;
+          aspect-ratio: 3 / 2;
         }
         .cl-slide {
           position: absolute; inset: 0;
@@ -365,7 +365,7 @@ export default function CompanyLife() {
           position: absolute; inset: 0;
           width: 100%; height: 100%;
           object-fit: cover;
-          object-position: center top;
+          object-position: center;
         }
         .cl-slide-overlay {
           position: absolute; inset: 0;

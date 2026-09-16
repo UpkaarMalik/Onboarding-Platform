@@ -264,7 +264,7 @@ export default function Documents() {
   const modalSections = modalDoc ? policySectionsFor(modalDoc.title) : [];
 
   return (
-    <div className="dp-page dot-grid">
+    <div className="dp-page">
       {/* ---- Header ---- */}
       <section className="dp-header">
         <div className="dp-header-left">

@@ -308,33 +308,24 @@ export default function HrDashboard() {
         <OceanBanner height={240} timeOfDay={timeOfDay ?? undefined} animSpeed={sliderDragging ? 6 : 1} />
 
         <div className="hr-hero-clock">
-          {clockOpen ? (
-            <div className="hr-clock-panel">
-              <span>DAWN</span>
-              <input
-                type="range" min="0" max="1000"
-                value={Math.round(clockValue * 1000)}
-                onChange={(e) => setTimeOfDay(parseInt(e.target.value) / 1000)}
-                onMouseDown={() => setSliderDragging(true)} onMouseUp={() => setSliderDragging(false)}
-                onTouchStart={() => setSliderDragging(true)} onTouchEnd={() => setSliderDragging(false)}
-                aria-label="Time of day"
-              />
-              <span>NIGHT</span>
-              <button type="button" className="hr-clock-toggle" onClick={() => setClockOpen(false)} aria-label="Close time control">
-                {clockLabel}
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="hr-clock-toggle"
-              onClick={() => setClockOpen(true)}
-              aria-expanded={false}
-              aria-label={`Scene time ${clockLabel}. Adjust`}
-            >
-              ☀ {clockLabel}
-            </button>
-          )}
+          <div className="hr-time-card" onClick={() => setClockOpen(!clockOpen)}>
+            <span className="hr-time-card-icon">☀️</span>
+            <span className="hr-time-card-value">{clockLabel}</span>
+            {clockOpen && (
+              <div className="hr-time-card-slider" onClick={e => e.stopPropagation()}>
+                <span>DAWN</span>
+                <input
+                  type="range" min="0" max="1000"
+                  value={Math.round(clockValue * 1000)}
+                  onChange={(e) => setTimeOfDay(parseInt(e.target.value) / 1000)}
+                  onMouseDown={() => setSliderDragging(true)} onMouseUp={() => setSliderDragging(false)}
+                  onTouchStart={() => setSliderDragging(true)} onTouchEnd={() => setSliderDragging(false)}
+                  aria-label="Time of day"
+                />
+                <span>NIGHT</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="hr-hero-overlay">
