@@ -773,6 +773,7 @@ export function CreateJoineeWizard({
   const [managerName, setManagerName] = useState('');
   const [buddyName, setBuddyName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneError, setPhoneError] = useState(false);
 
   // Step 2 fields
   const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
@@ -891,7 +892,7 @@ export function CreateJoineeWizard({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px' }}>
                 <label style={labelStyle}>
                   Full Name *
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="e.g. Arjun Kapoor" required style={inputStyle} />
+                  <input value={fullName} onChange={(e) => setFullName(e.target.value.replace(/[0-9]/g, ''))} placeholder="e.g. Arjun Kapoor" required style={inputStyle} />
                 </label>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <label style={labelStyle}>
@@ -902,17 +903,24 @@ export function CreateJoineeWizard({
                 </div>
                 <label style={labelStyle}>
                   Mobile Number *
-                  <div className="phone-input-group">
+                  <div className="phone-input-group" style={phoneError ? { borderColor: '#ef4444', boxShadow: '0 0 0 3px rgba(239,68,68,0.12)' } : undefined}>
                     <span className="phone-prefix">+91</span>
                     <span className="phone-divider">|</span>
                     <input
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      value={phoneNumber.length > 5 ? phoneNumber.slice(0, 5) + ' ' + phoneNumber.slice(5) : phoneNumber}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setPhoneNumber(raw);
+                        if (phoneError && raw.length === 10) setPhoneError(false);
+                      }}
+                      onBlur={() => { if (phoneNumber.length > 0 && phoneNumber.length < 10) setPhoneError(true); }}
+                      onFocus={() => setPhoneError(false)}
                       inputMode="numeric"
-                      placeholder="9876543210"
-                      maxLength={10}
+                      placeholder="98765 43210"
+                      maxLength={11}
                     />
                   </div>
+                  {phoneError && <span style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>Please enter 10 digits</span>}
                 </label>
                 <div style={labelStyle}>
                   Department *
@@ -929,12 +937,12 @@ export function CreateJoineeWizard({
                   <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required style={inputStyle} />
                 </label>
                 <label style={labelStyle}>
-                  Manager Name
+                  <span>Manager Name <span style={{ fontSize: 11, color: 'var(--color-muted)', fontWeight: 400, fontStyle: 'italic' }}>(Optional)</span></span>
                   <input value={managerName} onChange={(e) => setManagerName(e.target.value)} placeholder="Select manager" style={inputStyle} />
                 </label>
                 <label style={labelStyle}>
-                  Buddy Name
-                  <input value={buddyName} onChange={(e) => setBuddyName(e.target.value)} placeholder="Select buddy (optional)" style={inputStyle} />
+                  <span>Buddy Name <span style={{ fontSize: 11, color: 'var(--color-muted)', fontWeight: 400, fontStyle: 'italic' }}>(Optional)</span></span>
+                  <input value={buddyName} onChange={(e) => setBuddyName(e.target.value)} placeholder="Select buddy" style={inputStyle} />
                 </label>
               </div>
             </div>
