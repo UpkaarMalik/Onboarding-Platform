@@ -161,7 +161,14 @@ export default function HrOverview({
   const load = useCallback(async () => {
     try {
       const [list, depts] = await Promise.all([
-        authedFetch<{ data: OverviewRow[]; total: number }>(`/onboardings?limit=${PAGE_LIMIT}`),
+        // `-createdAt` = newest onboarding first (leading `-` is the DESC
+        // marker parseSort recognises on the backend). Without this the
+        // list defaulted to startDate ASC, which pushed a joinee HR just
+        // created to whichever page their start date falls on — often
+        // not page 1 — and forced a search to find them again.
+        authedFetch<{ data: OverviewRow[]; total: number }>(
+          `/onboardings?limit=${PAGE_LIMIT}&sort=-createdAt`,
+        ),
         authedFetch<Department[]>('/departments'),
       ]);
       setRows(list.data);
