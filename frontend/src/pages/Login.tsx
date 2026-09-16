@@ -348,11 +348,27 @@ export default function Login() {
                 <input
                   id="otp-code"
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  // Strip anything that isn't a digit, at the source. `pattern`
+                  // and `inputMode` only steer the mobile keyboard and the
+                  // final submit check — they don't stop a paste of "12 34 56"
+                  // or a stray letter from ending up in the field. Trimming
+                  // here means the value shown to the user always matches what
+                  // will be sent, so a bad character can't get past the
+                  // keystroke that made it. 6 max because that is the length
+                  // the backend generates and expects.
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   inputMode="numeric"
                   pattern="[0-9]{6}"
+                  maxLength={6}
                   placeholder="123456"
                   required
+                  // Grabs focus the moment this input mounts. The verify step
+                  // is only rendered while `otpStep.name === 'verify'`, so the
+                  // input first appears the instant the phone-number form
+                  // hands off — the user just clicked "GET OTP" and is about
+                  // to type, so putting the cursor here saves them the extra
+                  // click that they'd otherwise have to make.
+                  autoFocus
                 />
               </div>
               <button className="btn-primary auth-submit" disabled={busy} type="submit">

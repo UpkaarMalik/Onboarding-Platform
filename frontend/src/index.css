@@ -2934,6 +2934,45 @@ li:hover .checkbox-mark {
    pivot to the boomerang's own bounding-box centre instead, which is offset
    from the disc's centre, and the boomerang would orbit rather than spin. */
 
+/* The tail-tip sparkle: appears the moment the mark drops anchor, twinkles
+   through the pause, and stays quiet through the crossing so it doesn't
+   compete with the spin. Gating is done from the parent runner group, which
+   the voyage effect flips into `.is-sailing` for the duration of every hop —
+   removing the animation there restarts it fresh on landing rather than
+   picking up mid-keyframe. `transform-box: fill-box` is what lets the
+   keyframes scale the shape about its own centre; without it the scale would
+   pivot at the SVG origin (the disc's centre) and the star would drift as it
+   grew. */
+.roadmap-mark-sparkle-shape {
+  fill: #fef1cc;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: roadmapSparkle 2.2s ease-in-out infinite;
+  opacity: 0;
+}
+.roadmap-runner.is-sailing .roadmap-mark-sparkle-shape {
+  animation: none;
+  opacity: 0;
+}
+@keyframes roadmapSparkle {
+  0% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  55% {
+    opacity: 0.35;
+    transform: scale(0.55);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+}
+
 @keyframes runnerPulse {
   0%,
   100% {
@@ -5978,6 +6017,7 @@ li:hover .checkbox-mark {
      and renders the boat already moored — hiding it outright would take the
      position marker away along with the movement. Only its glow is CSS. */
   .roadmap-mark-glow,
+  .roadmap-mark-sparkle-shape,
   .modal,
   .modal-backdrop,
   .roadmap-spine--flow,

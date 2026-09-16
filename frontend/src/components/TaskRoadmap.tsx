@@ -101,11 +101,11 @@ function segmentPath(a: Point, b: Point): string {
 
 /** Pixels a second the boat makes good. Speed rather than a fixed duration,
  *  so a one-step hop and a ten-step maiden voyage feel like the same boat. */
-const BOAT_SPEED = 170;
+const BOAT_SPEED = 220;
 /** Clamped either side of it: below this a hop is a twitch, above it the trail
  *  is long enough that watching the whole crossing becomes a chore. */
-const BOAT_MIN_DUR = 1.6;
-const BOAT_MAX_DUR = 11;
+const BOAT_MIN_DUR = 1.2;
+const BOAT_MAX_DUR = 8;
 
 /** Keys that scroll. Pressing one is the employee taking the wheel, and the
  *  boat stops towing the page from that moment on. */
@@ -280,23 +280,50 @@ const MARK_BERTH = 46;
  * and a long voyage feel like the same flick rather than the same number of
  * turns crammed into different times.
  */
-const SPIN_TURNS_PER_SEC = 0.7;
+const SPIN_TURNS_PER_SEC = 1.0;
 const SPIN_MIN_TURNS = 2;
 
 /**
  * Angular progress, 0 to 1, across the crossing.
  *
- * `1 - (1-t)^3` — a cubic ease-out. Its derivative is 3 at t = 0 and 0 at
- * t = 1: the shape a spinner traces once let go, most of the turning early
- * and a long freewheel after. Cubic rather than the quartic this started as,
- * and fewer turns than it started with, because the faster curve span it hard
- * enough to blur.
+ * Linear: the boomerang turns at a constant rate from the very first frame of
+ * the voyage to the very last, and then stops dead on landing. Its derivative
+ * is a flat 1 across `[0, 1]`, so there is no front-loaded flick and no lazy
+ * freewheel at the end — the spin is the voyage, start to finish, and the
+ * moor is where the star meets it.
  *
- * It still returns exactly 1 at t = 1 — (1-1)^3 is exactly 0 in floating
- * point — so multiplied by a whole number of turns the mark can still only
- * come to rest on the logo's own orientation.
+ * At t = 1 this is exactly 1, so multiplied by a whole number of turns the
+ * mark still comes to rest on the logo's own orientation, to the degree.
  */
-const spinEase = (t: number) => 1 - Math.pow(1 - t, 3);
+const spinEase = (t: number) => t;
+
+/** A four-pointed star drawn from unit-radius points, translated to whatever
+ *  the caller wants at whatever size — kept as a shape so the same node can
+ *  live on the disc AND float off it during the flourish without duplicating
+ *  the geometry. */
+const SPARKLE_PATH =
+  'M0,-1 L0.22,-0.22 L1,0 L0.22,0.22 L0,1 L-0.22,0.22 L-1,0 L-0.22,-0.22 Z';
+
+/**
+ * The sparkle at the tail tip. Anchored inside the spinning group so it
+ * inherits the boomerang's orientation — which, since the voyage always lands
+ * on an integer number of turns, is exactly its rest orientation whenever it
+ * matters. Its own animation runs whenever the mark is moored (see
+ * `.roadmap-runner.is-sailing` gating in CSS) and stays quiet through the
+ * crossing so the twinkle doesn't compete with the spin.
+ */
+function Sparkle() {
+  // Base sizing lives on the wrapping <g>, not the <path>: browsers let the
+  // CSS `transform` property on an SVG element override its `transform`
+  // ATTRIBUTE, so a `scale(4.2)` written on the path itself is thrown away
+  // the moment the twinkle keyframes attach their own transform. Placing the
+  // sizing one level up leaves the path free to be pulsed by CSS.
+  return (
+    <g className="roadmap-mark-sparkle" transform="translate(14.5 22) scale(4.2)">
+      <path className="roadmap-mark-sparkle-shape" d={SPARKLE_PATH} />
+    </g>
+  );
+}
 
 /** The mark itself, with no notion of where it is — placing it is the
  *  caller's job, and turning the boomerang is the voyage's. */
@@ -310,9 +337,13 @@ function MarkShape({ spinRef }: { spinRef: React.RefObject<SVGGElement> }) {
       {/* The boomerang is its own group so the disc behind it stays put while
           it turns. The transform is written by the voyage effect, never here —
           one source of truth for its angle, the same rule the position
-          follows. */}
+          follows. The sparkle rides inside the same group so it sits at the
+          tail tip in the mark's own coordinate frame; whenever the voyage is
+          idle the boomerang is at 0° and the sparkle lands where the artwork
+          expects it. */}
       <g ref={spinRef}>
         <path className="roadmap-mark-boomerang" d={MARK_BOOMERANG_PATH} />
+        <Sparkle />
       </g>
     </g>
   );
@@ -431,6 +462,17 @@ function RoadmapTrail({
     };
 
     /**
+     * Sailing/moored is written to the outer runner group as a class so the
+     * sparkle can be gated purely from CSS: it stays hidden through the spin
+     * and restarts its twinkle fresh the moment the mark drops anchor
+     * (removing `animation` and adding it back is what replays the keyframes).
+     */
+    const runner = boat.parentNode as SVGGElement | null;
+    const setSailing = (sailing: boolean) => {
+      runner?.classList.toggle('is-sailing', sailing);
+    };
+
+    /**
      * The boomerang's angle about the disc's centre.
      *
      * `rotate(deg)` with no centre argument turns about the current user-space
@@ -522,6 +564,7 @@ function RoadmapTrail({
       if (!mooring) return unhook;
       place(mooring.x, mooring.y);
       spinTo(0);
+      setSailing(false);
       if (!ledRef.current) {
         ledRef.current = true;
         follow(mooring.y);
@@ -543,6 +586,7 @@ function RoadmapTrail({
     if (reduced) {
       place(end.x, end.y);
       spinTo(0);
+      setSailing(false);
       follow(end.y);
       return unhook;
     }
@@ -584,14 +628,17 @@ function RoadmapTrail({
       spinTo(spinEase(t) * 360 * turns);
       follow(p.y);
       if (t < 1) raf = requestAnimationFrame(tick);
+      else setSailing(false);
     };
 
     const first = path.getPointAtLength(0);
     place(first.x, first.y);
     spinTo(0);
+    setSailing(true);
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
+      setSailing(false);
       unhook();
     };
     // mooring is a fresh object every render, so its coordinates are the deps:
