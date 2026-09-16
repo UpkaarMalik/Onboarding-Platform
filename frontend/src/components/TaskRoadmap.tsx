@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { dueLabel } from '../lib/format';
+import { MARK_BOOMERANG_PATH, MARK_RADIUS } from '../lib/andMark';
 
 export interface RoadmapItem {
   id: string;
@@ -250,100 +251,68 @@ export default function TaskRoadmap({
 }
 
 /**
- * The boat, drawn from the side after the reference illustration: a small
- * white fishing boat with a navy underbody, a wheelhouse, a mast and sail,
- * and a life ring on the bow. Coordinates are local to the motion point, with
- * the waterline on y = 0 and the bow to the left.
+ * The runner on the trail: the AND Payments mark — the navy disc with the
+ * boomerang on it, imported from lib/andMark, which carries the outline
+ * traced from the brand asset itself.
  *
- * Side-on, not overhead, which settles two things that an overhead boat had
- * the opposite answer for. The travel must NOT rotate to the tangent —
- * rotate="auto" would stand this hull on its bow as it went down the page — so
- * the boat stays upright and the route bends around it. And it moors ABOVE the
- * node in page coordinates rather than back along its own axis, which is why
- * BOAT_BERTH is applied to the path's endpoint instead of to the boat.
- *
- * The hull is a constant because the navy underbody is the same outline used
- * as a clip: rather than draw a second path along the waterline and keep the
- * two in sync by hand, a straight rect below the waterline is clipped to the
- * hull, so the paint follows the hull exactly whatever the hull does next.
+ * Two things follow from it being a disc rather than the side-on boat it
+ * replaced. It is radially symmetric, so it never needs to rotate to the
+ * tangent (and must not: `rotate="auto"` would have stood the old hull on its
+ * bow going down the page). And it is centred on the motion point rather than
+ * floating on a waterline, so MARK_BERTH has to clear the node by the disc's
+ * own radius as well.
  */
-const BOAT_HULL =
-  'M-22.6,-5 C-17.6,-3 -10,-2.3 -1,-2.2 C8,-2.1 16,-2.5 22.4,-3.2 ' +
-  'L21,4.6 C16,6.4 6,6.9 -3,6.7 C-11,6.5 -18.2,3.2 -22.6,-5 Z';
-/** The sheer — the boat's top edge. Stroked dark over the hull, and over the
- *  life ring, which is what turns the ring into a dome above the gunwale. */
-const BOAT_SHEER = 'M-22.6,-5 C-17.6,-3 -10,-2.3 -1,-2.2 C8,-2.1 16,-2.5 22.4,-3.2';
 
 /**
- * How far above the node the boat ties up, in page pixels. Applied to the end
- * of its route, not to the boat: the trail's tangent is vertical at every node
+ * How far above the node the mark ties up, in page pixels. Applied to the end
+ * of its route, not to the mark: the trail's tangent is vertical at every node
  * (see segmentPath), so an endpoint lifted straight up still arrives
- * vertically, and the boat ends up floating over the step number with the
- * curve running on underneath it. 32 clears the node's 20px radius and the
- * boat's own 7px of keel.
+ * vertically, and the mark ends up floating over the step number with the
+ * curve running on underneath it. It has to clear the node's 20px radius plus
+ * the disc's own 19, so 46 leaves a 7px gap.
  */
-const BOAT_BERTH = 32;
+const MARK_BERTH = 46;
 
-/** The boat itself, with no notion of where it is — placing it is the
- *  caller's job, either by animateMotion or by a static transform. */
-function BoatShape() {
+/**
+ * The spin, as a fidget spinner behaves: flicked hard, then coasting down.
+ *
+ * Turn COUNT is still derived from how long the crossing takes, so a short hop
+ * and a long voyage feel like the same flick rather than the same number of
+ * turns crammed into different times.
+ */
+const SPIN_TURNS_PER_SEC = 0.7;
+const SPIN_MIN_TURNS = 2;
+
+/**
+ * Angular progress, 0 to 1, across the crossing.
+ *
+ * `1 - (1-t)^3` — a cubic ease-out. Its derivative is 3 at t = 0 and 0 at
+ * t = 1: the shape a spinner traces once let go, most of the turning early
+ * and a long freewheel after. Cubic rather than the quartic this started as,
+ * and fewer turns than it started with, because the faster curve span it hard
+ * enough to blur.
+ *
+ * It still returns exactly 1 at t = 1 — (1-1)^3 is exactly 0 in floating
+ * point — so multiplied by a whole number of turns the mark can still only
+ * come to rest on the logo's own orientation.
+ */
+const spinEase = (t: number) => 1 - Math.pow(1 - t, 3);
+
+/** The mark itself, with no notion of where it is — placing it is the
+ *  caller's job, and turning the boomerang is the voyage's. */
+function MarkShape({ spinRef }: { spinRef: React.RefObject<SVGGElement> }) {
   return (
-    <g className="roadmap-boat">
-      {/* A soft lamp-glow under the hull, and only that: it marks where the
-          employee is without tinting the boat. */}
-      <circle className="roadmap-boat-glow" r="14" filter="url(#roadmapRunnerGlow)" />
-      <g className="roadmap-boat-body">
-        {/* Rig first: the sail sits behind the mast, and both sit behind the
-            wheelhouse, so the mast reads as stepped on the cabin roof. */}
-        <path className="roadmap-boat-sail" d="M8.6,-30.6 L14.8,-17.2 L2.4,-17.2 Z" />
-        <path className="roadmap-boat-mast" d="M8.6,-14 L8.6,-31.6" />
-        <path className="roadmap-boat-spar" d="M4,-24.6 L13.4,-24.6" />
-        <ellipse className="roadmap-boat-lamp" cx="8.6" cy="-20.2" rx="2.3" ry="1.8" />
-        <path className="roadmap-boat-spar" d="M-5.4,-17 L-8.8,-19.8" />
-        <circle className="roadmap-boat-lamp" cx="-9.4" cy="-20.3" r="1.1" />
-
-        {/* Stern screen */}
-        <path className="roadmap-boat-screen" d="M15,-2.6 L15.4,-9.2 L20.8,-8.4 L20.6,-2.9 Z" />
-        <path className="roadmap-boat-screen-frame" d="M15,-2.6 L15.4,-9.2 L20.8,-8.4 L20.6,-2.9" />
-        <path className="roadmap-boat-screen-frame" d="M18,-8.8 L18,-2.75" />
-
-        {/* Hull, then the paint below the waterline clipped to it. */}
-        <path className="roadmap-boat-hull" d={BOAT_HULL} />
-        <rect
-          className="roadmap-boat-boot"
-          x="-26"
-          y="2.8"
-          width="50"
-          height="8"
-          clipPath="url(#roadmapBoatHull)"
-        />
-        <path className="roadmap-boat-strake" d="M-12,0.8 C-3,1.8 8,1.6 17.4,0.6" />
-        <circle className="roadmap-boat-port" cx="16.4" cy="0.4" r="1" />
-
-        {/* The life ring: the one warm note on the boat, and the only place
-            the page's accent colour touches it. Drawn before the sheer so the
-            gunwale cuts it into a dome. */}
-        <circle className="roadmap-boat-ring" cx="-7.6" cy="-3" r="3" />
-        <path className="roadmap-boat-sheer" d={BOAT_SHEER} />
-
-        {/* Stem post and bow bollard */}
-        <path className="roadmap-boat-stem" d="M-23.6,-7 L-22.3,-3" />
-        <rect
-          className="roadmap-boat-bollard"
-          x="-24.2"
-          y="-11.2"
-          width="3.4"
-          height="5.6"
-          rx="1.7"
-        />
-
-        {/* Wheelhouse */}
-        <rect className="roadmap-boat-cabin" x="-4.6" y="-15.6" width="17" height="13.2" rx="1" />
-        <rect className="roadmap-boat-cabin-roof" x="-6.6" y="-17.4" width="21" height="2.3" rx="1.15" />
-        <rect className="roadmap-boat-window" x="-3" y="-13.8" width="3.4" height="4" rx="0.9" />
-        <rect className="roadmap-boat-window" x="1" y="-13.8" width="3.4" height="4" rx="0.9" />
-        <rect className="roadmap-boat-window" x="5" y="-13.8" width="3.4" height="4" rx="0.9" />
-        <rect className="roadmap-boat-window" x="9.4" y="-13.2" width="1.9" height="6.6" rx="0.95" />
+    <g className="roadmap-mark">
+      {/* A soft glow under the disc, and only that: it marks where the
+          employee is without tinting the mark. */}
+      <circle className="roadmap-mark-glow" r={MARK_RADIUS + 3} filter="url(#roadmapRunnerGlow)" />
+      <circle className="roadmap-mark-disc" r={MARK_RADIUS} />
+      {/* The boomerang is its own group so the disc behind it stays put while
+          it turns. The transform is written by the voyage effect, never here —
+          one source of truth for its angle, the same rule the position
+          follows. */}
+      <g ref={spinRef}>
+        <path className="roadmap-mark-boomerang" d={MARK_BOOMERANG_PATH} />
       </g>
     </g>
   );
@@ -373,6 +342,8 @@ function RoadmapTrail({
   // getTotalLength/getPointAtLength are what move the boat.
   const routeRef = useRef<SVGPathElement>(null);
   const boatRef = useRef<SVGGElement>(null);
+  // The boomerang's own group, turned by the voyage effect below.
+  const spinRef = useRef<SVGGElement>(null);
   // The overlay, needed to turn the boat's position in the drawing into a
   // position on the page.
   const svgRef = useRef<SVGSVGElement>(null);
@@ -411,17 +382,17 @@ function RoadmapTrail({
     else if (legRef.current.to !== berth) legRef.current = { from: legRef.current.to, to: berth };
     const leg = legRef.current;
 
-    mooring = { x: pts[leg.to].x, y: pts[leg.to].y - BOAT_BERTH };
+    mooring = { x: pts[leg.to].x, y: pts[leg.to].y - MARK_BERTH };
 
     if (leg.from < leg.to) {
       // Both ends raised to mooring height: it casts off from where it was
-      // tied up and arrives at where it will tie up, so there is no BOAT_BERTH
+      // tied up and arrives at where it will tie up, so there is no MARK_BERTH
       // drop as it leaves and none as it lands. Every point between is on the
       // trail itself.
       const legPts = pts
         .slice(leg.from, leg.to + 1)
         .map((pt, k, all) =>
-          k === 0 || k === all.length - 1 ? { x: pt.x, y: pt.y - BOAT_BERTH } : pt,
+          k === 0 || k === all.length - 1 ? { x: pt.x, y: pt.y - MARK_BERTH } : pt,
         );
       // ONE continuous path: a single M followed by curves that each pick up
       // where the last left off. segmentPath emits its own M, which would give
@@ -457,6 +428,25 @@ function RoadmapTrail({
 
     const place = (x: number, y: number) => {
       boat.setAttribute('transform', `translate(${x},${y})`);
+    };
+
+    /**
+     * The boomerang's angle about the disc's centre.
+     *
+     * `rotate(deg)` with no centre argument turns about the current user-space
+     * origin, and the parent's translate() has already put that origin on the
+     * motion point — which is where the disc is drawn (cx/cy default to 0). So
+     * the pivot IS the blue circle's centre, exactly, with nothing to keep in
+     * sync.
+     *
+     * An earlier version slid the boomerang so its bounding-box centre sat on
+     * the disc's before turning. A bounding box has no relationship to the
+     * artwork, so that pivot was effectively an arbitrary point, and the slide
+     * added a second movement on top of the spin. Both are gone: it turns
+     * about the circle's centre and does nothing else.
+     */
+    const spinTo = (deg: number) => {
+      spinRef.current?.setAttribute('transform', `rotate(${deg})`);
     };
 
     /**
@@ -531,6 +521,7 @@ function RoadmapTrail({
     const moor = () => {
       if (!mooring) return unhook;
       place(mooring.x, mooring.y);
+      spinTo(0);
       if (!ledRef.current) {
         ledRef.current = true;
         follow(mooring.y);
@@ -551,12 +542,27 @@ function RoadmapTrail({
     const end = path.getPointAtLength(len);
     if (reduced) {
       place(end.x, end.y);
+      spinTo(0);
       follow(end.y);
       return unhook;
     }
 
     const dur =
       Math.min(BOAT_MAX_DUR, Math.max(BOAT_MIN_DUR, len / BOAT_SPEED)) * 1000;
+
+    /*
+     * A WHOLE number of turns, which is the whole trick.
+     *
+     * The spin is `eased * 360 * turns`, and `eased` is exactly 1 on the last
+     * frame, so the final angle is exactly 360 x turns — the same orientation
+     * as 0, i.e. the mark's rest position, to the degree. Spinning at a fixed
+     * rate for the travel's duration would instead stop wherever the clock
+     * happened to land and leave the boomerang crooked on the disc.
+     *
+     * Rounding to an integer is what keeps that true, so the turn count is
+     * derived from the duration and then rounded, never used as a fraction.
+     */
+    const turns = Math.max(SPIN_MIN_TURNS, Math.round((dur / 1000) * SPIN_TURNS_PER_SEC));
     // The clock starts on the FIRST FRAME, not here. requestAnimationFrame is
     // paused while the page is hidden, but performance.now() is not: timing
     // from effect time means a Tasks page opened in a background tab spends
@@ -572,12 +578,17 @@ function RoadmapTrail({
       const eased = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
       const p = path.getPointAtLength(eased * len);
       place(p.x, p.y);
+      // The spin runs on its own ease — the flick — while the position runs on
+      // the travel's. They share only the clock, and both land exactly on 1,
+      // so at t = 1 this is exactly 360 x turns: the logo, to the degree.
+      spinTo(spinEase(t) * 360 * turns);
       follow(p.y);
       if (t < 1) raf = requestAnimationFrame(tick);
     };
 
     const first = path.getPointAtLength(0);
     place(first.x, first.y);
+    spinTo(0);
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
@@ -605,11 +616,6 @@ function RoadmapTrail({
         <filter id="roadmapRunnerGlow" x="-200%" y="-200%" width="500%" height="500%">
           <feGaussianBlur stdDeviation="4.5" />
         </filter>
-        {/* The hull, reused as a clip so the paint below the waterline follows
-            it exactly — see BOAT_HULL. */}
-        <clipPath id="roadmapBoatHull">
-          <path d={BOAT_HULL} />
-        </clipPath>
       </defs>
 
       {segments.map((seg, i) => (
@@ -630,7 +636,7 @@ function RoadmapTrail({
           source of truth for where it is. */}
       <g className="roadmap-runner">
         <g ref={boatRef}>
-          <BoatShape />
+          <MarkShape spinRef={spinRef} />
         </g>
       </g>
     </svg>
