@@ -1,15 +1,19 @@
 import { useCallback } from 'react';
-import { useAuth } from '../auth/AuthContext';
 import { apiFetch } from './client';
 
-/** Every authenticated page uses this instead of apiFetch directly, so
- *  the current access token is always attached without repeating
- *  `token: accessToken` at every call site. */
+/**
+ * Every authenticated page used to pull `accessToken` from AuthContext
+ * and hand it to apiFetch. That indirection no longer exists — the
+ * access token lives in an HttpOnly cookie the browser attaches on
+ * its own — so this hook is now a thin passthrough. Kept as a stable
+ * import surface so callers don't have to churn: any page that used
+ * to call `useAuthedFetch()` still does, but the returned function
+ * now closes over nothing.
+ */
 export function useAuthedFetch() {
-  const { accessToken } = useAuth();
   return useCallback(
     <T,>(path: string, options: { method?: string; body?: unknown } = {}) =>
-      apiFetch<T>(path, { ...options, token: accessToken }),
-    [accessToken],
+      apiFetch<T>(path, options),
+    [],
   );
 }

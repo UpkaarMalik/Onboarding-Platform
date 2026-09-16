@@ -7,9 +7,12 @@ import ParticleNetwork from '../components/ParticleNetwork';
 
 interface AuthenticatedResult {
   status: 'authenticated';
-  accessToken: string;
-  refreshToken: string;
+  // No accessToken/refreshToken here anymore — the server sets both as
+  // HttpOnly cookies before this body is even parsed. `user` is the
+  // one thing the frontend needs from the login response.
   user: any;
+  absoluteExpiresAt: string;
+  idleExpiresAt: string;
 }
 
 type PasswordLoginResult =
@@ -40,7 +43,7 @@ type OtpStep = { name: 'phone' } | { name: 'verify'; preAuthToken: string };
  */
 export default function Login() {
   const navigate = useNavigate();
-  const { setAuthenticated } = useAuth();
+  const { setAuthenticatedUser } = useAuth();
 
   const [mode, setMode] = useState<Mode>('otp');
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +72,11 @@ export default function Login() {
   }
 
   function finishAuthenticated(result: AuthenticatedResult) {
-    setAuthenticated(result.accessToken, result.refreshToken, result.user);
+    // The three session cookies (access, refresh, csrf) are already on
+    // the browser at this point — the server put them in Set-Cookie on
+    // the login response. All the client has to do is remember who is
+    // signed in and route into the app.
+    setAuthenticatedUser(result.user);
     navigate('/');
   }
 
@@ -100,7 +107,7 @@ export default function Login() {
     try {
       const result = await apiFetch<PasswordLoginResult>('/auth/login/otp/verify', {
         method: 'POST',
-        token: otpStep.preAuthToken,
+        bearerToken: otpStep.preAuthToken,
         body: { code },
       });
       if (result.status === 'authenticated') {
@@ -125,7 +132,7 @@ export default function Login() {
     setResent(false);
     setBusy(true);
     try {
-      await apiFetch('/auth/login/otp/resend', { method: 'POST', token: otpStep.preAuthToken });
+      await apiFetch('/auth/login/otp/resend', { method: 'POST', bearerToken: otpStep.preAuthToken });
       setResent(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
@@ -165,7 +172,7 @@ export default function Login() {
     try {
       const result = await apiFetch<PasswordResetComplete>(
         '/auth/login/password/complete-reset',
-        { method: 'POST', token: passwordStep.preAuthToken, body: { newPassword } },
+        { method: 'POST', bearerToken: passwordStep.preAuthToken, body: { newPassword } },
       );
       // No tokens come back on purpose: back to the sign-in form, with
       // the Joinee ID prefilled so only the new password has to be typed.

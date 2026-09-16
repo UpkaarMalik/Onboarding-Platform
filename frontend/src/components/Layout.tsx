@@ -66,8 +66,13 @@ export default function Layout() {
   const navigate = useNavigate();
   const [navHover, setNavHover] = useState(false);
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    // Server-side logout revokes the session row and clears the three
+    // auth cookies. Awaiting the round trip means the browser's cookie
+    // jar is empty before we send them back to the login page — a
+    // click-then-refresh race can't leave the tab in a half-signed-in
+    // state where the cookies still exist but React state is gone.
+    await logout();
     navigate('/login');
   }
 

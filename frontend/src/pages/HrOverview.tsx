@@ -1095,7 +1095,6 @@ function EmployeeProfileModal({
   onChanged: () => void;
 }) {
   const authedFetch = useAuthedFetch();
-  const { accessToken } = useAuth();
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialSummary | null>(null);
@@ -1206,7 +1205,7 @@ function EmployeeProfileModal({
                     <span className="field-hint">{doc.original_filename} · uploaded {formatDate(doc.uploaded_at)}</span>
                     <div className="doc-list__actions">
                       <button type="button" onClick={() =>
-                        openFileInline(`/joinee-documents/uploads/${doc.upload_id}/file`, accessToken)
+                        openFileInline(`/joinee-documents/uploads/${doc.upload_id}/file`)
                           .catch(() => setError('Could not open document'))
                       }>Preview</button>
                       {doc.review_status === 'pending_review' && (
