@@ -809,9 +809,6 @@ button.danger:hover:not(:disabled) {
   overflow-x: clip;
   box-sizing: border-box;
 }
-.nav-hovered .app-main {
-  filter: blur(4px);
-}
 
 /* --- Sections / cards --- */
 section {
