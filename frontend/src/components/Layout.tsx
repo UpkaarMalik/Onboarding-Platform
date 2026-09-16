@@ -38,8 +38,9 @@ const NAV_TASK_OWNER: NavItem[] = [
 ];
 
 const NAV_SUPERADMIN: NavItem[] = [
+  // The roster that used to live at /hr/overview is now a section of the
+  // HR home, so it no longer earns its own tab.
   { to: '/hr', label: 'Home', icon: IC.home, end: true },
-  { to: '/hr/overview', label: 'Dashboard', icon: IC.dashboard },
   { to: '/events', label: 'Gallery', icon: IC.gallery },
   { to: '/documents', label: 'Policies', icon: IC.policies },
   { to: '/work-log', label: 'Diary', icon: IC.diary },

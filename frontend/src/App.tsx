@@ -6,7 +6,6 @@ import Login from './pages/Login';
 import StartHere from './pages/StartHere';
 import EmployeeTasks from './pages/EmployeeTasks';
 import HrDashboard from './pages/HrDashboard';
-import HrOverview from './pages/HrOverview';
 import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
 import Community from './pages/Community';
 import AdminNotes from './pages/AdminNotes';
@@ -46,10 +45,11 @@ export default function App() {
               </Route>
 
               <Route element={<ProtectedRoute allow={['superadmin_hr']} />}>
-                {/* /hr is where HR lands on login and is deliberately
-                    unchanged; /hr/overview is the new Dashboard roster. */}
+                {/* /hr is where HR lands on login and now carries the roster
+                    too. /hr/overview is kept only so old links and bookmarks
+                    land somewhere sensible instead of on a 404. */}
                 <Route path="/hr" element={<HrDashboard />} />
-                <Route path="/hr/overview" element={<HrOverview />} />
+                <Route path="/hr/overview" element={<Navigate to="/hr" replace />} />
                 <Route path="/notes-admin" element={<AdminNotes />} />
               </Route>
 

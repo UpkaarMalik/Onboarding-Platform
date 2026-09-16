@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError, openFileInline } from '../api/client';
-import { formatDate } from '../lib/format';
+import { formatDate, formatDateShort, todayIso } from '../lib/format';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
-import AnimatedProgressBar from '../components/AnimatedProgressBar';
 import OceanBanner from '../components/OceanBanner';
+import HrOverview, { CreateJoineeWizard, CustomSelect, type RosterFilter } from './HrOverview';
 
 interface Department {
   id: string;
@@ -77,13 +77,14 @@ interface EmployeeProfile {
   };
 }
 
-const PIPELINE_STAGES = [
-  { key: 'pre_onboarding', label: 'Pre-joining' },
-  { key: 'email_provisioned', label: 'Email' },
-  { key: 'checkpoint_pending', label: 'Checkpoint' },
-  { key: 'active', label: 'Active' },
-  { key: 'completed', label: 'Completed' },
-];
+
+/** ISO date `n` days before today, in the viewer's calendar. */
+function isoDaysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const pad = (v: number) => String(v).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 function greeting() {
   const hour = new Date().getHours();
@@ -132,6 +133,13 @@ export default function HrDashboard() {
     temporaryPassword: string;
   } | null>(null);
   const [provisionedEmail, setProvisionedEmail] = useState<string | null>(null);
+  /** Bumped whenever something below changes the roster, so the embedded
+   *  HrOverview refetches instead of showing a stale list. */
+  const [rosterReload, setRosterReload] = useState(0);
+  const [clockOpen, setClockOpen] = useState(false);
+  /* The cards scroll the roster into view rather than opening a panel that
+     shoves it down the page with no warning. */
+  const rosterRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     authedFetch<Department[]>('/departments')
@@ -144,7 +152,7 @@ export default function HrDashboard() {
     try {
       const [all, stuck, rating] = await Promise.all([
         authedFetch<{ data: any[]; total: number }>('/onboardings?limit=100'),
-        authedFetch<{ data: any[]; total: number }>('/onboardings/stuck?limit=5'),
+        authedFetch<{ data: any[]; total: number }>('/onboardings/stuck?limit=50'),
         authedFetch<{ average: number | null; count: number }>('/onboardings/ratings/summary'),
       ]);
       setOverviewRows(all.data);
@@ -164,229 +172,263 @@ export default function HrDashboard() {
 
   function refreshEverything() {
     void loadOverview();
+    setRosterReload((n) => n + 1);
   }
 
-  const newHiresCount = overviewRows.filter((o) =>
-    ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'].includes(o.status),
-  ).length;
-  const activeCount = overviewRows.filter((o) => o.status === 'active').length;
-  const stageCounts = PIPELINE_STAGES.map((stage) => ({
-    ...stage,
-    count: overviewRows.filter((o) => o.status === stage.key).length,
-  }));
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
+
+  /* The four home cards. "Joiners" counts every onboarding on record;
+     "recently joined" is a start date inside the trailing 15 days (today
+     included), which is the window HR treats as still-settling-in; "email
+     issued" takes the provisioned address when there is one and falls back to
+     the stage, because rows created before the provision flow existed carry a
+     later status with no address recorded against them. */
+  const totalJoiners = overviewRows.length;
+  const recentCutoff = isoDaysAgo(15);
+  const recentRows = overviewRows.filter(
+    (o) => o.start_date >= recentCutoff && o.start_date <= today,
+  );
+  const emailIssuedRows = overviewRows.filter(
+    (o) =>
+      !!o.company_email ||
+      ['email_provisioned', 'checkpoint_pending', 'active', 'completed'].includes(o.status),
+  );
+
+  /* /onboardings/stuck returns one row per stuck TASK. The other three cards
+     count people, so reading "13" next to "12 total joiners" said more people
+     were in trouble than exist. Collapse to distinct onboardings and describe
+     the tasks underneath.
+
+     A task counts as needing attention when ALL of these hold (the query is
+     OnboardingsService.listStuckTasks):
+       - the onboarding is still running (not completed, not cancelled)
+       - the task is required, and not completed or cancelled
+       - and it is either explicitly 'blocked', or past its due date
+
+     'locked' is deliberately excluded from the overdue half: a phase-2 task's
+     due date is computed from the start date at instantiation, so it can show
+     a past date before the checkpoint has even unlocked it. That is "not
+     started yet", not "stuck" (backend utils/overdue.util.ts). */
+  const attentionIds = new Set<string>(attention.map((t) => t.onboarding_id));
+  const attentionRows = overviewRows.filter((o) => attentionIds.has(o.id));
+  const blockedCount = attention.filter((t) => t.is_blocked).length;
+  const overdueCount = attention.length - blockedCount;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  /* Say which of the two it actually is. "13 blocked or overdue tasks" made
+     the reader guess, and left "13" looking unrelated to the 5 above it. */
+  const attentionDetail =
+    attention.length === 0
+      ? 'Everyone on track'
+      : blockedCount && overdueCount
+        ? `${plural(blockedCount, 'task')} blocked, ${overdueCount} overdue`
+        : blockedCount
+          ? `${plural(blockedCount, 'task')} blocked`
+          : `${plural(overdueCount, 'task')} past the due date`;
+
   const pipelineRows = overviewRows
     .filter((o) => o.status !== 'completed' && o.status !== 'cancelled' && o.start_date >= today)
     .filter((o) => !upcomingDeptFilter || o.department_id === upcomingDeptFilter);
 
   const ratedRows = overviewRows.filter((o) => o.experience_rating != null);
 
+  const HOME_CARDS = [
+    {
+      key: 'total',
+      icon: '👥',
+      tone: 'info' as const,
+      value: totalJoiners,
+      label: 'Total Joiners',
+      sub: 'Joiners on record',
+      rows: overviewRows,
+    },
+    {
+      key: 'recent',
+      icon: '🌱',
+      tone: 'success' as const,
+      value: recentRows.length,
+      label: 'Recently Joined',
+      sub: 'Joiners in the last 15 days',
+      rows: recentRows,
+    },
+    {
+      key: 'attention',
+      icon: '⚠️',
+      tone: 'danger' as const,
+      value: attentionRows.length,
+      label: 'Needs Attention',
+      sub: attentionDetail,
+      rows: attentionRows,
+    },
+    {
+      key: 'email',
+      icon: '✉️',
+      tone: 'accent' as const,
+      value: emailIssuedRows.length,
+      label: 'Email Issued',
+      sub: 'Joiners with a company address',
+      rows: emailIssuedRows,
+    },
+  ];
+
+  const activeCard = HOME_CARDS.find((c) => c.key === activeStatFilter) ?? null;
+  const rosterFilter: RosterFilter | null = activeCard
+    ? {
+        key: activeCard.key,
+        label: activeCard.label,
+        ids: new Set(activeCard.rows.map((o: any) => o.id)),
+      }
+    : null;
+
+  function pickCard(key: string) {
+    const next = activeStatFilter === key ? null : key;
+    setActiveStatFilter(next);
+    if (!next) return;
+    // Give React the frame it needs to render the chip before measuring, then
+    // only move the page if the roster is actually off-screen — scrolling to
+    // something already in view is a jolt with nothing gained.
+    requestAnimationFrame(() => {
+      const el = rosterRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      if (top > window.innerHeight * 0.75 || top < 0) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  }
+
+  const clockValue =
+    timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24;
+  const clockLabel = `${String(Math.floor(clockValue * 24) % 24).padStart(2, '0')}:${String(
+    Math.floor(((clockValue * 24) % 1) * 60),
+  ).padStart(2, '0')}`;
+
   return (
     <div className="hr-dashboard">
-      {/* Ocean banner with overlay */}
-      <div style={{ margin: '16px 0 0', borderRadius: 20, overflow: 'hidden', position: 'relative', height: 240 }}>
+      <div className="hr-hero">
         <OceanBanner height={240} timeOfDay={timeOfDay ?? undefined} animSpeed={sliderDragging ? 6 : 1} />
-        <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '24px 36px 32px', pointerEvents: 'none' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.9)', background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 6, padding: '4px 12px', letterSpacing: '0.5px' }}>HR / SuperAdmin</span>
+
+        <div className="hr-hero-clock">
+          {clockOpen ? (
+            <div className="hr-clock-panel">
+              <span>DAWN</span>
+              <input
+                type="range" min="0" max="1000"
+                value={Math.round(clockValue * 1000)}
+                onChange={(e) => setTimeOfDay(parseInt(e.target.value) / 1000)}
+                onMouseDown={() => setSliderDragging(true)} onMouseUp={() => setSliderDragging(false)}
+                onTouchStart={() => setSliderDragging(true)} onTouchEnd={() => setSliderDragging(false)}
+                aria-label="Time of day"
+              />
+              <span>NIGHT</span>
+              <button type="button" className="hr-clock-toggle" onClick={() => setClockOpen(false)} aria-label="Close time control">
+                {clockLabel}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="hr-clock-toggle"
+              onClick={() => setClockOpen(true)}
+              aria-expanded={false}
+              aria-label={`Scene time ${clockLabel}. Adjust`}
+            >
+              ☀ {clockLabel}
+            </button>
+          )}
+        </div>
+
+        <div className="hr-hero-overlay">
+          <span className="hr-hero-badge">HR / SuperAdmin</span>
+          <div className="hr-hero-row">
+            <h1 className="hr-hero-title">
+              {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{user?.full_name?.split(' ')[0] ?? 'there'}</span>
+            </h1>
+            <button type="button" className="hr-hero-cta" onClick={() => setShowAddJoiner(true)}>
+              <span className="hr-hero-cta-label">+ Create New Joinee</span>
+            </button>
           </div>
-          <h1 style={{ margin: 0, fontSize: 38, fontWeight: 800, color: '#fff', textShadow: '0 2px 20px rgba(0,0,0,0.35)' }}>
-            {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{user?.full_name?.split(' ')[0] ?? 'there'}</span>
-          </h1>
         </div>
       </div>
-
-      {/* Time-of-day slider */}
-      <div style={{ margin: '12px 0 0', background: '#fff', border: '1px solid #e8e4dc', borderRadius: 12, padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 16 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>DAWN</span>
-        <input
-          type="range" min="0" max="1000"
-          value={Math.round((timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24) * 1000)}
-          onChange={e => setTimeOfDay(parseInt(e.target.value) / 1000)}
-          onMouseDown={() => setSliderDragging(true)} onMouseUp={() => setSliderDragging(false)}
-          onTouchStart={() => setSliderDragging(true)} onTouchEnd={() => setSliderDragging(false)}
-          style={{ flex: 1, height: 4, borderRadius: 4, background: 'linear-gradient(90deg, #3a4a8a 0%, #6fa8d4 25%, #ffd27f 55%, #ff7e54 78%, #1a2244 100%)', outline: 'none', cursor: 'grab', WebkitAppearance: 'none', appearance: 'none' as never }}
-        />
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#999', letterSpacing: 1, whiteSpace: 'nowrap' }}>NIGHT</span>
-        <span style={{ fontSize: 12, fontWeight: 600, color: '#e8930c', minWidth: 44, textAlign: 'center' }}>
-          {(() => { const t = timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
-        </span>
-      </div>
-
-      {/* Description */}
-      <p style={{ margin: '10px 0 20px', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontSize: 15, color: '#4a4540', lineHeight: 1.6 }}>
-        Create joinees, manage onboarding access, track progress &amp; explore all HR features — right from here.
-      </p>
 
       {error && <p className="error-text">{error}</p>}
 
+      {/* Exactly two flex items: the bullet, and the whole sentence. Leaving
+          the words as bare text made every inline span its own flex item,
+          which on a phone broke the line into side-by-side columns. */}
+      <p className="hr-lede">
+        <span className="hr-lede-bullet" aria-hidden="true" />
+        <span className="hr-lede-text">
+          Create joinees, manage onboarding access, track progress
+          <span className="hr-lede-amp"> &amp; </span>
+          explore all HR features <span className="hr-lede-here">right from here.</span>
+        </span>
+      </p>
+
       <Reveal>
-        <div className="stat-grid">
-          <div
-            className="card stat-tile"
-            style={{ cursor: 'pointer', outline: activeStatFilter === 'new_hires' ? '2px solid #e8930c' : 'none' }}
-            onClick={() => setActiveStatFilter(activeStatFilter === 'new_hires' ? null : 'new_hires')}
-          >
-            <span className="stat-icon info">👋</span>
-            <div>
-              <div className="stat-value">{newHiresCount}</div>
-              <div className="stat-label">New hires</div>
-              <div className="stat-sub">Not yet active</div>
+        {/* One rectangle, two boxes. Each column owns its heading so the two
+            baselines line up, and the grid stretches them to equal height. */}
+        <div className="home-panels">
+          <div className="home-panel">
+            <div className="home-section-head">
+              <h2>At a glance</h2>
+            </div>
+            <div className="home-cards">
+              {HOME_CARDS.map((c) => (
+                <button
+                  type="button"
+                  key={c.key}
+                  className={`home-card home-card--${c.tone}${activeStatFilter === c.key ? ' is-active' : ''}`}
+                  aria-pressed={activeStatFilter === c.key}
+                  onClick={() => pickCard(c.key)}
+                >
+                  <span className={`home-card-icon ${c.tone}`} aria-hidden="true">{c.icon}</span>
+                  <span className="home-card-text">
+                    <span className="home-card-value">{c.value}</span>
+                    <span className="home-card-label">{c.label}</span>
+                    <span className="home-card-sub">{c.sub}</span>
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
-          <div
-            className="card stat-tile"
-            style={{ cursor: 'pointer', outline: activeStatFilter === 'active' ? '2px solid #e8930c' : 'none' }}
-            onClick={() => setActiveStatFilter(activeStatFilter === 'active' ? null : 'active')}
-          >
-            <span className="stat-icon success">✅</span>
-            <div>
-              <div className="stat-value">{activeCount}</div>
-              <div className="stat-label">Active</div>
-              <div className="stat-sub">Past checkpoint</div>
-            </div>
-          </div>
-          <div
-            className="card stat-tile"
-            style={{ cursor: 'pointer', outline: activeStatFilter === 'delayed' ? '2px solid #e8930c' : 'none' }}
-            onClick={() => setActiveStatFilter(activeStatFilter === 'delayed' ? null : 'delayed')}
-          >
-            <span className="stat-icon danger">⚠️</span>
-            <div>
-              <div className="stat-value">{stuckTotal}</div>
-              <div className="stat-label">Delayed</div>
-              <div className="stat-sub">Blocked or overdue tasks</div>
-            </div>
-          </div>
-          <div
-            className="card stat-tile"
-            style={{ cursor: 'pointer', outline: activeStatFilter === 'feedback' ? '2px solid #e8930c' : 'none' }}
-            onClick={() => setActiveStatFilter(activeStatFilter === 'feedback' ? null : 'feedback')}
-          >
-            <span className="stat-icon accent">⭐</span>
-            <div>
-              <div className="stat-value">
-                {ratingSummary.average !== null ? `${ratingSummary.average.toFixed(1)}/5` : '—'}
-              </div>
-              <div className="stat-label">First-week feedback</div>
-              <div className="stat-sub">
-                {ratingSummary.count} rating{ratingSummary.count === 1 ? '' : 's'}
+
+          <div className="home-panel">
+            <div className="home-section-head">
+              <h2>Upcoming joinees</h2>
+              {/* The same control as the roster's filters. A native <select>
+                  here could not reach a 44pt target (no pseudo-element) and
+                  was the one piece of unstyled chrome left on the page. */}
+              <div className="home-panel-filter">
+                <CustomSelect
+                  value={upcomingDeptFilter}
+                  onChange={setUpcomingDeptFilter}
+                  placeholder="All departments"
+                  options={[
+                    { value: '', label: 'All departments' },
+                    ...departments.map((d) => ({ value: d.id, label: d.name })),
+                  ]}
+                />
               </div>
             </div>
+            {pipelineRows.length === 0 ? (
+              <p className="home-events-empty">No joinees are due to start right now.</p>
+            ) : (
+              <EventsRail rows={pipelineRows} onPick={(id) => setProfileUserId(id)} />
+            )}
           </div>
         </div>
       </Reveal>
 
-      {activeStatFilter && (
-        <Reveal>
-          <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ margin: 0 }}>
-                {activeStatFilter === 'new_hires' && 'New hires — not yet active'}
-                {activeStatFilter === 'active' && 'Active onboardings'}
-                {activeStatFilter === 'delayed' && 'Delayed — blocked or overdue'}
-                {activeStatFilter === 'feedback' && 'First-week feedback summary'}
-              </h2>
-              <button style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => setActiveStatFilter(null)}>Close</button>
-            </div>
-            {activeStatFilter === 'feedback' ? (
-              <p style={{ color: 'var(--color-muted)', fontSize: 14 }}>
-                Average rating: <strong>{ratingSummary.average !== null ? `${ratingSummary.average.toFixed(1)}/5` : 'No ratings yet'}</strong> from {ratingSummary.count} response{ratingSummary.count === 1 ? '' : 's'}.
-              </p>
-            ) : (
-              (() => {
-                const filtered = activeStatFilter === 'new_hires'
-                  ? overviewRows.filter((o) => ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'].includes(o.status))
-                  : activeStatFilter === 'active'
-                    ? overviewRows.filter((o) => o.status === 'active')
-                    : attention;
-                return filtered.length === 0 ? (
-                  <p className="muted">No one in this category right now.</p>
-                ) : (
-                  filtered.map((o) => {
-                    if (activeStatFilter === 'delayed') {
-                      return (
-                        <div className="pipeline-row" key={o.task_id} style={{ cursor: 'default' }}>
-                          <span className="pipeline-name">{o.employee_name}</span>
-                          <span style={{ fontSize: 13, color: 'var(--color-muted)' }}>{o.task_title}</span>
-                          <span className={`status-pill ${o.is_blocked ? 'status-blocked' : 'status-cancelled'}`}>
-                            {o.is_blocked ? 'Blocked' : 'Overdue'}
-                          </span>
-                        </div>
-                      );
-                    }
-                    const pct = o.required_task_count > 0
-                      ? Math.round((o.required_task_completed_count / o.required_task_count) * 100) : 0;
-                    return (
-                      <div className="pipeline-row" key={o.id} onClick={() => setProfileUserId(o.user_id)}>
-                        <span className="pipeline-name">{o.employee_name}</span>
-                        <AnimatedProgressBar percent={pct} thin style={{ margin: 0 }} />
-                        <span className="pipeline-pct" style={{ color: pct > 0 ? '#e8930c' : undefined }}>{pct}%</span>
-                      </div>
-                    );
-                  })
-                );
-              })()
-            )}
-          </section>
-        </Reveal>
-      )}
-
-      <Reveal>
-        <section>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h2 style={{ margin: 0 }}>Upcoming onboardings</h2>
-            <div className="filters" style={{ margin: 0 }}>
-              <select
-                value={upcomingDeptFilter}
-                onChange={(e) => setUpcomingDeptFilter(e.target.value)}
-              >
-                <option value="">All departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {pipelineRows.length === 0 ? (
-            <p className="muted">No upcoming onboardings right now.</p>
-          ) : (
-            pipelineRows.map((o) => {
-              const pct =
-                o.required_task_count > 0
-                  ? Math.round((o.required_task_completed_count / o.required_task_count) * 100)
-                  : 0;
-              return (
-                <div className="pipeline-row" key={o.id} onClick={() => setProfileUserId(o.user_id)} style={{ gridTemplateColumns: 'minmax(120px,1fr) auto 3fr auto' }}>
-                  <span className="pipeline-name">{o.employee_name}</span>
-                  <span style={{ fontSize: 12, color: 'var(--color-muted)' }}>{o.department_name}</span>
-                  <AnimatedProgressBar percent={pct} thin style={{ margin: 0 }} />
-                  <span className="pipeline-pct" style={{ color: pct > 0 ? '#e8930c' : undefined }}>{pct}%</span>
-                </div>
-              );
-            })
-          )}
-        </section>
-      </Reveal>
-
-      {attention.length > 0 && (
-        <Reveal>
-          <section>
-            <h2>Needs attention</h2>
-            <ul className="attention-list">
-              {attention.map((t) => (
-                <li key={t.task_id}>
-                  <span className="attn-icon">⚠</span>
-                  <span>
-                    <strong>{t.employee_name}</strong> — {t.task_title} (
-                    {t.is_blocked ? 'blocked' : 'overdue'})
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </Reveal>
-      )}
+      {/* The roster IS the cards' drill-down: picking one narrows this list
+          and scrolls to it, instead of opening a second list above it. */}
+      <div ref={rosterRef}>
+        <HrOverview
+          embedded
+          reloadKey={rosterReload}
+          cardFilter={rosterFilter}
+          onClearCardFilter={() => setActiveStatFilter(null)}
+        />
+      </div>
 
       <Reveal>
         <section>
@@ -449,7 +491,7 @@ export default function HrDashboard() {
       )}
 
       {showAddJoiner && (
-        <AddJoinerModal
+        <CreateJoineeWizard
           departments={departments}
           onClose={() => setShowAddJoiner(false)}
           onCreated={(creds) => {
@@ -511,6 +553,116 @@ export default function HrDashboard() {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+/**
+ * The upcoming-joiners rail, on a slow loop.
+ *
+ * The list is rendered twice and the track is animated from 0 to -50%, so the
+ * moment the first copy scrolls out the second is exactly where it began and
+ * the wrap is invisible. Duration is derived from the number of entries rather
+ * than fixed, so the speed stays the same however many there are — a fixed
+ * duration would make a busy month race past.
+ *
+ * It only loops when there is more content than fits; four names that all fit
+ * on screen have no reason to move. Hover and keyboard focus pause it, because
+ * you cannot click a moving target, and `prefers-reduced-motion` stops it
+ * entirely (handled in CSS) leaving a normal scrollable list.
+ */
+function EventsRail({ rows, onPick }: { rows: any[]; onPick: (userId: string) => void }) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLUListElement>(null);
+  const [looping, setLooping] = useState(false);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const track = trackRef.current;
+    if (!viewport || !track) return;
+
+    /* CSS alone is not enough here. The reduced-motion block stops the
+       animation, but the clones are rendered by this component, so without
+       this check a reduced-motion reader would be handed a list with every
+       name in it twice. Read the preference and simply never loop. */
+    const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (calm.matches) {
+      setLooping(false);
+      const onChange = () => setLooping(false);
+      calm.addEventListener('change', onChange);
+      return () => calm.removeEventListener('change', onChange);
+    }
+
+    const measure = () => {
+      /* One "copy" is the N entries plus one trailing gap — that trailing gap
+         is what the next copy starts after, and it is exactly the distance
+         translateY(-50%) covers. Which means the sum has to be read
+         differently depending on whether the clones are on the page yet:
+         before the first loop starts they are not, and halving the height
+         then would report a list half its real size. */
+      const gap = parseFloat(getComputedStyle(track).rowGap) || 0;
+      const cloned = track.children.length > rows.length;
+      const oneCopy = cloned ? track.scrollHeight / 2 : track.scrollHeight + gap;
+
+      /* Hysteresis: it takes a clear overflow to start looping and a clear
+         fit to stop. Comparing against a single threshold lets a list sitting
+         right on the boundary flip on, grow by its clone, flip off, and
+         oscillate forever. */
+      setLooping((was) => (was ? oneCopy > viewport.clientHeight + 4 : oneCopy > viewport.clientHeight + 12));
+      // ~26px a second: slow enough to read a name as it passes.
+      setDuration(oneCopy / 26);
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(viewport);
+    ro.observe(track);
+    // Re-run the whole effect if the preference is switched on mid-session.
+    const onChange = () => setLooping(false);
+    calm.addEventListener('change', onChange);
+    return () => {
+      ro.disconnect();
+      calm.removeEventListener('change', onChange);
+    };
+  }, [rows.length]);
+
+  const item = (o: any, cloned: boolean) => (
+    <li key={`${o.id}${cloned ? '-clone' : ''}`} aria-hidden={cloned || undefined}>
+      <button
+        type="button"
+        className="home-event"
+        tabIndex={cloned ? -1 : undefined}
+        onClick={() => onPick(o.user_id)}
+      >
+        <span className="home-event-date">
+          <strong>{formatDateShort(o.start_date)?.split(' ')[0]}</strong>
+          <small>{formatDateShort(o.start_date)?.split(' ')[1]}</small>
+        </span>
+        <span className="home-event-text">
+          <strong>{o.employee_name} joins</strong>
+          <small>{o.department_name}</small>
+        </span>
+      </button>
+    </li>
+  );
+
+  return (
+    <div
+      className={`home-events-viewport${looping ? ' is-looping' : ''}`}
+      ref={viewportRef}
+    >
+      <ul
+        className="home-events"
+        ref={trackRef}
+        style={looping ? { animationDuration: `${duration}s` } : undefined}
+      >
+        {rows.map((o) => item(o, false))}
+        {/* The second copy is what makes the wrap seamless. It is hidden from
+            assistive tech and skipped by tabbing so nothing is announced or
+            reachable twice. */}
+        {looping && rows.map((o) => item(o, true))}
+      </ul>
     </div>
   );
 }

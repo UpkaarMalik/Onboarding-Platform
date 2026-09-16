@@ -16,7 +16,12 @@ input[type="range"]::-webkit-slider-thumb {
   --color-surface-alt: #fff8ec;
   --color-border: #ece3d3;
   --color-text: #1a1611;
-  --color-muted: #8a7f6f;
+  /* Secondary TEXT. The old value (#8a7f6f) measured 3.93:1 on white, which
+     fails WCAG AA for anything under 17pt — and nearly every use of it here is
+     10-13px. This one is 5.9:1. Use --color-muted-soft for decoration only
+     (hairlines, icon glyphs, disabled marks), never for words. */
+  --color-muted: #6f6558;
+  --color-muted-soft: #8a7f6f;
 
   --color-accent: #e88f30;
   --color-accent-dark: #df8417;
@@ -32,10 +37,45 @@ input[type="range"]::-webkit-slider-thumb {
   --color-warning: #c68a1f;
   --color-warning-bg: #fbf1de;
 
-  --radius-sm: 10px;
+  /* The *-bg tints above are backgrounds for the matching hue, so the hue
+     itself is far too light to sit on top of its own wash — amber on amber
+     wash measured 2.58:1. These are the same hues darkened until they clear
+     4.5:1 against their own tint, for pill and badge TEXT. */
+  --color-accent-ink: #9a5a08;
+  --color-info-ink: #2f6391;
+  --color-danger-ink: #a53729;
+  --color-success-ink: #1f7346;
+  --color-warning-ink: #8a5f14;
+
+  /* Type ramp. Eight steps, in px so they cannot drift into the 23 near
+     identical rem fractions this page grew. */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 15px;
+  --text-md: 17px;
+  --text-lg: 20px;
+  --text-xl: 28px;
+  --text-2xl: 38px;
+
+  /* 8pt grid. */
+  --space-1: 8px;
+  --space-2: 12px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 32px;
+  --space-6: 48px;
+
+  /* Three radii: controls, cards, pills. --radius-lg is kept pointing at the
+     card radius so the ~40 existing uses stay consistent rather than adding a
+     fourth value. */
+  --radius-sm: 8px;
   --radius-md: 16px;
-  --radius-lg: 22px;
+  --radius-lg: 16px;
   --radius-pill: 999px;
+
+  /* Minimum comfortable hit target (HIG: 44pt). */
+  --tap: 44px;
 
   --shadow-sm: 0 1px 2px rgba(26, 22, 17, 0.05), 0 1px 1px rgba(26, 22, 17, 0.04);
   --shadow-md: 0 6px 16px -4px rgba(26, 22, 17, 0.1), 0 2px 6px -2px rgba(26, 22, 17, 0.06);
@@ -2227,10 +2267,10 @@ li:hover .checkbox-mark {
 
 .id-pill {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--color-accent-dark);
+  color: var(--color-accent-ink);
   background: var(--color-amber-wash);
   border: 1px solid var(--color-amber-line);
   border-radius: var(--radius-sm);
@@ -2239,11 +2279,11 @@ li:hover .checkbox-mark {
 }
 .dept-pill {
   display: inline-block;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.07em;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-ink-soft);
+  color: var(--color-muted);
   background: #f4efe7;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
@@ -2252,29 +2292,35 @@ li:hover .checkbox-mark {
 }
 .state-pill {
   display: inline-block;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   border-radius: var(--radius-pill);
   padding: 0.26rem 0.66rem;
   white-space: nowrap;
 }
+/* Each state gets its own hue plus a matching hairline. Pending used to be
+   grey-on-grey, which read as "no status at all" next to the coloured ones. */
 .state-pill--pending {
-  background: #f2efe9;
-  color: var(--color-ink-soft);
+  background: var(--color-warning-bg);
+  color: var(--color-warning-ink);
+  border: 1px solid rgba(138, 95, 20, 0.3);
 }
 .state-pill--progress {
   background: var(--color-info-bg);
-  color: var(--color-info);
+  color: var(--color-info-ink);
+  border: 1px solid rgba(47, 99, 145, 0.3);
 }
 .state-pill--done {
   background: var(--color-success-bg);
-  color: var(--color-success);
+  color: var(--color-success-ink);
+  border: 1px solid rgba(31, 115, 70, 0.3);
 }
 .state-pill--closed {
   background: var(--color-danger-bg);
-  color: var(--color-danger);
+  color: var(--color-danger-ink);
+  border: 1px solid rgba(165, 55, 41, 0.3);
 }
 
 /* status-pill variants the task/onboarding states rely on */
@@ -3350,43 +3396,212 @@ li:hover .checkbox-mark {
 
 /* A grid rather than a <table> so rows can animate and hold a two-line
    joinee cell without fighting table layout. */
+/* Rows read as a table, not as a stack of floating cards: one surface with
+   hairline dividers. The card-per-row treatment put four borders inside
+   40px of travel and flattened the real hierarchy. */
 .roster {
-  background: var(--color-surface-alt);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 0.5rem;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
+/* Every column is a proportional share with a minimum, rather than seven
+   hand-picked pixel widths — the old set left Joinee cramped while Status
+   and Actions carried dead space, and none of it reflowed. */
 .roster-head,
 .roster-row {
   display: grid;
-  grid-template-columns: minmax(190px, 2.2fr) 120px 120px 110px 120px 110px 100px;
+  grid-template-columns:
+    minmax(200px, 2.4fr)   /* joinee */
+    minmax(110px, 1fr)     /* id */
+    minmax(110px, 1fr)     /* department */
+    minmax(105px, 1fr)     /* joining date */
+    minmax(120px, 1.2fr)   /* tasks done */
+    minmax(105px, 1fr)     /* status */
+    minmax(184px, 0);      /* actions: profile button + the labelled switch */
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.7rem 0.9rem;
-  min-width: 940px;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  min-width: 1060px;
 }
 .roster-head {
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.09em;
+  height: 38px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-muted);
+  background: var(--color-surface-alt);
+  border-bottom: 1px solid var(--color-border);
 }
 .roster-row {
-  background: var(--color-surface);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  margin-bottom: 0.4rem;
+  min-height: 56px;
+  border-bottom: 1px solid var(--color-border);
   animation: fadeInUp 0.4s var(--ease) backwards;
   animation-delay: calc(var(--row, 0) * 0.045s);
-  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease),
-    border-color 0.18s var(--ease);
+  transition: background 0.15s var(--ease);
+}
+.roster-row:last-of-type {
+  border-bottom: none;
 }
 .roster-row:hover {
-  transform: translateY(-2px);
+  background: var(--color-amber-wash);
+}
+.roster-row[role='button'] {
+  cursor: pointer;
+}
+.roster-row[role='button']:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+/* Headings are centred over their columns — and so is the content under
+   them, because a centred label above left-aligned data is the misalignment
+   this table already had once. The two have to move together. */
+.roster-head span,
+.roster-row > span:not(.roster-joinee) {
+  text-align: center;
+}
+.roster-row > span > .id-pill,
+.roster-row > span > .dept-pill,
+.roster-row > span > .state-pill {
+  /* The pills are inline-block, so text-align on the cell centres them. */
+  margin: 0 auto;
+}
+/* Joinee is the exception, deliberately. Centring an avatar + two-line name
+   block would stop the avatars lining up down the list and take away the
+   straight left edge you scan names against, so this column stays left —
+   header and content together. The offset puts the label over the NAME
+   rather than over the avatar. */
+/* Qualified on purpose: bare `.rh-joinee` loses to `.roster-head span`
+   above (0,1,0 against 0,1,1), which centred this heading inside its own
+   left padding and pushed it 59px off the names. */
+.roster-head .rh-joinee {
+  text-align: left;
+  padding-left: calc(34px + 14px); /* avatar width + .roster-joinee gap */
+}
+.roster-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.row-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  color: var(--color-muted);
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+/* Kept visually compact, but padded out to a 44pt target. */
+.row-icon-btn::after,
+.row-switch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--tap));
+  height: var(--tap);
+  transform: translate(-50%, -50%);
+}
+.row-icon-btn:hover {
+  color: var(--color-accent-ink);
   border-color: var(--color-amber-line);
-  box-shadow: var(--shadow-md);
+  background: var(--color-amber-wash);
+}
+.row-icon-btn:focus-visible,
+.row-switch:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* A switch, labelled with the state it is in. On: green track, knob right,
+   the word "Enabled". Off: grey track, knob left, "Disabled". Every signal
+   points the same way, which the previous green-switch-plus-the-word-
+   "Disable" version did not. */
+.row-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px 0 8px;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-success-ink);
+  background: var(--color-success-bg);
+  border: 1px solid rgba(31, 115, 70, 0.28);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+.row-switch.is-off {
+  color: var(--color-muted);
+  background: #f2efe9;
+  border-color: var(--color-border);
+}
+.row-switch:hover:not(:disabled) {
+  border-color: var(--color-success);
+}
+.row-switch.is-off:hover:not(:disabled) {
+  border-color: var(--color-muted);
+}
+.row-switch:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.row-switch-label {
+  min-width: 52px;
+  text-align: left;
+}
+.row-switch-track {
+  width: 26px;
+  height: 15px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--color-success);
+  position: relative;
+  transition: background 0.18s var(--ease);
+}
+.row-switch.is-off .row-switch-track {
+  background: #c6bdae;
+}
+.row-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 13px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: left 0.18s var(--ease);
+}
+.row-switch.is-off .row-switch-knob {
+  left: 2px;
+}
+
+/* A suspended joinee reads as suspended without having to find the switch. */
+.roster-row.is-disabled .roster-joinee-text strong,
+.roster-row.is-disabled .roster-date {
+  color: var(--color-muted);
+}
+.roster-row.is-disabled .roster-avatar,
+.roster-row.is-disabled .id-pill,
+.roster-row.is-disabled .dept-pill,
+.roster-row.is-disabled .state-pill,
+.roster-row.is-disabled .roster-progress {
+  filter: grayscale(1);
+  opacity: 0.75;
 }
 .roster-row.is-skeleton {
   padding: 1.25rem 0.9rem;
@@ -3399,8 +3614,8 @@ li:hover .checkbox-mark {
   min-width: 0;
 }
 .roster-avatar {
-  width: 2.3rem;
-  height: 2.3rem;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--gradient-accent);
@@ -3426,31 +3641,37 @@ li:hover .checkbox-mark {
   min-width: 0;
 }
 .roster-joinee-text strong {
-  font-size: 0.92rem;
+  font-size: var(--text-base);
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .roster-joinee-text small {
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--color-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .roster-date {
-  font-size: 0.86rem;
-  color: var(--color-ink-soft);
+  font-size: var(--text-sm);
+  color: var(--color-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 .roster-progress {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
 }
 .roster-progress-track {
-  flex: 1;
+  /* Fixed rather than flex:1. Growing to fill left the bar hard against the
+     column's left edge with the count floating right, so the pair could not
+     be centred as a unit under its heading. */
+  flex: 0 0 72px;
   height: 0.36rem;
   border-radius: var(--radius-pill);
   background: #efe8dd;
@@ -3466,34 +3687,26 @@ li:hover .checkbox-mark {
 .roster-progress-fill.is-done {
   background: var(--color-success);
 }
+.roster-progress-fill.is-progress {
+  background: var(--color-info);
+}
 .roster-progress-fill.is-pending {
-  background: #d9cfc0;
+  background: var(--color-warning);
+}
+.roster-progress-fill.is-closed {
+  background: var(--color-danger);
 }
 .roster-progress small {
-  font-size: 0.76rem;
+  font-size: var(--text-xs);
   color: var(--color-muted);
   white-space: nowrap;
-}
-.roster-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.6rem;
-}
-.btn-close-row {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  border-color: var(--color-danger);
-  font-size: 0.78rem;
-  padding: 0.4rem 0.8rem;
-}
-.btn-close-row:hover:not(:disabled) {
-  background: var(--color-danger);
-  color: #fff;
+  font-variant-numeric: tabular-nums;
 }
 .roster-empty {
-  padding: 2.5rem 1rem;
+  padding: var(--space-6) var(--space-3);
   text-align: center;
   color: var(--color-muted);
+  font-size: var(--text-sm);
 }
 .roster-foot {
   font-size: 0.8rem;
@@ -5840,6 +6053,42 @@ li:hover .checkbox-mark {
   .spinner {
     animation: none !important;
   }
+  /* `animation: none` above leaves transitions and hover transforms running,
+     which is most of the movement on the HR home. */
+  /* The marquee stops dead and the rail becomes an ordinary scroll list —
+     the clone stays hidden from assistive tech either way. */
+  .home-events-viewport.is-looping {
+    overflow-y: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .home-events-viewport.is-looping .home-events {
+    animation: none !important;
+  }
+  .hr-hero-cta-label,
+  .hr-lede::before,
+  .hr-lede-here {
+    animation: none !important;
+  }
+  /* Without the cycle it would be stuck at the keyframe's 55% opacity. */
+  .hr-lede-here {
+    opacity: 1;
+  }
+  .home-card,
+  .home-event,
+  .hr-hero-cta,
+  .roster-row,
+  .pager-btn,
+  .stat-card,
+  .search-field,
+  .home-card:hover,
+  .home-event:hover,
+  .hr-hero-cta:hover,
+  .roster-row:hover,
+  .stat-card:hover {
+    transition: none !important;
+    transform: none !important;
+  }
 }
 
 /* ─── Custom Select ──────────────────────────────────── */
@@ -5935,4 +6184,966 @@ li:hover .checkbox-mark {
   font-weight: 600;
   border-radius: var(--radius-sm);
   background: var(--color-surface);
+}
+
+/* ============================================================
+   HR home — hero, summary cards, embedded roster
+
+   Depth is meaning here, not decoration: the page is flat, one level of
+   card, and nothing is a bordered box inside a bordered box. Sizes come
+   from the --text-* ramp and spacing from the 8pt --space-* scale so the
+   page cannot drift back into twenty-three near-identical font sizes.
+   ============================================================ */
+.hr-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+/* --- hero --- */
+.hr-hero {
+  position: relative;
+  margin-top: var(--space-1);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.hr-hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  /* The banner underneath is draggable, so the overlay lets pointer events
+     through and only the controls take them back. */
+  pointer-events: none;
+}
+.hr-hero-badge {
+  align-self: flex-start;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: rgba(20, 30, 45, 0.42);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+}
+.hr-hero-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.hr-hero-title {
+  margin: 0;
+  font-size: clamp(var(--text-lg), 3vw, var(--text-2xl));
+  font-weight: 800;
+  line-height: 1.1;
+  color: #fff;
+  text-shadow: 0 2px 20px rgba(0, 0, 0, 0.45);
+}
+/* A rounded rectangle rather than a full pill, with the label on a slow
+   breathing glow so it draws the eye against the moving banner behind it. */
+.hr-hero-cta {
+  flex-shrink: 0;
+  pointer-events: auto;
+  min-height: var(--tap);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: #fff;
+  background: var(--gradient-accent);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 14px;
+  padding: 0 var(--space-4);
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.55);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease),
+    filter 0.18s var(--ease);
+}
+/* The glow is on the TEXT, so it reads as the words lighting up rather than
+   the whole button pulsing — animating text-shadow alone also stays off the
+   compositor's critical path. */
+.hr-hero-cta-label {
+  animation: ctaGlow 2.6s var(--ease) infinite;
+}
+@keyframes ctaGlow {
+  0%,
+  100% {
+    text-shadow: 0 0 6px rgba(255, 255, 255, 0.35), 0 1px 2px rgba(120, 60, 0, 0.35);
+  }
+  50% {
+    text-shadow: 0 0 14px rgba(255, 255, 255, 0.95), 0 0 26px rgba(255, 224, 178, 0.7),
+      0 1px 2px rgba(120, 60, 0, 0.35);
+  }
+}
+.hr-hero-cta:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+  box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.6);
+}
+/* Once the pointer is on it there is nothing left to attract, so it settles. */
+.hr-hero-cta:hover .hr-hero-cta-label {
+  animation-play-state: paused;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.9), 0 1px 2px rgba(120, 60, 0, 0.35);
+}
+.hr-hero-cta:active {
+  transform: translateY(0);
+}
+.hr-hero-cta:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+/* The time-of-day control used to be a full-width bar between the banner and
+   the data. It is a toy, not a tool, so it folds into the banner's own corner
+   and only opens when asked for. */
+.hr-hero-clock {
+  pointer-events: auto;
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-4);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.hr-clock-toggle {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgba(20, 30, 45, 0.42);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-pill);
+  padding: 0 12px;
+  cursor: pointer;
+  transition: background 0.18s var(--ease);
+}
+.hr-clock-toggle:hover {
+  background: rgba(20, 30, 45, 0.62);
+}
+.hr-clock-toggle:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.hr-clock-panel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: rgba(20, 30, 45, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+}
+.hr-clock-panel span {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.85);
+}
+.hr-clock-panel input[type='range'] {
+  width: 130px;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #3a4a8a 0%, #6fa8d4 25%, #ffd27f 55%, #ff7e54 78%, #1a2244 100%);
+  outline: none;
+  cursor: grab;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* --- summary cards ---
+   A plain grid, not a bordered panel wrapping bordered panels. */
+.home-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+.home-section-head h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+.home-section-note {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+.home-panel-select {
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  min-height: 32px;
+  max-width: 11rem;
+  padding: 0 28px 0 10px;
+  color: var(--color-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%236f6558' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px 6px;
+}
+.home-panel-select:hover {
+  border-color: var(--color-amber-line);
+}
+.home-panel-select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+/* The rectangle: one outer surface holding the two boxes. `stretch` (the
+   grid default) rather than `start` is what makes the columns equal height,
+   and each panel is a column so its list can take the leftover room instead
+   of leaving a ragged gap under the shorter one. */
+.home-panels {
+  /* The CARDS decide how tall this row is. Without the cap below, a long
+     events list set the height instead and the cards stretched to match it —
+     222px tall for one number. Capping the rail at exactly two card rows
+     makes both columns want the same height, so the grid's stretch lands them
+     level with the cards at their natural size and the rail scrolling inside. */
+  --home-card-row: 136px;
+  --home-card-gap: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: stretch;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.home-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.home-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* A floor, not a fixed height, so the cards keep the generous proportions
+     they started with. */
+  grid-auto-rows: minmax(var(--home-card-row), 1fr);
+  gap: var(--home-card-gap);
+  flex: 1;
+}
+.home-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  text-align: left;
+  font-family: inherit;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-md);
+  padding: 17px 18px;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease),
+    border-color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.home-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-amber-line);
+}
+.home-card:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.home-card.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-amber-wash);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+.home-card-icon {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-md);
+}
+.home-card-icon.info { background: var(--color-info-bg); color: var(--color-info-ink); }
+.home-card-icon.success { background: var(--color-success-bg); color: var(--color-success-ink); }
+.home-card-icon.danger { background: var(--color-danger-bg); color: var(--color-danger-ink); }
+.home-card-icon.accent { background: var(--color-amber-wash); color: var(--color-accent-ink); }
+.home-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.home-card-value {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.home-card--info .home-card-value { color: var(--color-info-ink); }
+.home-card--success .home-card-value { color: var(--color-success-ink); }
+.home-card--danger .home-card-value { color: var(--color-danger-ink); }
+.home-card--accent .home-card-value { color: var(--color-accent-ink); }
+.home-card-label {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text);
+}
+.home-card-sub {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  line-height: 1.35;
+}
+
+/* --- upcoming joinees rail --- */
+/* Takes the height the cards column sets, so the two boxes always end level
+   however many events there are. The viewport clips; the track inside moves. */
+.home-events-viewport {
+  flex: 1;
+  min-height: 0;
+  max-height: calc(var(--home-card-row) * 2 + var(--home-card-gap));
+  overflow: hidden;
+  position: relative;
+}
+/* Only once it is actually looping: the edges soften so entries arrive and
+   leave rather than being sliced off by a hard border. */
+.home-events-viewport.is-looping {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 18px,
+    #000 calc(100% - 18px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 18px,
+    #000 calc(100% - 18px),
+    transparent 100%
+  );
+}
+.home-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+/* -50% lands exactly on the start of the second copy, which is identical to
+   the first, so the reset is invisible. Duration is set per-instance in JS
+   from the content height to hold a steady ~26px/s. */
+.home-events-viewport.is-looping .home-events {
+  animation: eventsMarquee linear infinite;
+  /* The gap between the two copies has to be paid back, or the seam jumps. */
+  padding-bottom: var(--space-1);
+}
+@keyframes eventsMarquee {
+  from { transform: translateY(0); }
+  to { transform: translateY(-50%); }
+}
+/* You cannot click a moving target. */
+.home-events-viewport:hover .home-events,
+.home-events-viewport:focus-within .home-events {
+  animation-play-state: paused;
+}
+/* Not looping (few enough to fit, or motion is off): a plain scroll list. */
+.home-events-viewport:not(.is-looping) {
+  overflow-y: auto;
+}
+.home-event {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap);
+  flex-shrink: 0;
+  text-align: left;
+  font-family: inherit;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  transition: transform 0.18s var(--ease), border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+.home-event:hover {
+  transform: translateX(2px);
+  border-color: var(--color-amber-line);
+  box-shadow: var(--shadow-sm);
+}
+.home-event:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.home-event-date {
+  flex-shrink: 0;
+  width: 42px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.05;
+  color: var(--color-accent-ink);
+  background: var(--color-amber-wash);
+  border-radius: var(--radius-sm);
+  padding: 5px 0;
+}
+.home-event-date strong {
+  font-size: var(--text-base);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.home-event-date small {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.home-event-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.home-event-text strong {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-event-text small {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-events-empty {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+/* --- roster: ONE card, with its own search and filters in the header --- */
+.overview--embedded {
+  gap: 0;
+  scroll-margin-top: var(--space-4);
+}
+.roster-shell {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.roster-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.roster-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.roster-heading h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+.roster-count {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.roster-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.roster-toolbar-row .search-field {
+  flex: 1 1 260px;
+}
+
+/* The card filter, shaped exactly like the two selects beside it — same
+   height, radius, border, weight — so the toolbar reads as one row of
+   filters. Amber only marks it as the one that is currently set. */
+.roster-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-accent-ink);
+  background: var(--color-amber-wash);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.roster-filter-chip:hover {
+  background: #fbe6d4;
+}
+.roster-filter-chip:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.roster-filter-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
+/* --- Search field ---
+   A recessed well rather than a raised box: an inset hairline and a tint
+   darker than the card make it read as somewhere to type, and focus lifts it
+   onto the surface with the accent ring. The icon nudges left and the caret
+   with it, the way the system search fields do. */
+.search-field--apple {
+  background: #f2f0eb;
+  border: 1px solid transparent;
+  box-shadow: inset 0 1px 2px rgba(26, 22, 17, 0.07);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2) 0 14px;
+  min-height: var(--tap);
+  transition: background 0.2s var(--ease), border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+.search-field--apple:hover {
+  background: #ece9e3;
+}
+.search-field--apple:focus-within {
+  background: var(--color-surface);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3.5px rgba(232, 143, 48, 0.16);
+}
+.search-field--apple svg {
+  width: 15px;
+  height: 15px;
+  transition: color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.search-field--apple:focus-within svg {
+  color: var(--color-accent-ink);
+  transform: scale(1.05);
+}
+.search-field--apple input {
+  font-size: var(--text-base);
+  padding: 0;
+  align-self: stretch;
+}
+.search-field--apple input::placeholder {
+  color: var(--color-muted);
+}
+/* The clear button only exists while there is something to clear, so it
+   fades in rather than appearing under the cursor. */
+.search-field--apple .search-clear {
+  animation: fadeInUp 0.15s var(--ease);
+}
+.search-field--apple .search-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: #b7b0a5;
+  transition: color 0.15s var(--ease);
+}
+.search-field--apple .search-clear:hover {
+  color: var(--color-muted);
+}
+.search-field--apple .search-clear svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* --- roster pagination --- */
+.roster-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+.roster-pager-info {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+.roster-pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.pager-btn {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  padding: 0 var(--space-1);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+}
+.pager-btn:hover:not(:disabled):not(.is-current) {
+  background: var(--color-amber-wash);
+  color: var(--color-accent-ink);
+}
+.pager-btn.is-current {
+  background: var(--gradient-accent);
+  color: #fff;
+  cursor: default;
+}
+.pager-btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.pager-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.pager-gap {
+  color: var(--color-muted);
+  padding: 0 2px;
+  font-size: var(--text-sm);
+}
+
+/* ============================================================
+   HR home — responsive
+   ============================================================ */
+@media (min-width: 1041px) and (max-width: 1280px) {
+  .home-panels {
+    grid-template-columns: minmax(0, 1.95fr) minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+}
+@media (max-width: 1040px) {
+  .home-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Stacked, there is no neighbour to match, so the rail gets a cap again
+     rather than growing without limit. */
+  .home-events-viewport {
+    max-height: 224px;
+  }
+}
+@media (max-width: 760px) {
+  .hr-dashboard {
+    gap: var(--space-3);
+  }
+  .home-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hr-hero-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .hr-hero-cta {
+    width: 100%;
+  }
+  .hr-hero-clock {
+    top: var(--space-1);
+    right: var(--space-2);
+  }
+  .hr-clock-panel input[type='range'] {
+    width: 90px;
+  }
+  .roster-pager {
+    justify-content: center;
+  }
+  .roster-pager-info {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+
+/* ============================================================
+   Shell — narrow viewports
+   The sidebar is a fixed 300px with .app-main offset by the same amount,
+   which leaves a phone about 75px of page. Below 900px it drops to an icon
+   rail; the labels are bare text nodes inside .sb-link, so font-size: 0 on
+   the link is what hides them without touching the markup. Desktop is
+   untouched.
+   ============================================================ */
+@media (max-width: 900px) {
+  .sb {
+    width: 68px;
+    padding: 20px 8px;
+    align-items: center;
+  }
+  .sb-brand {
+    justify-content: center;
+    margin-bottom: 18px;
+  }
+  .sb-brand > div:last-child,
+  .sb-user > div:last-child {
+    display: none;
+  }
+  .sb-logo {
+    width: 34px;
+    height: 34px;
+    font-size: 14px;
+  }
+  .sb-nav {
+    width: 100%;
+  }
+  .sb-link {
+    justify-content: center;
+    gap: 0;
+    padding: 11px 0;
+    font-size: 0;
+  }
+  .sb-link svg {
+    width: 20px;
+    height: 20px;
+  }
+  .sb-footer {
+    width: 100%;
+    align-items: center;
+  }
+  .sb-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+  .sb-signout {
+    font-size: 11px;
+  }
+  .app-main {
+    margin-left: 68px;
+    max-width: calc(100vw - 68px);
+    padding: 0 16px;
+  }
+}
+
+/* Visible to screen readers only — used where a number on screen carries its
+   unit from the column header rather than from the cell. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   Hit targets — HIG asks for 44pt
+
+   Three of these controls are deliberately small on screen (a disclosure in
+   the banner corner, a chip's clear button, a compact filter). A transparent
+   ::after pad brings the TARGET to 44 without inflating the visual, which is
+   the standard way to keep a control small and still hittable.
+   ============================================================ */
+.hr-clock-toggle,
+.home-panel-select,
+.roster-chip button,
+.search-field .search-clear {
+  position: relative;
+}
+.hr-clock-toggle::after,
+.roster-chip button::after,
+.search-field .search-clear::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--tap));
+  height: var(--tap);
+  transform: translate(-50%, -50%);
+}
+/* A <select> cannot carry a pseudo-element, so this one grows for real. */
+.home-panel-select {
+  min-height: 36px;
+}
+
+/* The roster's own filters sit next to a 44px search field; matching it keeps
+   the toolbar on one optical line and clears the target floor. */
+.roster-toolbar .custom-select__trigger {
+  min-height: var(--tap);
+  padding: 0 16px;
+  font-size: var(--text-sm);
+  border-radius: var(--radius-pill);
+}
+.roster-toolbar .custom-select__trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Sections below the roster inherited the old ad-hoc sizes. */
+.hr-dashboard section h2 {
+  font-size: var(--text-md);
+}
+.hr-dashboard section .muted {
+  font-size: var(--text-sm);
+}
+.roster-avatar {
+  font-size: var(--text-sm);
+}
+
+/* The events filter uses the roster's select so the two read as one system. */
+.home-panel-filter .custom-select__trigger {
+  min-height: var(--tap);
+  padding: 0 14px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.home-panel-filter .custom-select__trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* The page's one line of prose, in a rounded card of its own with a highlight
+   that travels left to right across it. Same Playfair italic as the greeting
+   in the banner, so the two bookend the hero. */
+.hr-lede {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 20px;
+  border-radius: 16px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-amber-line);
+  box-shadow: var(--shadow-sm);
+  font-family: 'Playfair Display', 'Outfit', serif;
+  font-style: italic;
+  font-size: var(--text-md);
+  line-height: 1.55;
+  letter-spacing: 0.005em;
+  color: #5c5348;
+  /* Keeps the sweep inside the rounded corners. */
+  overflow: hidden;
+  isolation: isolate;
+}
+/* The travelling highlight: a soft band wider than it is bright, moved across
+   the box on a long cycle. It sits BEHIND the words (z-index -1 against the
+   isolated stacking context) so the text stays fully legible as it passes —
+   a band drawn over the text would wash it out twice a cycle. */
+.hr-lede::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 35%,
+    rgba(255, 255, 255, 0.85) 48%,
+    rgba(250, 214, 165, 0.55) 54%,
+    rgba(255, 255, 255, 0) 68%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: ledeSweep 5.5s linear infinite;
+}
+@keyframes ledeSweep {
+  from { background-position: -120% 0; }
+  to { background-position: 220% 0; }
+}
+/* A bullet, not a dash. Sized and nudged to sit on the first line's optical
+   centre rather than its baseline. */
+.hr-lede-bullet {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  box-shadow: 0 0 0 3px rgba(232, 143, 48, 0.16);
+  transform: translateY(-4px);
+}
+
+/* The closing phrase pulses: amber, with a glow that swells as it brightens
+   so it reads as lighting up rather than merely flicking on and off. The
+   cycle is 1.8s — about 0.55Hz, far below the 3-per-second flash threshold
+   that WCAG 2.3.1 sets, and the dip stops well short of invisible so the
+   words stay readable at every point in the cycle. */
+.hr-lede-here {
+  color: var(--color-accent-dark);
+  font-weight: 600;
+  font-style: italic;
+  white-space: nowrap;
+  animation: ledeHereBlink 1.8s var(--ease) infinite;
+}
+@keyframes ledeHereBlink {
+  0%,
+  100% {
+    opacity: 0.55;
+    text-shadow: none;
+  }
+  50% {
+    opacity: 1;
+    text-shadow: 0 0 10px rgba(232, 143, 48, 0.75), 0 0 20px rgba(232, 143, 48, 0.4);
+  }
+}
+.hr-lede-text {
+  min-width: 0;
+}
+.hr-lede-amp {
+  color: var(--color-accent-dark);
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .hr-lede {
+    font-size: var(--text-base);
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .hr-lede-bullet {
+    width: 7px;
+    height: 7px;
+  }
 }

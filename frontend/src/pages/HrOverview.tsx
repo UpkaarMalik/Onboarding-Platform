@@ -32,6 +32,10 @@ interface OverviewRow {
   employee_name: string;
   joinee_id: string | null;
   personal_email: string | null;
+  company_email: string | null;
+  /** The USER's account state ('invited' | 'active' | 'disabled'), which is
+   *  what gates sign-in — not the onboarding's own `status` above. */
+  user_status: string;
   department_name: string;
   department_id: string;
   template_name: string;
@@ -89,10 +93,37 @@ interface CredentialSummary {
 
 const AVATAR_COLORS = ['#2f8f5b', '#7c3aed', '#c94a3c', '#2f8f5b', '#8b6914', '#3f7cb0', '#e8930c', '#b91c8a'];
 const PAGE_LIMIT = 100;
+/** Rows per page in the roster. */
+const ROSTER_PAGE_SIZE = 8;
 
 const REQUIRED_DOC_CODES = ['aadhaar_card', 'pan_card', 'passport_photo'];
 
-export default function HrOverview() {
+/**
+ * The joinee roster. It used to be a page of its own at /hr/overview; it is
+ * now rendered inside the HR home below the summary panels, so `embedded`
+ * drops the parts the home already provides (its own hero and its own stat
+ * row) and leaves the search, filters and table. `reloadKey` is how the home
+ * tells it to refetch after it creates a joinee from its own button.
+ */
+/** What the HR home's summary cards narrow the roster to. `ids` is the set
+ *  of onboarding ids to keep; `label` names the filter on its chip. */
+export interface RosterFilter {
+  key: string;
+  label: string;
+  ids: Set<string>;
+}
+
+export default function HrOverview({
+  embedded = false,
+  reloadKey = 0,
+  cardFilter = null,
+  onClearCardFilter,
+}: {
+  embedded?: boolean;
+  reloadKey?: number;
+  cardFilter?: RosterFilter | null;
+  onClearCardFilter?: () => void;
+} = {}) {
   const authedFetch = useAuthedFetch();
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -110,6 +141,12 @@ export default function HrOverview() {
     temporaryPassword: string;
   } | null>(null);
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  /* Restoring access is harmless and stays one click. Removing it locks a
+     person out of the tool, so that direction gets a sentence explaining the
+     consequence first. */
+  const [confirmDisable, setConfirmDisable] = useState<OverviewRow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -130,7 +167,8 @@ export default function HrOverview() {
 
   useEffect(() => {
     void load();
-  }, [load]);
+    // reloadKey is the home page's "I just created someone" signal.
+  }, [load, reloadKey]);
 
   const stats = useMemo(() => {
     const completed = rows.filter((r) => r.status === 'completed').length;
@@ -153,6 +191,10 @@ export default function HrOverview() {
     const q = search.trim().toLowerCase();
     let result = rows;
 
+    /* The home's cards narrow this list rather than opening a panel of their
+       own, so the numbers at the top and the names below always agree. */
+    if (cardFilter) result = result.filter((r) => cardFilter.ids.has(r.id));
+
     if (activeStatFilter) {
       if (activeStatFilter === 'total') result = rows;
       else if (activeStatFilter === 'progress')
@@ -172,14 +214,52 @@ export default function HrOverview() {
         (r.department_name ?? '').toLowerCase().includes(q)
       );
     });
-  }, [rows, search, department, statusFilter, activeStatFilter]);
+  }, [rows, search, department, statusFilter, activeStatFilter, cardFilter]);
+
+  /** Flip one joinee's sign-in access. The row is updated in place on success
+   *  rather than refetching the whole list, so the page doesn't jump. */
+  async function toggleEnabled(row: OverviewRow) {
+    const enable = row.user_status === 'disabled';
+    setTogglingId(row.user_id);
+    setError(null);
+    try {
+      const res = await authedFetch<{ id: string; status: string }>(
+        `/employee-profile/${row.user_id}/status`,
+        { method: 'PATCH', body: { enabled: enable } },
+      );
+      setRows((prev) =>
+        prev.map((r) => (r.user_id === row.user_id ? { ...r, user_status: res.status } : r)),
+      );
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : `Could not ${enable ? 'enable' : 'disable'} ${row.employee_name}`,
+      );
+    } finally {
+      setTogglingId(null);
+    }
+  }
 
   function toggleStat(key: string) {
     setActiveStatFilter((prev) => (prev === key ? null : key));
   }
 
+  /* Paging is over the already-filtered list, so narrowing the search always
+     starts you on page 1 of the new result rather than on an empty page N. */
+  const pageCount = Math.max(1, Math.ceil(filtered.length / ROSTER_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = filtered.slice(
+    (safePage - 1) * ROSTER_PAGE_SIZE,
+    safePage * ROSTER_PAGE_SIZE,
+  );
+  useEffect(() => {
+    setPage(1);
+  }, [search, department, statusFilter, activeStatFilter, cardFilter]);
+
   return (
-    <div className="overview">
+    <div className={embedded ? 'overview overview--embedded' : 'overview'}>
+      {!embedded && (
       <Reveal>
         <header className="overview-head">
           <div className="overview-head-text">
@@ -201,9 +281,11 @@ export default function HrOverview() {
           </div>
         </header>
       </Reveal>
+      )}
 
       {error && <p className="error-text">{error}</p>}
 
+      {!embedded && (
       <Reveal delay={0.06}>
         <div className="stat-row">
           <div className={`stat-card stat-card--neutral${activeStatFilter === 'total' ? ' is-active' : ''}`} onClick={() => toggleStat('total')}>
@@ -224,26 +306,38 @@ export default function HrOverview() {
           </div>
         </div>
       </Reveal>
+      )}
 
       <Reveal delay={0.12}>
-        <div className="overview-controls-card">
-          <label className="search-field">
-            <SearchIcon />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, ID, or department..."
-              aria-label="Search joinees"
-            />
-            {search && (
-              <button type="button" className="search-clear" onClick={() => setSearch('')} aria-label="Clear search">
-                ×
-              </button>
+        {/* One surface. Search, filters, table and pager used to be three
+            separate bordered cards stacked on each other doing one job. */}
+        <div className="roster-shell">
+          <div className="roster-toolbar">
+            {embedded && (
+              <div className="roster-heading">
+                <h2>All joinees</h2>
+              </div>
             )}
-          </label>
 
-          <div className="overview-filters-row">
-            <div className="overview-filters">
+            <div className="roster-toolbar-row">
+              <label className="search-field search-field--apple">
+                <SearchIcon />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name, ID, or department"
+                  aria-label="Search joinees"
+                />
+                {search && (
+                  <button type="button" className="search-clear" onClick={() => setSearch('')} aria-label="Clear search">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                      <circle cx="8" cy="8" r="8" fill="currentColor" />
+                      <path d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                )}
+              </label>
+
               <CustomSelect
                 value={department}
                 onChange={setDepartment}
@@ -264,55 +358,119 @@ export default function HrOverview() {
                   { value: 'done', label: 'Completed' },
                 ]}
               />
+
+              {cardFilter && (
+                /* Built to match the two selects beside it — same height,
+                   radius, weight and border — so it reads as a third filter
+                   rather than a badge that wandered in. */
+                <button
+                  type="button"
+                  className="roster-filter-chip"
+                  onClick={onClearCardFilter}
+                  aria-label={`Clear the ${cardFilter.label} filter`}
+                >
+                  <span className="roster-filter-chip-dot" aria-hidden="true" />
+                  {cardFilter.label}
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
-        </div>
-      </Reveal>
 
-      <Reveal delay={0.18}>
-        <div className="roster">
-          <div className="roster-head" role="row">
-            <span>Joinee</span>
-            <span>ID</span>
-            <span>Department</span>
-            <span>Joining date</span>
-            <span>Progress</span>
-            <span>Status</span>
-            <span>Actions</span>
-          </div>
+          <div className="roster">
+            {/* Each label is nudged to sit over the INK of its column, not the
+                edge of its grid cell: the name starts past the avatar, and the
+                pills carry their own padding. Aligning the boxes is not the
+                same as aligning what you can see. */}
+            <div className="roster-head" role="row">
+              <span className="rh-joinee">Joinee</span>
+              <span className="rh-pill">ID</span>
+              <span className="rh-pill">Department</span>
+              <span>Joining date</span>
+              <span>Tasks done</span>
+              <span className="rh-pill">Status</span>
+              <span className="rh-actions">Actions</span>
+            </div>
 
-          {loading ? (
-            [0, 1, 2, 3].map((i) => (
-              <div className="roster-row is-skeleton" key={i} style={{ ['--row' as string]: i }}>
-                <span className="skeleton-line" />
+            {loading ? (
+              [0, 1, 2, 3].map((i) => (
+                <div className="roster-row is-skeleton" key={i} style={{ ['--row' as string]: i }}>
+                  <span className="skeleton-line" />
+                </div>
+              ))
+            ) : filtered.length === 0 ? (
+              <div className="roster-empty">
+                <p>
+                  {rows.length === 0
+                    ? 'No onboardings yet. Create your first joinee to get started.'
+                    : 'No joinees match those filters.'}
+                </p>
               </div>
-            ))
-          ) : filtered.length === 0 ? (
-            <div className="roster-empty">
-              <p>
-                {rows.length === 0
-                  ? 'No onboardings yet. Create your first joinee to get started.'
-                  : 'No joinees match those filters.'}
-              </p>
+            ) : (
+              pageRows.map((r, i) => (
+                <RosterRow
+                  key={r.id}
+                  row={r}
+                  index={i}
+                  busy={togglingId === r.user_id}
+                  onView={() => setProfileUserId(r.user_id)}
+                  onToggleEnabled={() =>
+                    r.user_status === 'disabled'
+                      ? void toggleEnabled(r)
+                      : setConfirmDisable(r)
+                  }
+                />
+              ))
+            )}
+          </div>
+
+          {filtered.length > 0 && (
+            <div className="roster-pager">
+              <span className="roster-pager-info">
+                Showing {(safePage - 1) * ROSTER_PAGE_SIZE + 1}–
+                {Math.min(safePage * ROSTER_PAGE_SIZE, filtered.length)} of {filtered.length}
+                {total > rows.length && ` (first ${rows.length} of ${total} loaded)`}
+              </span>
+              <div className="roster-pager-controls">
+                <button
+                  type="button"
+                  className="pager-btn"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  aria-label="Previous page"
+                >
+                  ‹
+                </button>
+                {pageNumbers(safePage, pageCount).map((n, idx) =>
+                  n === null ? (
+                    <span className="pager-gap" key={`gap-${idx}`}>…</span>
+                  ) : (
+                    <button
+                      type="button"
+                      key={n}
+                      className={`pager-btn${n === safePage ? ' is-current' : ''}`}
+                      onClick={() => setPage(n)}
+                      aria-current={n === safePage ? 'page' : undefined}
+                    >
+                      {n}
+                    </button>
+                  ),
+                )}
+                <button
+                  type="button"
+                  className="pager-btn"
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  disabled={safePage === pageCount}
+                  aria-label="Next page"
+                >
+                  ›
+                </button>
+              </div>
             </div>
-          ) : (
-            filtered.map((r, i) => (
-              <RosterRow
-                key={r.id}
-                row={r}
-                index={i}
-                onView={() => setProfileUserId(r.user_id)}
-                onClose={() => {/* cancel onboarding - future */}}
-              />
-            ))
           )}
         </div>
-
-        {total > rows.length && (
-          <p className="roster-foot muted">
-            Showing the first {rows.length} of {total} onboardings.
-          </p>
-        )}
       </Reveal>
 
       {profileUserId && (
@@ -321,6 +479,34 @@ export default function HrOverview() {
           onClose={() => setProfileUserId(null)}
           onChanged={load}
         />
+      )}
+
+      {confirmDisable && (
+        <Modal title="Block sign-in?" onClose={() => setConfirmDisable(null)}>
+          <p>
+            <strong>{confirmDisable.employee_name}</strong> will no longer be able to sign in —
+            neither with their Joinee ID and password nor with their mobile number and OTP. Any
+            session they already have stops working on its next request.
+          </p>
+          <p className="muted">
+            Their onboarding, tasks and documents are untouched, and you can restore access at any
+            time from this list.
+          </p>
+          <div className="modal-actions">
+            <button type="button" onClick={() => setConfirmDisable(null)}>Cancel</button>
+            <button
+              type="button"
+              className="btn-danger"
+              onClick={() => {
+                const target = confirmDisable;
+                setConfirmDisable(null);
+                void toggleEnabled(target);
+              }}
+            >
+              Block sign-in
+            </button>
+          </div>
+        </Modal>
       )}
 
       {showCreateJoinee && (
@@ -357,21 +543,38 @@ export default function HrOverview() {
   );
 }
 
+/** 1 … 4 5 6 … 12 — always the ends, always a window round the current page.
+ *  `null` marks a gap. */
+function pageNumbers(current: number, count: number): (number | null)[] {
+  if (count <= 7) return Array.from({ length: count }, (_, i) => i + 1);
+  const out: (number | null)[] = [1];
+  const from = Math.max(2, current - 1);
+  const to = Math.min(count - 1, current + 1);
+  if (from > 2) out.push(null);
+  for (let n = from; n <= to; n += 1) out.push(n);
+  if (to < count - 1) out.push(null);
+  out.push(count);
+  return out;
+}
+
 function RosterRow({
   row,
   index,
+  busy,
   onView,
-  onClose,
+  onToggleEnabled,
 }: {
   row: OverviewRow;
   index: number;
+  busy: boolean;
   onView: () => void;
-  onClose: () => void;
+  onToggleEnabled: () => void;
 }) {
   const pct = row.required_task_count
     ? Math.round((row.required_task_completed_count / row.required_task_count) * 100)
     : 0;
   const tone = onboardingStatusTone(row.status);
+  const disabled = row.user_status === 'disabled';
   const name = row.employee_name?.trim() ?? '';
   const parts = name.split(/\s+/);
   const initials = parts.length >= 2
@@ -380,7 +583,23 @@ function RosterRow({
   const colorIdx = index % AVATAR_COLORS.length;
 
   return (
-    <div className="roster-row" style={{ ['--row' as string]: index }}>
+    /* The row is the control: it carries role/tabIndex/aria-label, and the
+       chevron is the visual hint. A column of eight identical View buttons
+       was the same affordance repeated once per row. */
+    <div
+      className={`roster-row${disabled ? ' is-disabled' : ''}`}
+      style={{ ['--row' as string]: index }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open ${row.employee_name}'s profile`}
+      onClick={onView}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onView();
+        }
+      }}
+    >
       <span className="roster-joinee">
         <span className={`roster-avatar avatar-${colorIdx}`} aria-hidden="true">
           {initials}
@@ -414,6 +633,7 @@ function RosterRow({
         </span>
         <small>
           {row.required_task_completed_count}/{row.required_task_count}
+          <span className="sr-only"> required tasks done</span>
         </small>
       </span>
 
@@ -422,8 +642,49 @@ function RosterRow({
       </span>
 
       <span className="roster-actions">
-        <button type="button" className="btn-ghost btn-sm" onClick={onView}>View</button>
-        <button type="button" className="btn-close-row" onClick={onClose}>Close</button>
+        <button
+          type="button"
+          className="row-icon-btn"
+          title={`Open ${row.employee_name}'s profile`}
+          aria-label={`Open ${row.employee_name}'s profile`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onView();
+          }}
+        >
+          <ProfileIcon />
+        </button>
+
+        {/* A switch reports STATE, so its label is the state too — on reads
+            "Enabled", off reads "Disabled". The previous version paired a green
+            switch in the on position with the word "Disable" (the action), so
+            the two halves of one control pointed opposite ways and it looked
+            inverted. What clicking will do belongs in the tooltip, not on the
+            face of a switch. */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!disabled}
+          className={`row-switch${disabled ? ' is-off' : ''}`}
+          disabled={busy}
+          title={
+            disabled
+              ? `${row.employee_name} cannot sign in. Click to allow sign-in.`
+              : `${row.employee_name} can sign in. Click to block sign-in.`
+          }
+          aria-label={`Sign-in access for ${row.employee_name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleEnabled();
+          }}
+        >
+          <span className="row-switch-track" aria-hidden="true">
+            <span className="row-switch-knob" />
+          </span>
+          <span className="row-switch-label">
+            {busy ? 'Saving…' : disabled ? 'Disabled' : 'Enabled'}
+          </span>
+        </button>
       </span>
     </div>
   );
@@ -455,7 +716,7 @@ function StatCard({
    Create New Joinee — 3-step wizard
    ============================================================ */
 
-function CreateJoineeWizard({
+export function CreateJoineeWizard({
   departments,
   onClose,
   onCreated,
@@ -962,6 +1223,15 @@ function PlusIcon() {
   );
 }
 
+function ProfileIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="5.5" r="2.75" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M2.5 14c0-2.9 2.46-4.6 5.5-4.6s5.5 1.7 5.5 4.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function SearchIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -971,7 +1241,7 @@ function SearchIcon() {
   );
 }
 
-function CustomSelect({
+export function CustomSelect({
   value,
   onChange,
   options,

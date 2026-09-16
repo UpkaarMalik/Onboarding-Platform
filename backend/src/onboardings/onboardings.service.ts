@@ -713,6 +713,14 @@ export class OnboardingsService {
           -- request per visible joinee.
           u.joinee_id,
           u.personal_email,
+          -- Read-only, and not a login credential (see provisionEmail). The HR
+          -- home counts "Email issued" straight off this rather than inferring
+          -- it from o.status, which only says the stage was *passed*.
+          u.company_email,
+          -- The account state that gates sign-in, so the HR roster can show
+          -- and flip it per row. Distinct from o.status, which is about the
+          -- onboarding, not about whether they can log in.
+          u.status AS user_status,
           d.name AS department_name,
           t.name AS template_name,
 

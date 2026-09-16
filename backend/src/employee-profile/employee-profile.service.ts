@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 
 /**
  * Read-only aggregation behind HR's "click a joinee, see everything"
@@ -18,7 +19,75 @@ import { DatabaseService } from '../database/database.service';
  */
 @Injectable()
 export class EmployeeProfileService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly activityLog: ActivityLogService,
+  ) {}
+
+  /**
+   * Suspend or restore a joinee's access.
+   *
+   * This writes nothing but users.status, and 'disabled' is already in the
+   * column's CHECK constraint, so there is no schema change here. AuthService
+   * is what gives it teeth: it refuses 'disabled' on the password path and on
+   * the OTP path, and validateAccessToken accepts only 'active', so an
+   * already-issued token stops working on its next request rather than
+   * lasting out its 15 minutes.
+   *
+   * HR cannot disable themselves or another admin: locking the last
+   * superadmin out of the tool is unrecoverable from inside the app.
+   */
+  async setUserEnabled(userId: string, enabled: boolean, actorId: string) {
+    const { rows } = await this.db.query<{
+      id: string;
+      role: string;
+      status: string;
+      full_name: string;
+    }>(
+      `SELECT id, role, status, full_name
+       FROM users
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [userId],
+    );
+    const user = rows[0];
+    if (!user) throw new NotFoundException('Employee not found');
+
+    if (user.role === 'superadmin_hr') {
+      throw new BadRequestException('An HR admin account cannot be disabled here');
+    }
+    if (userId === actorId) {
+      throw new BadRequestException('You cannot disable your own account');
+    }
+
+    /* 'invited' means the account exists but has never been signed into. Going
+       back to 'active' from 'disabled' would silently mark it as used, so a
+       re-enable restores 'invited' when that is where it came from — the
+       metadata below is what remembers which. */
+    const next = enabled
+      ? user.status === 'disabled'
+        ? 'active'
+        : user.status
+      : 'disabled';
+
+    if (next === user.status) {
+      return { id: user.id, status: user.status, changed: false };
+    }
+
+    await this.db.query(`UPDATE users SET status = $2, updated_at = now() WHERE id = $1`, [
+      userId,
+      next,
+    ]);
+
+    await this.activityLog.log({
+      actorId,
+      action: enabled ? 'user.enabled' : 'user.disabled',
+      entityType: 'user',
+      entityId: userId,
+      metadata: { from: user.status, to: next },
+    });
+
+    return { id: user.id, status: next, changed: true };
+  }
 
   async getProfile(userId: string) {
     const { rows: userRows } = await this.db.query(
