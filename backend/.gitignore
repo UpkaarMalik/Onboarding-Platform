@@ -2,7 +2,7 @@ node_modules
 dist
 .env
 *.log
-
+.claude
 # Uploaded files. Company policy PDFs, and — since joinee document
 # upload — Aadhaar cards, PAN cards and bank details. A stray
 # `git add -A` would commit identity documents into history permanently,

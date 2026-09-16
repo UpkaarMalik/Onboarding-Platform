@@ -120,11 +120,39 @@ const BANNER_GRADIENTS: Record<EventType, string> = {
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
+const UPCOMING_SLIDES = [
+  {
+    image: '/gallery/navratri.jpg',
+    gradient: 'linear-gradient(135deg, #8b1a1a, #c0392b 40%, #7b1818)',
+    category: 'Cultural',
+    categoryColor: '#E87A24',
+    date: 'Sep 22',
+    title: 'Navratri Dandiya Night',
+  },
+  {
+    image: '/gallery/diwali.jpg',
+    gradient: 'linear-gradient(135deg, #3e2723, #5d4037 40%, #4e342e)',
+    category: 'Gala',
+    categoryColor: '#d97706',
+    date: 'Oct 28',
+    title: 'Diwali: Festival of Lights',
+  },
+  {
+    image: '/gallery/basketball.jpg',
+    gradient: 'linear-gradient(135deg, #111, #1a1a1a 40%, #0d0d0d)',
+    category: 'Sports',
+    categoryColor: '#2563eb',
+    date: 'Sep 25-26',
+    title: 'Basketball Championship',
+  },
+];
+
 export default function CompanyLife() {
   const [activeFilter, setActiveFilter] = useState<EventType | 'all'>('all');
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [showAddEvent, setShowAddEvent] = useState(false);
+  const [slideIndex, setSlideIndex] = useState(0);
 
   /* Load Playfair Display font */
   useEffect(() => {
@@ -136,6 +164,14 @@ export default function CompanyLife() {
     return () => {
       document.head.removeChild(link);
     };
+  }, []);
+
+  /* Auto-advance slideshow */
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSlideIndex((prev) => (prev + 1) % UPCOMING_SLIDES.length);
+    }, 4500);
+    return () => clearInterval(timer);
   }, []);
 
   const filtered = EVENTS.filter((e) => {
@@ -171,7 +207,7 @@ export default function CompanyLife() {
         /* Flip card mechanics */
         .cl-flip-card {
           perspective: 800px;
-          height: 260px;
+          height: 240px;
           cursor: pointer;
         }
         .cl-flip-inner {
@@ -261,7 +297,113 @@ export default function CompanyLife() {
           animation: cl-blink 1.5s ease-in-out infinite;
         }
 
-        /* Hero */
+        /* Hero grid layout — 8/4 split like template */
+        .cl-hero-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 32px;
+          align-items: start;
+          margin-bottom: 32px;
+        }
+        @media (min-width: 1024px) {
+          .cl-hero-grid {
+            grid-template-columns: 2fr 1fr;
+          }
+        }
+        .cl-hero-left {
+          display: flex;
+          flex-direction: column;
+        }
+
+        /* Slideshow outer wrapper — warm card */
+        .cl-slideshow-wrap {
+          background: #F8F4EC;
+          padding: 12px;
+          border-radius: 16px;
+          border: 1px solid #DFD7CB;
+        }
+        .cl-slideshow-label {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-bottom: 12px;
+          padding: 0 4px;
+        }
+        .cl-slideshow-pulse {
+          display: inline-block;
+          width: 8px; height: 8px;
+          border-radius: 50%;
+          background: #e8930c;
+          animation: cl-blink 1.5s ease-in-out infinite;
+        }
+
+        /* Slideshow dark image card */
+        .cl-slideshow-card {
+          position: relative;
+          background: #191919;
+          border-radius: 12px;
+          overflow: hidden;
+          aspect-ratio: 16 / 10;
+        }
+        .cl-slide {
+          position: absolute; inset: 0;
+          opacity: 0; pointer-events: none;
+          transition: opacity 0.7s ease-in-out;
+        }
+        .cl-slide--active { opacity: 1; pointer-events: auto; z-index: 1; }
+        .cl-slide-bg {
+          position: absolute; inset: 0;
+          background-size: cover;
+          background-position: center;
+        }
+        .cl-slide-overlay {
+          position: absolute; inset: 0;
+          background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.3) 55%, transparent);
+          z-index: 1;
+        }
+        .cl-slide-content {
+          position: absolute; bottom: 0; left: 0; right: 0;
+          padding: 16px;
+          color: #fff; z-index: 2;
+        }
+
+        /* Slideshow footer — dots + RSVP */
+        .cl-slideshow-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 12px 4px 0;
+        }
+        .cl-slide-dot {
+          width: 10px; height: 4px;
+          border-radius: 9999px; border: none;
+          background: #D1CCC2; cursor: pointer;
+          transition: all 0.2s;
+        }
+        .cl-slide-dot.active {
+          background: #e8930c;
+        }
+
+        /* Small view gallery button */
+        .cl-flip-gallery-btn-sm {
+          background: none;
+          color: var(--color-accent);
+          border: 1px solid var(--color-accent);
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          font-family: inherit;
+          width: 100%;
+          transition: background 0.15s, color 0.15s;
+        }
+        .cl-flip-gallery-btn-sm:hover {
+          background: var(--color-accent);
+          color: #fff;
+        }
+
+        /* Hero (unused, kept for compat) */
         .cl-hero-v2 {
           padding: 32px 0 0;
           display: flex;
@@ -292,7 +434,7 @@ export default function CompanyLife() {
           letter-spacing: 1px;
         }
         .cl-hero-title-v2 {
-          margin: 0;
+          margin: 0 0 16px;
           font-size: 40px;
           font-weight: 800;
           line-height: 1.2;
@@ -304,7 +446,7 @@ export default function CompanyLife() {
           font-weight: 600;
         }
         .cl-hero-subtitle {
-          margin: 12px 0 0;
+          margin: 0 0 24px;
           color: #777;
           font-size: 15px;
           line-height: 1.6;
@@ -316,7 +458,7 @@ export default function CompanyLife() {
           display: flex;
           align-items: center;
           gap: 12px;
-          padding: 16px 0 0;
+          margin-bottom: 16px;
         }
         .cl-search-container {
           position: relative;
@@ -332,13 +474,15 @@ export default function CompanyLife() {
         }
         .cl-search-input {
           border: 1px solid var(--color-border);
-          border-radius: 12px;
-          padding: 10px 16px 10px 38px;
+          border-radius: 9999px;
+          padding: 8px 16px 8px 38px;
           font-size: 14px;
           width: 100%;
+          max-width: 560px;
           font-family: inherit;
           outline: none;
-          background: var(--color-surface);
+          background: #FAF6F0;
+          border-color: #DFD6C9;
           box-sizing: border-box;
           transition: border-color 0.2s ease, box-shadow 0.2s ease;
         }
@@ -519,7 +663,7 @@ export default function CompanyLife() {
 
         /* Placeholder host card */
         .cl-host-card {
-          height: 260px;
+          height: 240px;
           background: var(--color-surface);
           border: 2px dashed #ddd8d0;
           border-radius: 16px;
@@ -756,18 +900,7 @@ export default function CompanyLife() {
         {/* ---------- Breadcrumb bar ---------- */}
         <div className="cl-breadcrumb-bar">
           <div className="cl-breadcrumb-left">
-            <div className="cl-breadcrumb-logo">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="5" stroke="#fff" strokeWidth="1.2" />
-                <path
-                  d="M5.5 8.5c0 0 1 1.5 2.5 1.5s2.5-1.5 2.5-1.5M6 6.5h.01M10 6.5h.01"
-                  stroke="#fff"
-                  strokeWidth="1.2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-            <span className="cl-breadcrumb-name">AND</span>
+            <span className="cl-breadcrumb-name">AndPayments</span>
             <span className="cl-breadcrumb-sep">/</span>
             <span className="cl-breadcrumb-path">Life &amp; Events</span>
           </div>
@@ -777,9 +910,10 @@ export default function CompanyLife() {
           </div>
         </div>
 
-        {/* ---------- Hero header ---------- */}
-        <div className="cl-hero-v2">
-          <div>
+        {/* ---------- Hero + Slideshow (grid 8/4) ---------- */}
+        <div className="cl-hero-grid">
+          {/* Left: title, subtitle, search, filters */}
+          <div className="cl-hero-left">
             <div className="cl-memories-badge">
               <span className="cl-memories-badge-dot" />
               <span className="cl-memories-badge-text">MEMORIES &amp; HAPPENINGS</span>
@@ -791,55 +925,80 @@ export default function CompanyLife() {
               Explore moments, highlights, and photo stories across the AndPayments team.
               Relive past celebrations or submit photos from your recent team gathering.
             </p>
+
+            {/* Search */}
+            <div className="cl-search-wrap">
+              <div className="cl-search-container">
+                <svg className="cl-search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <circle cx="7" cy="7" r="5" stroke="#999" strokeWidth="1.3" />
+                  <path d="M11 11l3 3" stroke="#999" strokeWidth="1.3" strokeLinecap="round" />
+                </svg>
+                <input
+                  type="text"
+                  className="cl-search-input"
+                  placeholder="Search memories, tags..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Filters */}
+            <div className="cl-filters">
+              {FILTER_OPTIONS.map((f) => (
+                <button
+                  key={f.value}
+                  className={`cl-filter-pill${activeFilter === f.value ? ' active' : ''}`}
+                  onClick={() => setActiveFilter(f.value)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <button
-            className="btn-primary cl-add-event-btn"
-            style={{ marginTop: 48, whiteSpace: 'nowrap' }}
-            onClick={() => setShowAddEvent(true)}
-          >
-            <span style={{ fontSize: 18 }}>+</span> Add Event
-          </button>
-        </div>
 
-        {/* ---------- Filter pills ---------- */}
-        <div className="cl-filters" style={{ paddingTop: 24 }}>
-          {FILTER_OPTIONS.map((f) => (
-            <button
-              key={f.value}
-              className={`cl-filter-pill${activeFilter === f.value ? ' active' : ''}`}
-              onClick={() => setActiveFilter(f.value)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ---------- Search ---------- */}
-        <div className="cl-search-wrap">
-          <div className="cl-search-container">
-            <svg
-              className="cl-search-icon"
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-            >
-              <circle cx="7" cy="7" r="5" stroke="#999" strokeWidth="1.3" />
-              <path d="M11 11l3 3" stroke="#999" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
-            <input
-              type="text"
-              className="cl-search-input"
-              placeholder="Search memories, tags..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          {/* Right: Upcoming slideshow */}
+          <div className="cl-slideshow-wrap">
+            <div className="cl-slideshow-label">
+              <span className="cl-slideshow-pulse" />
+              <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const, color: '#1C1A17' }}>Upcoming</span>
+            </div>
+            <div className="cl-slideshow-card">
+              {UPCOMING_SLIDES.map((slide, i) => (
+                <div key={i} className={`cl-slide${i === slideIndex ? ' cl-slide--active' : ''}`}>
+                  <div className="cl-slide-bg" style={{ background: slide.image ? `url(${slide.image}) center/cover no-repeat, ${slide.gradient}` : slide.gradient }} />
+                  <div className="cl-slide-overlay" />
+                  <div className="cl-slide-content">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ padding: '2px 8px', borderRadius: 4, background: slide.categoryColor, fontSize: 10, fontWeight: 700, color: '#fff', textTransform: 'uppercase' as const, letterSpacing: '0.05em' }}>{slide.category}</span>
+                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', fontWeight: 500 }}>{slide.date}</span>
+                    </div>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '-0.01em' }}>{slide.title}</h3>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="cl-slideshow-footer">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {UPCOMING_SLIDES.map((_, i) => (
+                  <button key={i} className={`cl-slide-dot${i === slideIndex ? ' active' : ''}`} onClick={() => setSlideIndex(i)} />
+                ))}
+              </div>
+              <button
+                style={{
+                  background: '#e8930c', color: '#fff', border: 'none',
+                  borderRadius: 4, padding: '4px 14px', fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em',
+                  textTransform: 'uppercase' as const,
+                }}
+              >RSVP</button>
+            </div>
           </div>
         </div>
 
         {/* ---------- Flip card grid ---------- */}
         <Reveal>
-          <div className="cl-grid" style={{ paddingTop: 24 }}>
+          <div className="cl-grid" style={{ marginTop: 32 }}>
             {filtered.map((ev, i) => {
               const liked = likedIds.has(ev.id);
               const displayLikes = ev.likes + (liked ? 1 : 0);
@@ -867,10 +1026,6 @@ export default function CompanyLife() {
                             <span className="cl-flip-front-date">{ev.date}</span>
                           </div>
                           <h3 className="cl-flip-front-title">{ev.title}</h3>
-                        </div>
-                        <div className="cl-flip-front-photos">
-                          <span style={{ fontSize: 12 }}>📷</span>
-                          <span>{ev.photoCount}</span>
                         </div>
                       </div>
                     </div>
@@ -904,7 +1059,7 @@ export default function CompanyLife() {
                           </div>
                         </div>
                         <button
-                          className="cl-flip-gallery-btn"
+                          className="cl-flip-gallery-btn-sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleGallery();
