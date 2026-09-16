@@ -49,6 +49,13 @@ const ONBOARDING_SORT_EXPRESSIONS: Record<string, string> = {
   startDate: 'start_date',
   progress: `CASE WHEN required_task_count = 0 THEN 0
                ELSE ROUND(100.0 * required_task_completed_count / required_task_count) END`,
+  // Creation time. Named in camelCase to match the other keys so the
+  // ?sort= query string reads consistently, and passed through as the
+  // bare column name (see comment on the outer SELECT * above) — HR
+  // orders the roster by it (newest first, `?sort=-createdAt`) so a
+  // freshly-created joinee lands at the top of the list without a
+  // search.
+  createdAt: 'created_at',
 };
 
 const STUCK_SORT_EXPRESSIONS: Record<string, string> = {
