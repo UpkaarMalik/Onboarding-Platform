@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Reveal from '../components/Reveal';
+import { useAuth } from '../auth/AuthContext';
 
 /* ------------------------------------------------------------------ */
 /*  Demo data — no backend endpoint for this page                      */
@@ -122,7 +123,7 @@ const BANNER_GRADIENTS: Record<EventType, string> = {
 /* ------------------------------------------------------------------ */
 const UPCOMING_SLIDES = [
   {
-    image: '/gallery/navratri.jpg',
+    image: '/gallery/navratri.png',
     gradient: 'linear-gradient(135deg, #8b1a1a, #c0392b 40%, #7b1818)',
     category: 'Cultural',
     categoryColor: '#E87A24',
@@ -130,7 +131,7 @@ const UPCOMING_SLIDES = [
     title: 'Navratri Dandiya Night',
   },
   {
-    image: '/gallery/diwali.jpg',
+    image: '/gallery/diwali.png',
     gradient: 'linear-gradient(135deg, #3e2723, #5d4037 40%, #4e342e)',
     category: 'Gala',
     categoryColor: '#d97706',
@@ -138,7 +139,7 @@ const UPCOMING_SLIDES = [
     title: 'Diwali: Festival of Lights',
   },
   {
-    image: '/gallery/basketball.jpg',
+    image: '/gallery/basketball.png',
     gradient: 'linear-gradient(135deg, #111, #1a1a1a 40%, #0d0d0d)',
     category: 'Sports',
     categoryColor: '#2563eb',
@@ -148,11 +149,15 @@ const UPCOMING_SLIDES = [
 ];
 
 export default function CompanyLife() {
+  const { user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<EventType | 'all'>('all');
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [showAddEvent, setShowAddEvent] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
+  const [rsvpPopup, setRsvpPopup] = useState<'teams' | 'outlook' | null>(null);
+  const showRsvp = user?.role === 'superadmin_hr' || user?.role === 'employee';
+  const showEmail = user?.role === 'superadmin_hr';
 
   /* Load Playfair Display font */
   useEffect(() => {
@@ -356,6 +361,12 @@ export default function CompanyLife() {
           background-size: cover;
           background-position: center;
         }
+        .cl-slide-img {
+          position: absolute; inset: 0;
+          width: 100%; height: 100%;
+          object-fit: cover;
+          object-position: center top;
+        }
         .cl-slide-overlay {
           position: absolute; inset: 0;
           background: linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0.3) 55%, transparent);
@@ -401,6 +412,14 @@ export default function CompanyLife() {
         .cl-flip-gallery-btn-sm:hover {
           background: var(--color-accent);
           color: #fff;
+        }
+        .cl-flip-gallery-inline {
+          cursor: pointer;
+          transition: background 0.15s;
+        }
+        .cl-flip-gallery-inline:hover {
+          background: var(--color-surface-alt);
+          border-color: var(--color-accent);
         }
 
         /* Hero (unused, kept for compat) */
@@ -605,30 +624,29 @@ export default function CompanyLife() {
           color: var(--color-text);
         }
         .cl-flip-back-desc {
-          margin: 0 0 10px;
-          font-size: 13px;
+          margin: 0 0 8px;
+          font-size: 12px;
           color: #777;
-          line-height: 1.5;
+          line-height: 1.4;
           flex: 1;
           overflow: hidden;
         }
 
         /* Stats row */
         .cl-flip-stats {
-          display: flex;
-          gap: 6px;
-          margin-bottom: 8px;
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 4px;
         }
         .cl-flip-stat {
-          flex: 1;
           background: #faf9f7;
           border: 1px solid #f0ece5;
           border-radius: 6px;
-          padding: 6px 4px;
+          padding: 5px 2px;
           text-align: center;
         }
         .cl-flip-stat-value {
-          font-size: 16px;
+          font-size: 14px;
           font-weight: 800;
         }
         .cl-flip-stat-value--accent {
@@ -894,6 +912,38 @@ export default function CompanyLife() {
           font-family: inherit; transition: all 0.15s;
         }
         .ae-cancel:hover { background: var(--color-surface-alt); }
+
+        /* RSVP / Email popup overlay */
+        .cl-rsvp-overlay {
+          position: fixed; inset: 0;
+          background: rgba(0,0,0,0.45);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1000;
+        }
+        .cl-rsvp-popup {
+          background: #fff; border-radius: 16px;
+          padding: 32px 36px; text-align: center;
+          max-width: 360px; width: 90%;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+        }
+        .cl-rsvp-popup-icon { margin-bottom: 16px; }
+        .cl-rsvp-popup-title {
+          margin: 0 0 8px; font-size: 18px; font-weight: 700; color: #14161a;
+        }
+        .cl-rsvp-popup-desc {
+          margin: 0; font-size: 13px; color: #666; line-height: 1.5;
+        }
+        .cl-rsvp-popup-btn {
+          padding: 8px 24px; border-radius: 8px; font-size: 13px;
+          font-weight: 600; cursor: pointer; font-family: inherit;
+          border: 1px solid #ddd; background: #fff; color: #333;
+          transition: all 0.15s;
+        }
+        .cl-rsvp-popup-btn:hover { background: #f5f5f5; }
+        .cl-rsvp-popup-btn.primary {
+          background: #e8930c; color: #fff; border-color: #e8930c;
+        }
+        .cl-rsvp-popup-btn.primary:hover { background: #d17f08; }
       `}</style>
 
       <div className="cl-page">
@@ -966,7 +1016,11 @@ export default function CompanyLife() {
             <div className="cl-slideshow-card">
               {UPCOMING_SLIDES.map((slide, i) => (
                 <div key={i} className={`cl-slide${i === slideIndex ? ' cl-slide--active' : ''}`}>
-                  <div className="cl-slide-bg" style={{ background: slide.image ? `url(${slide.image}) center/cover no-repeat, ${slide.gradient}` : slide.gradient }} />
+                  {slide.image ? (
+                    <img src={slide.image} alt={slide.title} className="cl-slide-img" />
+                  ) : (
+                    <div className="cl-slide-bg" style={{ background: slide.gradient }} />
+                  )}
                   <div className="cl-slide-overlay" />
                   <div className="cl-slide-content">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -984,17 +1038,60 @@ export default function CompanyLife() {
                   <button key={i} className={`cl-slide-dot${i === slideIndex ? ' active' : ''}`} onClick={() => setSlideIndex(i)} />
                 ))}
               </div>
-              <button
-                style={{
-                  background: '#e8930c', color: '#fff', border: 'none',
-                  borderRadius: 4, padding: '4px 14px', fontSize: 11, fontWeight: 700,
-                  cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em',
-                  textTransform: 'uppercase' as const,
-                }}
-              >RSVP</button>
+              {showRsvp && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={() => setRsvpPopup('teams')}
+                    style={{
+                      background: '#e8930c', color: '#fff', border: 'none',
+                      borderRadius: 4, padding: '4px 14px', fontSize: 11, fontWeight: 700,
+                      cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em',
+                      textTransform: 'uppercase' as const,
+                    }}
+                  >RSVP</button>
+                  {showEmail && (
+                    <button
+                      onClick={() => setRsvpPopup('outlook')}
+                      style={{
+                        background: 'transparent', color: '#e8930c', border: '1px solid #e8930c',
+                        borderRadius: 4, padding: '4px 14px', fontSize: 11, fontWeight: 700,
+                        cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.05em',
+                        textTransform: 'uppercase' as const,
+                      }}
+                    >Email</button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
+
+        {/* RSVP / Email popup */}
+        {rsvpPopup && (
+          <div className="cl-rsvp-overlay" onClick={() => setRsvpPopup(null)}>
+            <div className="cl-rsvp-popup" onClick={e => e.stopPropagation()}>
+              <div className="cl-rsvp-popup-icon">
+                {rsvpPopup === 'teams' ? (
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><path d="M20 7h-2V5a1 1 0 00-1-1h-6a1 1 0 00-1 1v4H7a1 1 0 00-1 1v6a1 1 0 001 1h3v2a1 1 0 001 1h6a1 1 0 001-1v-4h2a1 1 0 001-1V8a1 1 0 00-1-1z" fill="#5B5FC7"/><circle cx="15" cy="3" r="2" fill="#5B5FC7"/><circle cx="20.5" cy="5.5" r="1.5" fill="#7B83EB"/></svg>
+                ) : (
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="16" rx="2" fill="#0078D4"/><path d="M2 6l10 7 10-7" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round"/></svg>
+                )}
+              </div>
+              <h3 className="cl-rsvp-popup-title">
+                {rsvpPopup === 'teams' ? 'Opening Microsoft Teams' : 'Opening Microsoft Outlook'}
+              </h3>
+              <p className="cl-rsvp-popup-desc">
+                {rsvpPopup === 'teams'
+                  ? 'Your RSVP will be sent via Microsoft Teams meeting invite.'
+                  : 'A new email draft will open in Microsoft Outlook.'}
+              </p>
+              <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+                <button className="cl-rsvp-popup-btn primary" onClick={() => setRsvpPopup(null)}>OK</button>
+                <button className="cl-rsvp-popup-btn" onClick={() => setRsvpPopup(null)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ---------- Flip card grid ---------- */}
         <Reveal>
@@ -1057,16 +1154,17 @@ export default function CompanyLife() {
                             </div>
                             <div className="cl-flip-stat-label">LIKES</div>
                           </div>
+                          <button
+                            className="cl-flip-stat cl-flip-gallery-inline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleGallery();
+                            }}
+                          >
+                            <div className="cl-flip-stat-value cl-flip-stat-value--accent">→</div>
+                            <div className="cl-flip-stat-label">GALLERY</div>
+                          </button>
                         </div>
-                        <button
-                          className="cl-flip-gallery-btn-sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleGallery();
-                          }}
-                        >
-                          View Gallery &rarr;
-                        </button>
                       </div>
                     </div>
                   </div>
