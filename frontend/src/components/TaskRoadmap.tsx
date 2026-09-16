@@ -280,24 +280,23 @@ const MARK_BERTH = 46;
  * and a long voyage feel like the same flick rather than the same number of
  * turns crammed into different times.
  */
-const SPIN_TURNS_PER_SEC = 1.8;
-const SPIN_MIN_TURNS = 3;
+const SPIN_TURNS_PER_SEC = 0.7;
+const SPIN_MIN_TURNS = 2;
 
 /**
  * Angular progress, 0 to 1, across the crossing.
  *
- * `1 - (1-t)^4` — a quartic ease-out. Its derivative is 4 at t = 0 and 0 at
- * t = 1, which is exactly the shape a flicked spinner traces: almost all the
- * revolutions happen early, then it freewheels and the last turn takes as
- * long as the first several did. Using the voyage's own ease-in-out instead
- * (as this did before) made the boomerang speed up and slow down symmetrically
- * with the mark, which reads as geared to the wheels rather than spun.
+ * `1 - (1-t)^3` — a cubic ease-out. Its derivative is 3 at t = 0 and 0 at
+ * t = 1: the shape a spinner traces once let go, most of the turning early
+ * and a long freewheel after. Cubic rather than the quartic this started as,
+ * and fewer turns than it started with, because the faster curve span it hard
+ * enough to blur.
  *
- * It still returns exactly 1 at t = 1 — (1-1)^4 is exactly 0 in floating
+ * It still returns exactly 1 at t = 1 — (1-1)^3 is exactly 0 in floating
  * point — so multiplied by a whole number of turns the mark can still only
  * come to rest on the logo's own orientation.
  */
-const spinEase = (t: number) => 1 - Math.pow(1 - t, 4);
+const spinEase = (t: number) => 1 - Math.pow(1 - t, 3);
 
 /** The mark itself, with no notion of where it is — placing it is the
  *  caller's job, and turning the boomerang is the voyage's. */
@@ -432,52 +431,22 @@ function RoadmapTrail({
     };
 
     /**
-     * The boomerang's angle, and how far it has drawn in to the disc's centre
-     * to turn there.
+     * The boomerang's angle about the disc's centre.
      *
-     * At rest the boomerang is NOT centred on the disc — it overhangs left and
-     * drops past the bottom right, which is what makes the mark the mark. Spun
-     * about the disc's centre from there it would orbit rather than revolve.
-     * So while it is turning it slides its own centre onto the disc's, spins
-     * about that, and slides back out as it arrives.
+     * `rotate(deg)` with no centre argument turns about the current user-space
+     * origin, and the parent's translate() has already put that origin on the
+     * motion point — which is where the disc is drawn (cx/cy default to 0). So
+     * the pivot IS the blue circle's centre, exactly, with nothing to keep in
+     * sync.
      *
-     * `k` is that slide: 0 is the logo's exact placement, 1 is centred. The
-     * transform reads right to left — centre the shape first, then turn it —
-     * and at k = 0, deg = 0 it is the identity, which is what guarantees the
-     * mark comes to rest as drawn rather than near it.
+     * An earlier version slid the boomerang so its bounding-box centre sat on
+     * the disc's before turning. A bounding box has no relationship to the
+     * artwork, so that pivot was effectively an arbitrary point, and the slide
+     * added a second movement on top of the spin. Both are gone: it turns
+     * about the circle's centre and does nothing else.
      */
-    const centre = { x: 0, y: 0 };
-    const measureCentre = () => {
-      const g = spinRef.current;
-      if (!g) return;
-      // getBBox reports the children's box in the disc's own coordinates,
-      // ignoring any transform already on this group, so it can be read at
-      // any time — including mid-spin on a re-run.
-      const b = g.getBBox();
-      centre.x = b.x + b.width / 2;
-      centre.y = b.y + b.height / 2;
-    };
-    measureCentre();
-
-    const spinTo = (deg: number, k: number) => {
-      spinRef.current?.setAttribute(
-        'transform',
-        `rotate(${deg}) translate(${-k * centre.x},${-k * centre.y})`,
-      );
-    };
-
-    /** Ease the draw-in and the slide-out so neither end snaps. Asymmetric on
-     *  purpose: it snaps to centre with the flick, then takes its time sliding
-     *  back out while the spin is winding down, so it is already settling into
-     *  place rather than arriving and then moving. */
-    const smooth = (v: number) => v * v * (3 - 2 * v);
-    const DRAW_IN = 0.08;
-    const DRAW_OUT = 0.28;
-    const centredness = (t: number) => {
-      if (t <= 0) return 0;
-      if (t < DRAW_IN) return smooth(t / DRAW_IN);
-      if (t < 1 - DRAW_OUT) return 1;
-      return smooth(Math.max(0, (1 - t) / DRAW_OUT));
+    const spinTo = (deg: number) => {
+      spinRef.current?.setAttribute('transform', `rotate(${deg})`);
     };
 
     /**
@@ -552,7 +521,7 @@ function RoadmapTrail({
     const moor = () => {
       if (!mooring) return unhook;
       place(mooring.x, mooring.y);
-      spinTo(0, 0);
+      spinTo(0);
       if (!ledRef.current) {
         ledRef.current = true;
         follow(mooring.y);
@@ -573,7 +542,7 @@ function RoadmapTrail({
     const end = path.getPointAtLength(len);
     if (reduced) {
       place(end.x, end.y);
-      spinTo(0, 0);
+      spinTo(0);
       follow(end.y);
       return unhook;
     }
@@ -611,16 +580,15 @@ function RoadmapTrail({
       place(p.x, p.y);
       // The spin runs on its own ease — the flick — while the position runs on
       // the travel's. They share only the clock, and both land exactly on 1,
-      // so at t = 1 this is 360 x turns with the shape fully slid back out:
-      // the logo, to the degree and the pixel.
-      spinTo(spinEase(t) * 360 * turns, centredness(t));
+      // so at t = 1 this is exactly 360 x turns: the logo, to the degree.
+      spinTo(spinEase(t) * 360 * turns);
       follow(p.y);
       if (t < 1) raf = requestAnimationFrame(tick);
     };
 
     const first = path.getPointAtLength(0);
     place(first.x, first.y);
-    spinTo(0, 0);
+    spinTo(0);
     raf = requestAnimationFrame(tick);
     return () => {
       cancelAnimationFrame(raf);
