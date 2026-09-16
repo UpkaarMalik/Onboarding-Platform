@@ -25,7 +25,7 @@ input[type="range"]::-webkit-slider-thumb {
 
   --color-accent: #e88f30;
   --color-accent-dark: #df8417;
-  --gradient-accent: linear-gradient(135deg, #f0a653, #e88f30 55%, #df8417);
+  --gradient-accent: linear-gradient(135deg, #f59e0b, #d97706 50%, #b45309);
   --gradient-dark: linear-gradient(180deg, #302a23, #14110e);
 
   --color-info: #3f7cb0;
@@ -80,7 +80,7 @@ input[type="range"]::-webkit-slider-thumb {
   --shadow-sm: 0 1px 2px rgba(26, 22, 17, 0.05), 0 1px 1px rgba(26, 22, 17, 0.04);
   --shadow-md: 0 6px 16px -4px rgba(26, 22, 17, 0.1), 0 2px 6px -2px rgba(26, 22, 17, 0.06);
   --shadow-lg: 0 20px 40px -12px rgba(26, 22, 17, 0.18);
-  --shadow-glow: 0 8px 20px -6px rgba(223, 132, 23, 0.45);
+  --shadow-glow: 0 4px 16px -2px rgba(245, 158, 11, 0.45);
 
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
@@ -603,48 +603,58 @@ button.danger:hover:not(:disabled) {
   background: white;
 }
 
-/* --- Dark navy sidebar (.sb) --- */
+/* --- Glassmorphic dark sidebar (.sb) --- */
 .sb {
-  width: 300px;
+  width: 256px;
   min-height: 100vh;
-  background: #1e2a3a;
+  background: #14161a;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 4px 0 32px -4px rgba(0, 0, 0, 0.45);
   display: flex;
   flex-direction: column;
-  padding: 28px 22px;
+  justify-content: space-between;
+  padding: 24px 16px;
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
-  z-index: 10;
+  z-index: 30;
   flex-shrink: 0;
+  transition: all 0.3s;
 }
 .sb-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 32px;
 }
 .sb-logo {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #e8930c;
+  background: linear-gradient(135deg, #d97706, #fbbf24);
   color: #fff;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.3);
 }
 .sb-title {
   font-weight: 700;
-  font-size: 18px;
+  font-size: 16px;
   color: #fff;
+  letter-spacing: -0.01em;
+  line-height: 1;
 }
 .sb-sub {
   font-size: 12px;
-  color: #8a95a5;
+  color: #a8a29e;
+  font-weight: 500;
+  margin-top: 4px;
 }
 .sb-checklist {
   display: flex;
@@ -670,83 +680,111 @@ button.danger:hover:not(:disabled) {
 .sb-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
   flex: 1;
 }
 .sb-link {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 11px 14px;
-  border-radius: 10px;
-  color: #8a95a5;
-  font-size: 16px;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  color: #d6d3d1;
+  font-size: 14px;
   font-weight: 500;
   text-decoration: none;
   transition: background 0.15s, color 0.15s;
 }
 .sb-link:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(41, 37, 36, 0.4);
   color: #fff;
 }
 .sb-link--active {
-  background: #e8930c !important;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%) !important;
   color: #fff !important;
   font-weight: 600;
+  box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.45),
+              0 1px 1px 0 rgba(255, 255, 255, 0.25) inset;
 }
 .sb-link svg {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
+  stroke-width: 1.8;
+}
+.sb-link--active svg {
+  stroke-width: 2;
 }
 .sb-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(41, 37, 36, 0.6);
   padding-top: 16px;
   margin-top: 12px;
+}
+.sb-user-card {
+  border-radius: 12px;
+  padding: 10px 12px;
   display: flex;
-  flex-direction: column;
   align-items: center;
+  justify-content: space-between;
+  background: #1b1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.15s;
+}
+.sb-user-card:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 .sb-user {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 10px;
 }
 .sb-avatar {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: #e8930c;
   color: #fff;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: 700;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
+.sb-uinfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
 .sb-uname {
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 600;
   color: #fff;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sb-urole {
-  font-size: 12px;
-  color: #6b7a8d;
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 1px;
 }
 .sb-signout {
   background: none;
   border: none;
-  color: #6b7a8d;
-  font-size: 14px;
+  color: #e8930c;
+  font-size: 12px;
+  font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  padding: 6px 0;
+  padding: 0;
   transition: color 0.15s;
+  white-space: nowrap;
 }
 .sb-signout:hover {
-  color: #fff;
+  color: #fbbf24;
+  text-decoration: underline;
   transform: none;
   box-shadow: none;
 }
@@ -754,9 +792,9 @@ button.danger:hover:not(:disabled) {
 .app-main {
   flex: 1;
   padding: 0 36px;
-  max-width: calc(100vw - 300px);
+  max-width: calc(100vw - 256px);
   width: 100%;
-  margin-left: 300px;
+  margin-left: 256px;
   background: #f7f2ea;
   background-image: radial-gradient(circle, #e8930c40 1.2px, transparent 1.2px);
   background-size: 20px 20px;
@@ -3265,12 +3303,12 @@ li:hover .checkbox-mark {
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 1.25rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 1.1rem 1.2rem;
-  box-shadow: var(--shadow-sm);
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.03);
   cursor: pointer;
   transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), outline-color 0.15s var(--ease);
 }
@@ -3283,8 +3321,8 @@ li:hover .checkbox-mark {
   outline-offset: -1px;
 }
 .stat-card-value {
-  font-size: 2rem;
-  font-weight: 800;
+  font-size: 2.5rem;
+  font-weight: 900;
   letter-spacing: -0.04em;
   line-height: 1;
 }
@@ -3304,11 +3342,12 @@ li:hover .checkbox-mark {
   min-width: 0;
 }
 .stat-card-text strong {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 700;
+  line-height: 1.3;
 }
 .stat-card-text small {
-  font-size: 0.76rem;
+  font-size: 0.75rem;
   color: var(--color-muted);
 }
 
@@ -4306,14 +4345,14 @@ li:hover .checkbox-mark {
   grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
 }
-@media (max-width: 1100px) {
+@media (max-width: 900px) {
   .cl-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 @media (max-width: 700px) {
   .cl-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 

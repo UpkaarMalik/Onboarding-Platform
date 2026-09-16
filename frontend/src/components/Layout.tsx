@@ -109,14 +109,16 @@ export default function Layout() {
         </nav>
 
         <div className="sb-footer">
-          <div className="sb-user">
-            <div className="sb-avatar">{initial}</div>
-            <div>
-              <div className="sb-uname">{user?.full_name}</div>
-              <div className="sb-urole">{roleLabel}</div>
+          <div className="sb-user-card">
+            <div className="sb-user">
+              <div className="sb-avatar">{initial}</div>
+              <div className="sb-uinfo">
+                <div className="sb-uname">{user?.full_name}</div>
+                <div className="sb-urole">{roleLabel}</div>
+              </div>
             </div>
+            <button className="sb-signout" onClick={handleLogout}>Sign out</button>
           </div>
-          <button className="sb-signout" onClick={handleLogout}>Sign out</button>
         </div>
       </aside>
 

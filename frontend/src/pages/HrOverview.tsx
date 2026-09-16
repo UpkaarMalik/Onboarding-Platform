@@ -263,17 +263,35 @@ export default function HrOverview({
       <Reveal>
         <header className="overview-head">
           <div className="overview-head-text">
-            <span className="overview-eyebrow">
-              <span className="overview-eyebrow-dot" />
-              Admin dashboard
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
-              <h1 className="overview-title" style={{ margin: 0 }}>
-                Onboarding <em>Overview</em>
-              </h1>
-              <button type="button" className="btn-solid" style={{ fontSize: 15, padding: '12px 28px', whiteSpace: 'nowrap' }} onClick={() => setShowCreateJoinee(true)}>
-                + Create New Joinee
-              </button>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <span className="overview-eyebrow">
+                  <span className="overview-eyebrow-dot" />
+                  Admin dashboard
+                </span>
+                <h1 className="overview-title" style={{ margin: 0 }}>
+                  Onboarding <em>Overview</em>
+                </h1>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+                  borderRadius: 12, padding: '8px 16px', fontSize: 13, fontWeight: 600,
+                  color: 'var(--color-text)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                }}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--color-muted)" strokeWidth="1.3">
+                    <circle cx="8" cy="8" r="6.5" />
+                    <path d="M8 4.5V8l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span>{clockTime.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  <span style={{ color: 'var(--color-muted)' }}>•</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{clockTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
+                </div>
+                <button type="button" className="btn-solid" style={{ fontSize: 14, padding: '10px 24px', whiteSpace: 'nowrap', borderRadius: 12 }} onClick={() => setShowCreateJoinee(true)}>
+                  + Create New Joinee
+                </button>
+              </div>
             </div>
             <p className="overview-lede">
               Track and manage all joinees' onboarding progress from one place.
@@ -300,9 +318,28 @@ export default function HrOverview({
             <span className="stat-card-value">{stats.completed}</span>
             <span className="stat-card-text"><strong>Completed</strong><small>Fully onboarded</small></span>
           </div>
-          <div className="stat-card stat-card--accent">
-            <span className="stat-card-value">{stats.avg}%</span>
-            <span className="stat-card-text"><strong>Avg. Completion</strong><small>Across all</small></span>
+          <div className="stat-card stat-card--accent" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+              <span className="stat-card-value">{stats.avg}%</span>
+              <span className="stat-card-text"><strong>Avg. Completion</strong><small>Across all</small></span>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowCreateJoinee(true); }}
+              style={{
+                alignSelf: 'flex-end',
+                background: 'linear-gradient(135deg, #f59e0b, #d97706 50%, #b45309)',
+                color: '#fff', border: 'none', borderRadius: 8,
+                padding: '6px 14px', fontSize: 11, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit',
+                boxShadow: '0 2px 8px -2px rgba(245,158,11,0.4)',
+                transition: 'transform 0.15s, box-shadow 0.15s',
+              }}
+              onMouseEnter={(e) => { (e.target as HTMLElement).style.transform = 'translateY(-1px)'; }}
+              onMouseLeave={(e) => { (e.target as HTMLElement).style.transform = 'none'; }}
+            >
+              + Create Employee
+            </button>
           </div>
         </div>
       </Reveal>
