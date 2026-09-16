@@ -2916,96 +2916,26 @@ li:hover .checkbox-mark {
   fill: none;
   stroke: none;
 }
-.roadmap-boat-glow {
+/* The runner on the trail: the AND Payments mark. */
+.roadmap-mark-glow {
   fill: var(--color-accent);
   animation: runnerPulse 2.6s ease-in-out infinite;
 }
-/* Afloat: a slow, shallow roll, since there is no water drawn to imply it.
-   `transform-box: fill-box` is required, not cosmetic — SVG elements default
-   to `view-box`, which would resolve the origin against the whole overlay,
-   thousands of pixels away, and swing the boat off screen on the first
-   frame. */
-.roadmap-boat-body {
-  transform-box: fill-box;
-  transform-origin: 50% 78%;
-  animation: boatRoll 3.6s ease-in-out infinite;
+/* Both sampled from the brand asset's flat fills, not approximated from the
+   page palette — the mark is the mark. */
+.roadmap-mark-disc {
+  fill: #07243e;
 }
-
-.roadmap-boat-hull {
-  fill: var(--boat-white);
-  stroke: var(--boat-dark);
-  stroke-width: 1.2;
-  stroke-linejoin: round;
+.roadmap-mark-boomerang {
+  fill: #ed952b;
 }
-/* Below the waterline. Clipped to the hull, so this straight-edged rect can
-   never spill past the planking. */
-.roadmap-boat-boot {
-  fill: var(--boat-navy);
-}
-.roadmap-boat-sheer {
-  fill: none;
-  stroke: var(--boat-dark);
-  stroke-width: 2.2;
-  stroke-linecap: round;
-}
-.roadmap-boat-strake {
-  fill: none;
-  stroke: var(--boat-dark);
-  stroke-width: 0.6;
-  opacity: 0.28;
-}
-.roadmap-boat-port {
-  fill: var(--boat-dark);
-}
-.roadmap-boat-ring {
-  fill: var(--color-accent);
-}
-.roadmap-boat-stem {
-  stroke: var(--boat-dark);
-  stroke-width: 2;
-  stroke-linecap: round;
-}
-.roadmap-boat-bollard,
-.roadmap-boat-lamp {
-  fill: var(--boat-white);
-  stroke: var(--boat-dark);
-  stroke-width: 0.7;
-}
-.roadmap-boat-cabin {
-  fill: var(--boat-white);
-  stroke: var(--boat-dark);
-  stroke-width: 1;
-}
-.roadmap-boat-cabin-roof {
-  fill: var(--boat-dark);
-}
-.roadmap-boat-window {
-  fill: var(--boat-glass);
-}
-.roadmap-boat-mast {
-  stroke: var(--boat-dark);
-  stroke-width: 1.3;
-  stroke-linecap: round;
-}
-.roadmap-boat-spar {
-  fill: none;
-  stroke: var(--boat-dark);
-  stroke-width: 0.9;
-  stroke-linecap: round;
-}
-.roadmap-boat-sail {
-  fill: var(--boat-sail);
-  opacity: 0.8;
-}
-.roadmap-boat-screen {
-  fill: var(--boat-sail);
-  opacity: 0.55;
-}
-.roadmap-boat-screen-frame {
-  fill: none;
-  stroke: var(--boat-dark);
-  stroke-width: 1;
-}
+/* Deliberately NO transform-box/transform-origin on the spinning group.
+   The voyage writes `rotate(deg)` as an SVG transform ATTRIBUTE, which turns
+   about the current user-space origin — and that origin is the motion point,
+   because the parent's translate() put it there and the disc is drawn at
+   cx=0,cy=0 on it. Setting `transform-box: fill-box` here would move the
+   pivot to the boomerang's own bounding-box centre instead, which is offset
+   from the disc's centre, and the boomerang would orbit rather than spin. */
 
 @keyframes runnerPulse {
   0%,
@@ -3014,15 +2944,6 @@ li:hover .checkbox-mark {
   }
   50% {
     opacity: 0.42;
-  }
-}
-@keyframes boatRoll {
-  0%,
-  100% {
-    transform: rotate(-1.3deg) translateY(0.4px);
-  }
-  50% {
-    transform: rotate(1.3deg) translateY(-0.4px);
   }
 }
 
@@ -6070,8 +5991,7 @@ li:hover .checkbox-mark {
      `animation: none` cannot stop, so TaskRoadmap reads the preference itself
      and renders the boat already moored — hiding it outright would take the
      position marker away along with the movement. Only its glow is CSS. */
-  .roadmap-boat-glow,
-  .roadmap-boat-body,
+  .roadmap-mark-glow,
   .modal,
   .modal-backdrop,
   .roadmap-spine--flow,

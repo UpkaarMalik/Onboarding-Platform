@@ -143,6 +143,16 @@ export default function HrOverview({
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  /* The header clock. Its JSX arrived with the Gallery Update merge but the
+     state behind it did not, so `clockTime` was an undeclared identifier and
+     the project failed to typecheck. It renders only in the standalone header
+     (`!embedded`), which nothing mounts today, so it was never going to throw
+     at runtime — but it would have broken any typed build. */
+  const [clockTime, setClockTime] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setClockTime(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
   /* Restoring access is harmless and stays one click. Removing it locks a
      person out of the tool, so that direction gets a sentence explaining the
      consequence first. */
