@@ -146,7 +146,14 @@ export default function Community() {
   }
 
   function handlePollVote(postId: string, optionKey: string) {
-    setPollVotes((prev) => ({ ...prev, [postId]: optionKey }));
+    setPollVotes((prev) => {
+      if (prev[postId] === optionKey) {
+        const next = { ...prev };
+        delete next[postId];
+        return next;
+      }
+      return { ...prev, [postId]: optionKey };
+    });
   }
 
   /* ---- Derived values ---- */
@@ -170,13 +177,13 @@ export default function Community() {
   /* ---- Filter tab config ---- */
   const filterTabs: { id: 'all' | 'questions' | 'polls'; label: string; icon: string }[] = [
     { id: 'all', label: 'All posts', icon: '' },
-    { id: 'questions', label: 'Ask Me Anything', icon: '' },
-    { id: 'polls', label: 'Polls', icon: '' },
+    { id: 'questions', label: '❓ Ask Me Anything', icon: '' },
+    { id: 'polls', label: '📊 Polls', icon: '' },
   ];
 
   /* ---- Render ---- */
   return (
-    <div className="cv-page dot-grid">
+    <div className="cv-page">
       {/* ================================================================
           HEADER
           ================================================================ */}
@@ -265,12 +272,12 @@ export default function Community() {
           {totalPosts} Discussions
         </div>
         <span style={{ color: '#ddd' }}>&middot;</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#777' }}>
-          100% Anonymous
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#777' }}>
+          <span style={{ fontSize: 14 }}>🔒</span> 100% Anonymous
         </div>
         <span style={{ color: '#ddd' }}>&middot;</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#777' }}>
-          {pollCount} Active Poll{pollCount !== 1 ? 's' : ''}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#777' }}>
+          <span style={{ fontSize: 14 }}>📊</span> {pollCount} Active Poll{pollCount !== 1 ? 's' : ''}
         </div>
       </div>
 
@@ -282,50 +289,27 @@ export default function Community() {
           className="cv-quick-compose"
           onClick={() => setShowCompose(true)}
           style={{
+            display: 'block',
             background: '#fff',
             border: '1px solid #e8e4dc',
             borderRadius: 16,
-            padding: '20px 24px',
+            padding: '16px 22px',
             cursor: 'pointer',
-            flexDirection: 'column',
-            alignItems: 'stretch',
+            transition: 'box-shadow 0.2s, border-color 0.2s',
           }}
+          onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 20px rgba(232,147,12,0.12)'; e.currentTarget.style.borderColor = '#e8930c50'; }}
+          onMouseLeave={e => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.borderColor = '#e8e4dc'; }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-            <span style={{ fontSize: 16 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2">
-                <path
-                  d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>✏️</span>
+            <span style={{ fontSize: 13, color: '#999', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Share something with the team... (posts &amp; polls are 100% anonymous)
             </span>
-            <span style={{ fontSize: 14, color: '#999', flex: 1 }}>
-              Share something with the team... (posts are 100% anonymous)
-            </span>
-            <span
-              style={{
-                fontSize: 12,
-                color: '#999',
-                border: '1px solid #e0dbd3',
-                borderRadius: 6,
-                padding: '4px 12px',
-              }}
-            >
-              Draft
-            </span>
+            <span style={{ fontSize: 11, color: '#999', border: '1px solid #e0dbd3', borderRadius: 6, padding: '3px 10px', fontWeight: 500, flexShrink: 0 }}>Draft</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#e8930c' }}>
-                Ask Me Anything ready
-              </span>
-              <span style={{ fontSize: 12, color: '#999' }}>&middot; Poll support enabled</span>
-            </div>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#e8930c' }}>
-              Open Full Composer &rarr;
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, gap: 8 }}>
+            <span style={{ color: '#e8930c', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>AMA ready <span style={{ color: '#ccc', fontWeight: 400 }}>&middot;</span> <span style={{ color: '#999', fontWeight: 400 }}>Polls enabled</span></span>
+            <span style={{ fontWeight: 600, color: '#e8930c', flexShrink: 0, whiteSpace: 'nowrap' }}>Composer &rarr;</span>
           </div>
         </div>
       )}
@@ -345,8 +329,8 @@ export default function Community() {
             rows={3}
           />
           {isPoll && (
-            <div style={{ marginTop: 12 }}>
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 8 }}>
+            <div style={{ marginTop: 8 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>
                 Poll Options
               </p>
               {pollOptions.map((opt, i) => (
@@ -387,24 +371,44 @@ export default function Community() {
                   />
                 </div>
               ))}
-              {pollOptions.length < 6 && (
-                <button
-                  type="button"
-                  onClick={() => setPollOptions([...pollOptions, ''])}
-                  style={{
-                    background: 'none',
-                    border: '1px dashed #ddd',
-                    borderRadius: 8,
-                    padding: '6px 14px',
-                    fontSize: 12,
-                    color: '#999',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  + Add option
-                </button>
-              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                {pollOptions.length < 6 ? (
+                  <button
+                    type="button"
+                    onClick={() => setPollOptions([...pollOptions, ''])}
+                    style={{
+                      background: 'none',
+                      border: '1px dashed #ddd',
+                      borderRadius: 8,
+                      padding: '4px 12px',
+                      fontSize: 11,
+                      color: '#999',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    + Add
+                  </button>
+                ) : <span />}
+                {pollOptions.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setPollOptions(pollOptions.slice(0, -1))}
+                    style={{
+                      background: 'none',
+                      border: '1px dashed #ddd',
+                      borderRadius: 8,
+                      padding: '4px 12px',
+                      fontSize: 11,
+                      color: '#c94a3c',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    − Remove
+                  </button>
+                )}
+              </div>
             </div>
           )}
           <div className="cv-compose-footer">
