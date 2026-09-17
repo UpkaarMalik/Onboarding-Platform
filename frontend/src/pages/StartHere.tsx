@@ -81,6 +81,7 @@ export default function StartHere() {
   const [entrancePhase, setEntrancePhase] = useState<'greeting' | 'dashboard'>(hasPlayedEntrance ? 'dashboard' : 'greeting');
   const [timeOfDay, setTimeOfDay] = useState<number | null>(null);
   const [clockOpen, setClockOpen] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const entranceTimer = useRef<ReturnType<typeof setTimeout>>();
   const hasCelebratedCompletionRef = useRef(false);
 
@@ -131,6 +132,11 @@ export default function StartHere() {
       hasPlayedEntrance = true;
     }, 1400);
     return () => clearTimeout(entranceTimer.current);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
   }, []);
 
   // A one-time bigger celebration the moment this page sees the
@@ -207,7 +213,7 @@ export default function StartHere() {
       <div className={`entrance-body${entrancePhase === 'dashboard' ? ' entrance-body--visible' : ''}`}>
       {/* Ocean banner with overlay */}
       <div style={{ margin: '0 0 0', borderRadius: 20, overflow: 'hidden', position: 'relative', height: 220 }}>
-        <OceanBanner height={220} timeOfDay={timeOfDay ?? undefined} />
+        <OceanBanner height={220} timeOfDay={timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24} />
         <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', padding: '20px 36px', pointerEvents: 'none' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 'auto' }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.9)', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '3px 10px', letterSpacing: '0.5px' }}>
@@ -226,16 +232,16 @@ export default function StartHere() {
         {/* Frosted glass time card */}
         <div className="hr-hero-clock">
           <div className="hr-time-card" onClick={() => setClockOpen(!clockOpen)}>
-            <span className="hr-time-card-icon">☀️</span>
+            <span className="hr-time-card-icon">{(() => { const t = timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24; return t < 0.25 || t >= 0.83 ? '🌙' : t < 0.5 ? '☀️' : '🌤️'; })()}</span>
             <span className="hr-time-card-value">
-              {(() => { const t = timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
+              {(() => { const t = timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
             </span>
             {clockOpen && (
               <div className="hr-time-card-slider" onClick={e => e.stopPropagation()}>
                 <span>DAWN</span>
                 <input
                   type="range" min="0" max="1000"
-                  value={Math.round((timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24) * 1000)}
+                  value={Math.round((timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24) * 1000)}
                   onChange={e => setTimeOfDay(parseInt(e.target.value) / 1000)}
                   aria-label="Time of day"
                 />
@@ -246,31 +252,44 @@ export default function StartHere() {
         </div>
       </div>
 
-      <div className="greeting-banner warm-banner">
-        <div className="warm-banner-badge">
-          <span className="warm-banner-dot" />
-          AND Onboard
-        </div>
-        <span className="eyebrow">
-          {dashboard.progress.requiredCompleted} of {dashboard.progress.requiredTotal} steps done
+      <p className="hr-lede" style={{ marginTop: '1.25rem' }}>
+        <span className="hr-lede-bullet" aria-hidden="true" />
+        <span className="hr-lede-text">
+          Welcome to AND Payments — your personalised onboarding journey
+          <span className="hr-lede-amp"> &amp; </span>
+          everything you need <span className="hr-lede-here">starts right here.</span>
         </span>
-        <h1>
-          {greeting()}, {firstName} 👋
-        </h1>
-        <p className="warm-banner-desc">
-          Welcome to AND Payments — your personalised onboarding journey starts here.
+      </p>
+
+      <div style={{ marginTop: '1.25rem', marginBottom: '1.5rem', padding: '16px 20px', borderRadius: 16, background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
+        <p style={{ textAlign: 'center', fontSize: '0.95rem', margin: '0 0 10px', lineHeight: 1.6 }}>
+          {(() => {
+            const pct = dashboard.progress.percent;
+            const done = dashboard.progress.requiredCompleted;
+            if (pct === 100) return (
+              <><span style={{ fontWeight: 600 }}>🎉 Congratulations!</span> Your onboarding is <strong>{pct}%</strong> completed. Welcome aboard for real!</>
+            );
+            if (pct >= 75) return (
+              <><span style={{ fontWeight: 600, color: 'var(--color-success)' }}>Almost there!</span> Your onboarding is <strong>{pct}%</strong> completed. Just a few steps left to wrap up.</>
+            );
+            if (pct >= 50) return (
+              <><span style={{ fontWeight: 600, color: 'var(--color-accent-dark)' }}>Great momentum!</span> Your onboarding is <strong>{pct}%</strong> completed. You're past the halfway mark, keep it going!</>
+            );
+            if (done >= 2) return (
+              <><span style={{ fontWeight: 600, color: 'var(--color-info)' }}>Nice start!</span> Your onboarding is <strong>{pct}%</strong> completed. You're picking up speed!</>
+            );
+            if (pct > 0) return (
+              <><span style={{ fontWeight: 600 }}>You're on your way!</span> Your onboarding is <strong>{pct}%</strong> completed. One step at a time.</>
+            );
+            return (
+              <><span style={{ fontWeight: 600 }}>Your journey starts here.</span> Complete your first task to get the ball rolling.</>
+            );
+          })()}
         </p>
-        {dashboard.onboarding.status === 'completed' ? (
-          <p className="onboarding-complete-banner">
-            🎉 You've completed your onboarding — welcome aboard for real!
-          </p>
-        ) : (
-          <p>Your onboarding is {dashboard.progress.percent}% complete — here's what's next.</p>
-        )}
-        <AnimatedProgressBar percent={dashboard.progress.percent} />
-        <JourneyTrack stages={JOURNEY_STAGES} currentKey={dashboard.onboarding.status} />
+        <AnimatedProgressBar percent={dashboard.progress.percent} showIndicator />
       </div>
 
+      {/* Quick access — commented out per request
       <Reveal>
         <section>
           <h2>Quick access</h2>
@@ -330,6 +349,7 @@ export default function StartHere() {
           </div>
         </section>
       </Reveal>
+      */}
 
       {knowledge.length > 0 && (
         <Reveal>
@@ -357,15 +377,15 @@ export default function StartHere() {
       <Reveal>
         <section>
           <h2>New to Mac? A few tips</h2>
-          <div className="knowledge-grid">
+          <div className="knowledge-emoji-row">
             {MAC_TIPS.map((tip, i) => (
               <div
                 key={tip.title}
-                className="knowledge-card card card-hover"
+                className="knowledge-emoji-item"
                 style={{ animationDelay: `${i * 0.07}s` }}
               >
-                <span className="knowledge-icon">{tip.icon}</span>
-                <div>
+                <span className="knowledge-emoji-icon">{tip.icon}</span>
+                <div className="knowledge-emoji-tooltip">
                   <strong>{tip.title}</strong>
                   <p>{tip.content}</p>
                 </div>
@@ -410,57 +430,7 @@ export default function StartHere() {
         </section>
       </Reveal>
 
-      <Reveal>
-        <section id="notes-section">
-          <h2>Your private notes</h2>
-          <p className="muted">
-            Only you can see the note content — SuperAdmin can see that notes exist and read the text,
-            but never who wrote them.
-          </p>
-          <form onSubmit={addNote} className="note-form">
-            <textarea
-              value={newNote}
-              onChange={(e) => setNewNote(e.target.value)}
-              placeholder="Write something only you can see…"
-            />
-            <button type="submit">Add note</button>
-          </form>
-          <ul className="notes-list">
-            {notes.map((n) => (
-              <li key={n.id}>{n.content}</li>
-            ))}
-          </ul>
-        </section>
-      </Reveal>
-
-      <Reveal>
-        <section id="diary-section">
-          <h2>Your diary</h2>
-          <p className="muted">
-            A private log of what you got done each day — only you can ever see this, on your own
-            dashboard. Newest day first.
-          </p>
-          <form onSubmit={saveDiaryEntry} className="note-form">
-            <textarea
-              value={diaryDraft}
-              onChange={(e) => setDiaryDraft(e.target.value)}
-              placeholder="What did you get done today?"
-            />
-            <button type="submit" disabled={savingDiary}>
-              {savingDiary ? 'Saving…' : "Save today's entry"}
-            </button>
-          </form>
-          <ul className="notes-list diary-list">
-            {diary.map((d) => (
-              <li key={d.id}>
-                <span className="diary-date">{d.entry_date}</span>
-                <span>{d.content}</span>
-              </li>
-            ))}
-            {diary.length === 0 && <p className="muted">Nothing logged yet.</p>}
-          </ul>
-        </section>
-      </Reveal>
+      {/* Private notes and diary removed from home — available via sidebar */}
       </div>{/* end entrance-body */}
     </div>
   );
