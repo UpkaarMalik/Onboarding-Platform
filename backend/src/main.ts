@@ -7,7 +7,8 @@ import { ConfigService } from '@nestjs/config';
 // `cookie_parser_1.default`, which is undefined at runtime.
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
-import { fixedOtpEnabled, FIXED_DEV_OTP } from './auth/utils/otp';
+// OTP-LOGIN-DISABLED
+// import { fixedOtpEnabled, FIXED_DEV_OTP } from './auth/utils/otp';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -54,20 +55,24 @@ async function bootstrap() {
   // eslint-disable-next-line no-console
   console.log(`Onboarding API listening on :${port}`);
 
-  // Loud on purpose. A fixed login code is the single most dangerous thing
-  // that could quietly survive into a deployed environment, so it announces
-  // itself every boot rather than hiding in a config file.
-  if (fixedOtpEnabled()) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `\n  ****************************************************************\n` +
-        `  *  TESTING MODE: every mobile OTP is ${FIXED_DEV_OTP}.                  *\n` +
-        `  *  Any account can be logged into with a known code.           *\n` +
-        `  *  Set AUTH_FIXED_OTP=false for real random codes.             *\n` +
-        `  *  Refuses to engage when NODE_ENV=production.                 *\n` +
-        `  ****************************************************************\n`,
-    );
-  }
+  // OTP-LOGIN-DISABLED — the fixed-code banner went with the OTP login
+  // method. Nothing issues an OTP any more, so warning about a fixed one
+  // would be noise. Uncomment alongside the rest of the OTP flow.
+  //
+  // // Loud on purpose. A fixed login code is the single most dangerous thing
+  // // that could quietly survive into a deployed environment, so it announces
+  // // itself every boot rather than hiding in a config file.
+  // if (fixedOtpEnabled()) {
+  //   // eslint-disable-next-line no-console
+  //   console.warn(
+  //     `\n  ****************************************************************\n` +
+  //       `  *  TESTING MODE: every mobile OTP is ${FIXED_DEV_OTP}.                  *\n` +
+  //       `  *  Any account can be logged into with a known code.           *\n` +
+  //       `  *  Set AUTH_FIXED_OTP=false for real random codes.             *\n` +
+  //       `  *  Refuses to engage when NODE_ENV=production.                 *\n` +
+  //       `  ****************************************************************\n`,
+  //   );
+  // }
 }
 
 bootstrap();

@@ -1,8 +1,8 @@
 import { IsString, Length } from 'class-validator';
 
-/** Method 1: Joinee ID + password. No company email, no OTP — a
- *  complete login on its own, unless the password is still the
- *  HR-issued temp one (see AuthService.loginWithPassword). */
+/** Joinee ID + password — the only login method. A complete login on
+ *  its own, unless the password is still the HR-issued temp one (see
+ *  AuthService.loginWithPassword). */
 export class PasswordLoginDto {
   @IsString()
   joineeId!: string;
@@ -17,18 +17,19 @@ export class CompletePasswordResetDto {
   newPassword!: string;
 }
 
-/** Method 2: mobile number + OTP. No password involved at all. */
-export class RequestOtpDto {
-  @IsString()
-  phoneNumber!: string;
-}
+// userId is intentionally NOT a field on CompletePasswordResetDto — it
+// comes from the verified pre-auth token via @PreAuthUser(), attached
+// by PreAuthGuard.
 
-// userId is intentionally NOT a field on either OtpCodeDto or
-// CompletePasswordResetDto — it comes from the verified pre-auth token
-// via @PreAuthUser(), attached by PreAuthGuard.
-
-export class OtpCodeDto {
-  @IsString()
-  @Length(6, 6)
-  code!: string;
-}
+// OTP-LOGIN-DISABLED — mobile number + OTP, no password involved at all.
+//
+// export class RequestOtpDto {
+//   @IsString()
+//   phoneNumber!: string;
+// }
+//
+// export class OtpCodeDto {
+//   @IsString()
+//   @Length(6, 6)
+//   code!: string;
+// }
