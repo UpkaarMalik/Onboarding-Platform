@@ -97,19 +97,20 @@ export class UsersService {
     return rows[0] ?? null;
   }
 
-  /** Backs mobile-OTP login — relies on the UNIQUE constraint on
-   *  phone_number added alongside joinee_id (migration 0015): without
-   *  it, an OTP could resolve to the wrong account if two users ever
-   *  shared a number. Normalizes the input the same way insertUser
-   *  normalizes storage, so formatting differences never cause a
-   *  false "Invalid credentials". */
-  async findByPhoneNumber(phoneNumber: string): Promise<UserRow | null> {
-    const { rows } = await this.db.query<UserRow>(
-      `SELECT * FROM users WHERE phone_number = $1 AND deleted_at IS NULL`,
-      [normalizePhoneNumber(phoneNumber)],
-    );
-    return rows[0] ?? null;
-  }
+  // OTP-LOGIN-DISABLED — backed mobile-OTP login, which was its only
+  // caller. Relied on the UNIQUE constraint on phone_number added
+  // alongside joinee_id (migration 0015): without it, an OTP could
+  // resolve to the wrong account if two users ever shared a number.
+  // Normalized the input the same way insertUser normalizes storage, so
+  // formatting differences never caused a false "Invalid credentials".
+  //
+  // async findByPhoneNumber(phoneNumber: string): Promise<UserRow | null> {
+  //   const { rows } = await this.db.query<UserRow>(
+  //     `SELECT * FROM users WHERE phone_number = $1 AND deleted_at IS NULL`,
+  //     [normalizePhoneNumber(phoneNumber)],
+  //   );
+  //   return rows[0] ?? null;
+  // }
 
   async findById(id: string): Promise<UserRow | null> {
     const { rows } = await this.db.query<UserRow>(
@@ -185,38 +186,43 @@ export class UsersService {
     ]);
   }
 
-  /** Stores a freshly generated login OTP (already hashed — the plain
-   *  code never touches the database) and resets the attempt counter,
-   *  whether this is the first code this session or a resend. */
-  async setLoginOtp(userId: string, otpHash: string, expiresAt: Date) {
-    await this.db.query(
-      `UPDATE users
-       SET login_otp_hash = $2, login_otp_expires_at = $3, login_otp_attempts = 0
-       WHERE id = $1`,
-      [userId, otpHash, expiresAt],
-    );
-  }
-
-  /** Called on successful verification, expiry, or lockout — a spent or
-   *  dead code must never verify again. */
-  async clearLoginOtp(userId: string) {
-    await this.db.query(
-      `UPDATE users
-       SET login_otp_hash = NULL, login_otp_expires_at = NULL, login_otp_attempts = 0
-       WHERE id = $1`,
-      [userId],
-    );
-  }
-
-  async incrementOtpAttempts(userId: string): Promise<number> {
-    const { rows } = await this.db.query<{ login_otp_attempts: number }>(
-      `UPDATE users SET login_otp_attempts = login_otp_attempts + 1
-       WHERE id = $1
-       RETURNING login_otp_attempts`,
-      [userId],
-    );
-    return rows[0].login_otp_attempts;
-  }
+  // OTP-LOGIN-DISABLED — the three login-OTP writers. The login_otp_*
+  // COLUMNS are deliberately left in the schema and in UserRow: they
+  // still hold whatever was there when OTP login was switched off, and
+  // toPublicUser below must keep stripping them regardless.
+  //
+  // /** Stores a freshly generated login OTP (already hashed — the plain
+  //  *  code never touches the database) and resets the attempt counter,
+  //  *  whether this is the first code this session or a resend. */
+  // async setLoginOtp(userId: string, otpHash: string, expiresAt: Date) {
+  //   await this.db.query(
+  //     `UPDATE users
+  //      SET login_otp_hash = $2, login_otp_expires_at = $3, login_otp_attempts = 0
+  //      WHERE id = $1`,
+  //     [userId, otpHash, expiresAt],
+  //   );
+  // }
+  //
+  // /** Called on successful verification, expiry, or lockout — a spent or
+  //  *  dead code must never verify again. */
+  // async clearLoginOtp(userId: string) {
+  //   await this.db.query(
+  //     `UPDATE users
+  //      SET login_otp_hash = NULL, login_otp_expires_at = NULL, login_otp_attempts = 0
+  //      WHERE id = $1`,
+  //     [userId],
+  //   );
+  // }
+  //
+  // async incrementOtpAttempts(userId: string): Promise<number> {
+  //   const { rows } = await this.db.query<{ login_otp_attempts: number }>(
+  //     `UPDATE users SET login_otp_attempts = login_otp_attempts + 1
+  //      WHERE id = $1
+  //      RETURNING login_otp_attempts`,
+  //     [userId],
+  //   );
+  //   return rows[0].login_otp_attempts;
+  // }
 
   /** Strips fields that must never leave the API. */
   toPublicUser(user: UserRow): PublicUser {

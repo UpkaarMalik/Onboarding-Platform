@@ -112,11 +112,16 @@ export default function StartHere() {
       const notesRes = await authedFetch<{ data: any[] }>('/notes');
       setNotes(notesRes.data);
 
-      const diaryRes = await authedFetch<any[]>('/diary');
-      setDiary(diaryRes);
-      const today = new Date().toISOString().slice(0, 10);
-      const todayEntry = diaryRes.find((d) => d.entry_date === today);
-      setDiaryDraft(todayEntry?.content ?? '');
+      // PARKED-FEATURE: diary. This shares the try block with the
+      // dashboard, knowledge and notes loads, so leaving it in place
+      // against an unregistered /diary would 404 and take the whole home
+      // page down with it — not just the diary section.
+      //
+      // const diaryRes = await authedFetch<any[]>('/diary');
+      // setDiary(diaryRes);
+      // const today = new Date().toISOString().slice(0, 10);
+      // const todayEntry = diaryRes.find((d) => d.entry_date === today);
+      // setDiaryDraft(todayEntry?.content ?? '');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {
@@ -164,19 +169,21 @@ export default function StartHere() {
     }
   }
 
-  async function saveDiaryEntry(e: FormEvent) {
-    e.preventDefault();
-    if (!diaryDraft.trim()) return;
-    setSavingDiary(true);
-    try {
-      await authedFetch('/diary', { method: 'POST', body: { content: diaryDraft } });
-      await loadAll();
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSavingDiary(false);
-    }
-  }
+  // PARKED-FEATURE: diary
+  //
+  // async function saveDiaryEntry(e: FormEvent) {
+  //   e.preventDefault();
+  //   if (!diaryDraft.trim()) return;
+  //   setSavingDiary(true);
+  //   try {
+  //     await authedFetch('/diary', { method: 'POST', body: { content: diaryDraft } });
+  //     await loadAll();
+  //   } catch (err) {
+  //     alert(err instanceof ApiError ? err.message : 'Something went wrong');
+  //   } finally {
+  //     setSavingDiary(false);
+  //   }
+  // }
 
   async function submitRating(rating: number) {
     setSubmittingRating(true);
@@ -304,6 +311,8 @@ export default function StartHere() {
               <span className="qa-icon">📝</span>
               My Notes
             </a>
+            {/* PARKED-FEATURE: diary, community — quick-access tiles.
+
             <a
               className="quick-access-tile"
               onClick={(e) => {
@@ -319,6 +328,7 @@ export default function StartHere() {
               <span className="qa-icon">💬</span>
               Community
             </a>
+            */}
             <a className="quick-access-tile" href="/documents">
               <span className="qa-icon">📄</span>
               Documents
@@ -438,6 +448,8 @@ export default function StartHere() {
         </section>
       </Reveal>
 
+      {/* PARKED-FEATURE: diary — the home page's diary section.
+
       <Reveal>
         <section id="diary-section">
           <h2>Your diary</h2>
@@ -466,6 +478,7 @@ export default function StartHere() {
           </ul>
         </section>
       </Reveal>
+      */}
       </div>{/* end entrance-body */}
     </div>
   );

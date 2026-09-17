@@ -30,23 +30,43 @@ interface PasswordResetComplete {
 type Mode = 'otp' | 'password';
 
 type PasswordStep = { name: 'credentials' } | { name: 'reset'; preAuthToken: string };
-type OtpStep = { name: 'phone' } | { name: 'verify'; preAuthToken: string };
+
+type FieldName = 'joineeId' | 'password' | 'newPassword' | null;
+
+/** Minimum the backend will accept — CompletePasswordResetDto uses
+ *  @Length(8, 100). Checked here too so the user is told before a round
+ *  trip, and in the same place as every other message. */
+const MIN_PASSWORD_LENGTH = 8;
+// OTP-LOGIN-DISABLED
+// type OtpStep = { name: 'phone' } | { name: 'verify'; preAuthToken: string };
 
 /**
- * Two entirely independent, complete login methods — not two steps of
- * one flow. Mobile + OTP never touches a password at all: request a
- * code, verify it, done. Joinee ID + password ends in a real session
- * unless the password on file is still the HR-issued temp one (then
- * there's one extra "set a new password" step). See
- * AuthService.requestMobileOtp / loginWithPassword on the backend —
- * this mirrors that split exactly, tab for tab.
+ * Joinee ID + password is the only login method.
+ *
+ * It ends in a real session unless the password on file is still the
+ * HR-issued temp one, in which case there is one extra "set a new
+ * password" step before the user signs in again.
+ *
+ * OTP-LOGIN-DISABLED — mobile + OTP used to be a second, entirely
+ * independent method alongside this one (request a code, verify it,
+ * done; no password anywhere). It is commented out rather than deleted
+ * throughout, so grep for `OTP-LOGIN-DISABLED` to find every piece and
+ * uncomment to bring it back. The backend endpoints it called are
+ * disabled the same way — see AuthController and AuthService.
  */
 export default function Login() {
   const navigate = useNavigate();
   const { setAuthenticatedUser } = useAuth();
 
-  const [mode, setMode] = useState<Mode>('otp');
+  // OTP-LOGIN-DISABLED — was 'otp'. With the OTP tab gone this is the
+  // only reachable mode, but the state is kept so restoring the tab is
+  // a matter of uncommenting rather than rewiring.
+  const [mode, setMode] = useState<Mode>('password');
   const [error, setError] = useState<string | null>(null);
+  /** Which input the current error is about, so it can be marked invalid
+   *  and pointed at. Null for errors that belong to the form as a whole
+   *  (a rejected credential pair, a server that didn't answer). */
+  const [invalidField, setInvalidField] = useState<FieldName>(null);
   const [busy, setBusy] = useState(false);
 
   const [passwordStep, setPasswordStep] = useState<PasswordStep>({ name: 'credentials' });
@@ -54,10 +74,11 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
-  const [otpStep, setOtpStep] = useState<OtpStep>({ name: 'phone' });
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [code, setCode] = useState('');
-  const [resent, setResent] = useState(false);
+  // OTP-LOGIN-DISABLED
+  // const [otpStep, setOtpStep] = useState<OtpStep>({ name: 'phone' });
+  // const [phoneNumber, setPhoneNumber] = useState('');
+  // const [code, setCode] = useState('');
+  // const [resent, setResent] = useState(false);
 
   // Set after a successful first-time reset, to explain why the user is
   // looking at the sign-in form again instead of the home page.
@@ -68,7 +89,38 @@ export default function Login() {
     setError(null);
     setResetComplete(false);
     setPasswordStep({ name: 'credentials' });
-    setOtpStep({ name: 'phone' });
+    // OTP-LOGIN-DISABLED
+    // setOtpStep({ name: 'phone' });
+  }
+
+  /** Clears whatever the last attempt complained about. Wired to every
+   *  input's onChange: an error that outlives the thing it was about
+   *  reads as the form still being broken after it has been fixed. */
+  function clearError() {
+    if (error || invalidField) {
+      setError(null);
+      setInvalidField(null);
+    }
+  }
+
+  function fail(message: string, field: FieldName = null) {
+    setError(message);
+    setInvalidField(field);
+  }
+
+  /**
+   * One place that turns anything thrown by the fetch layer into a
+   * message worth reading.
+   *
+   * ApiError always carries the server's own wording — "Invalid
+   * credentials", "This account has been disabled", or a joined list of
+   * validation failures. Anything else means the request never landed,
+   * which is a different problem and deserves to say so rather than
+   * being flattened into "Something went wrong".
+   */
+  function describe(err: unknown): string {
+    if (err instanceof ApiError) return err.message;
+    return 'Could not reach the server. Check your connection and try again.';
   }
 
   function finishAuthenticated(result: AuthenticatedResult) {
@@ -80,77 +132,85 @@ export default function Login() {
     navigate('/');
   }
 
-  // --- Method 1: mobile number + OTP ---
+  // --- OTP-LOGIN-DISABLED: mobile number + OTP -----------------------
+  //
+  // async function submitPhone(e: FormEvent) {
+  //   e.preventDefault();
+  //   setError(null);
+  //   setBusy(true);
+  //   try {
+  //     const result = await apiFetch<{ preAuthToken: string }>('/auth/login/otp/request', {
+  //       method: 'POST',
+  //       body: { phoneNumber: `91${phoneNumber}` },
+  //     });
+  //     setOtpStep({ name: 'verify', preAuthToken: result.preAuthToken });
+  //   } catch (err) {
+  //     setError(err instanceof ApiError ? err.message : 'Something went wrong');
+  //   } finally {
+  //     setBusy(false);
+  //   }
+  // }
+  //
+  // async function submitOtpVerify(e: FormEvent) {
+  //   e.preventDefault();
+  //   if (otpStep.name !== 'verify') return;
+  //   setError(null);
+  //   setBusy(true);
+  //   try {
+  //     const result = await apiFetch<PasswordLoginResult>('/auth/login/otp/verify', {
+  //       method: 'POST',
+  //       bearerToken: otpStep.preAuthToken,
+  //       body: { code },
+  //     });
+  //     if (result.status === 'authenticated') {
+  //       finishAuthenticated(result);
+  //       return;
+  //     }
+  //     // First login by OTP still has to set a real password before it
+  //     // gets a session. Verifying the code is what authorized the reset,
+  //     // so this hands over to the same reset form the password tab uses.
+  //     setMode('password');
+  //     setPasswordStep({ name: 'reset', preAuthToken: result.preAuthToken });
+  //   } catch (err) {
+  //     setError(err instanceof ApiError ? err.message : 'Something went wrong');
+  //   } finally {
+  //     setBusy(false);
+  //   }
+  // }
+  //
+  // async function resendOtp() {
+  //   if (otpStep.name !== 'verify') return;
+  //   setError(null);
+  //   setResent(false);
+  //   setBusy(true);
+  //   try {
+  //     await apiFetch('/auth/login/otp/resend', { method: 'POST', bearerToken: otpStep.preAuthToken });
+  //     setResent(true);
+  //   } catch (err) {
+  //     setError(err instanceof ApiError ? err.message : 'Something went wrong');
+  //   } finally {
+  //     setBusy(false);
+  //   }
+  // }
 
-  async function submitPhone(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      const result = await apiFetch<{ preAuthToken: string }>('/auth/login/otp/request', {
-        method: 'POST',
-        body: { phoneNumber: `91${phoneNumber}` },
-      });
-      setOtpStep({ name: 'verify', preAuthToken: result.preAuthToken });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitOtpVerify(e: FormEvent) {
-    e.preventDefault();
-    if (otpStep.name !== 'verify') return;
-    setError(null);
-    setBusy(true);
-    try {
-      const result = await apiFetch<PasswordLoginResult>('/auth/login/otp/verify', {
-        method: 'POST',
-        bearerToken: otpStep.preAuthToken,
-        body: { code },
-      });
-      if (result.status === 'authenticated') {
-        finishAuthenticated(result);
-        return;
-      }
-      // First login by OTP still has to set a real password before it
-      // gets a session. Verifying the code is what authorized the reset,
-      // so this hands over to the same reset form the password tab uses.
-      setMode('password');
-      setPasswordStep({ name: 'reset', preAuthToken: result.preAuthToken });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resendOtp() {
-    if (otpStep.name !== 'verify') return;
-    setError(null);
-    setResent(false);
-    setBusy(true);
-    try {
-      await apiFetch('/auth/login/otp/resend', { method: 'POST', bearerToken: otpStep.preAuthToken });
-      setResent(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // --- Method 2: Joinee ID + password ---
+  // --- Joinee ID + password (the only live method) ---
 
   async function submitPassword(e: FormEvent) {
     e.preventDefault();
-    setError(null);
+    // Trimmed because a Joinee ID is almost always pasted out of an
+    // email or a chat message, and a trailing space turns a correct
+    // credential into "Invalid credentials" with nothing to show for it.
+    const id = joineeId.trim();
+    if (!id) return fail('Enter your Joinee ID.', 'joineeId');
+    if (!password) return fail('Enter your password.', 'password');
+
+    clearError();
+    setResetComplete(false);
     setBusy(true);
     try {
       const result = await apiFetch<PasswordLoginResult>('/auth/login/password', {
         method: 'POST',
-        body: { joineeId, password },
+        body: { joineeId: id, password },
       });
       if (result.status === 'authenticated') {
         finishAuthenticated(result);
@@ -158,7 +218,11 @@ export default function Login() {
         setPasswordStep({ name: 'reset', preAuthToken: result.preAuthToken });
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      // The server answers a bad Joinee ID and a bad password with the
+      // same 'Invalid credentials', deliberately — saying which half was
+      // wrong would confirm that an ID exists. So neither field is
+      // singled out here; the message stands for the pair.
+      fail(describe(err));
     } finally {
       setBusy(false);
     }
@@ -167,7 +231,14 @@ export default function Login() {
   async function submitPasswordReset(e: FormEvent) {
     e.preventDefault();
     if (passwordStep.name !== 'reset') return;
-    setError(null);
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      return fail(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        'newPassword',
+      );
+    }
+
+    clearError();
     setBusy(true);
     try {
       const result = await apiFetch<PasswordResetComplete>(
@@ -182,7 +253,7 @@ export default function Login() {
       setResetComplete(true);
       setPasswordStep({ name: 'credentials' });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      fail(describe(err), 'newPassword');
     } finally {
       setBusy(false);
     }
@@ -294,6 +365,10 @@ export default function Login() {
         </div>
 
         <div className="auth-card liquid-card">
+          {/* OTP-LOGIN-DISABLED — the whole tab bar goes with it: with one
+              login method there is nothing to switch between. Uncomment
+              to bring both tabs back.
+
           <div className="auth-underline-tabs">
             <button
               type="button"
@@ -312,14 +387,25 @@ export default function Login() {
               Joinee ID &amp; Password
             </button>
           </div>
+          */}
 
-          {error && <p className="error-text">{error}</p>}
+          {/* role="alert" so the message is announced the moment it
+              appears — a failed sign-in is exactly the case where the
+              person may not be looking at this corner of the screen. */}
+          {error && (
+            <p className="error-text" id="auth-error" role="alert">
+              {error}
+            </p>
+          )}
 
           {resetComplete && (
             <p className="success-text">
               Password set. Sign in with your Joinee ID and your new password to continue.
             </p>
           )}
+
+          {/* OTP-LOGIN-DISABLED — both OTP forms below, phone entry then
+              code entry. Uncomment together with the handlers and state.
 
           {mode === 'otp' && otpStep.name === 'phone' && (
             <form onSubmit={submitPhone}>
@@ -387,26 +473,42 @@ export default function Login() {
               {resent && <p className="field-hint">A new code was sent.</p>}
             </form>
           )}
+          */}
 
+          {/* noValidate hands every check to submitPassword. The inputs keep
+              `required` for semantics, but the browser's own bubble is
+              suppressed: it styles differently in every engine, vanishes on
+              its own, and isn't announced — so an empty field and a rejected
+              password would report themselves two entirely different ways.
+              One code path, one place on screen, one voice. */}
           {mode === 'password' && passwordStep.name === 'credentials' && (
-            <form onSubmit={submitPassword}>
+            <form onSubmit={submitPassword} noValidate>
               <label htmlFor="joinee-id">Joinee ID</label>
               <div className="input-icon-group">
                 <span className="material-symbols-outlined">badge</span>
                 <input
                   id="joinee-id"
                   value={joineeId}
-                  onChange={(e) => setJoineeId(e.target.value)}
+                  onChange={(e) => {
+                    setJoineeId(e.target.value);
+                    clearError();
+                  }}
                   placeholder="JN-2026-001"
                   autoComplete="username"
+                  aria-invalid={invalidField === 'joineeId' || undefined}
+                  aria-describedby={error ? 'auth-error' : undefined}
                   required
                 />
               </div>
               <PasswordField
                 label="Password"
                 value={password}
-                onChange={setPassword}
+                onChange={(v) => {
+                  setPassword(v);
+                  clearError();
+                }}
                 autoComplete="current-password"
+                invalid={invalidField === 'password'}
                 required
               />
               <button className="btn-primary auth-submit" disabled={busy} type="submit">
@@ -416,14 +518,18 @@ export default function Login() {
           )}
 
           {mode === 'password' && passwordStep.name === 'reset' && (
-            <form onSubmit={submitPasswordReset}>
+            <form onSubmit={submitPasswordReset} noValidate>
               <p className="auth-step-hint">Choose a new password to continue.</p>
               <PasswordField
                 label="New password"
                 value={newPassword}
-                onChange={setNewPassword}
+                onChange={(v) => {
+                  setNewPassword(v);
+                  clearError();
+                }}
                 autoComplete="new-password"
-                minLength={8}
+                minLength={MIN_PASSWORD_LENGTH}
+                invalid={invalidField === 'newPassword'}
                 required
               />
               <button className="btn-primary auth-submit" disabled={busy} type="submit">
