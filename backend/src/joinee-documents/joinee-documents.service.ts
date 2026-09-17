@@ -198,11 +198,19 @@ export class JoineeDocumentsService {
   /** HR's verdict on the current upload for a requirement. */
   async review(uploadId: string, actor: AuthenticatedUser, dto: ReviewDocumentDto) {
     return this.db.transaction(async (client) => {
-      const { rows } = await client.query<{ requirement_id: string }>(
-        `UPDATE joinee_document_uploads
-         SET review_status = $2, reviewed_by = $3, reviewed_at = now(), review_note = $4
-         WHERE id = $1 AND superseded_at IS NULL
-         RETURNING requirement_id`,
+      const { rows } = await client.query<{
+        requirement_id: string;
+        onboarding_task_id: string | null;
+      }>(
+        `UPDATE joinee_document_uploads AS u
+            SET review_status = $2,
+                reviewed_by   = $3,
+                reviewed_at   = now(),
+                review_note   = $4
+           FROM joinee_document_requirements r
+          WHERE u.id = $1 AND u.superseded_at IS NULL
+            AND r.id = u.requirement_id
+        RETURNING u.requirement_id, r.onboarding_task_id`,
         [uploadId, dto.decision, actor.id, dto.note ?? null],
       );
       const upload = rows[0];
@@ -210,14 +218,29 @@ export class JoineeDocumentsService {
         throw new NotFoundException('Document upload not found');
       }
 
-      // A rejection sends the requirement back to the joinee. It does
-      // NOT reopen the gating task: task completion is one-way here,
-      // the same rule as un-ticking a subtask, so a late review can't
-      // pull a finished task and the progress built on it backwards.
+      // A rejection sends the requirement back to the joinee AND flips
+      // the gating task back to 'pending'. This deliberately breaks the
+      // "task completion is one-way" invariant that held before: a
+      // completed doc-upload task whose document was later rejected was
+      // still shown as done on the trail, which mis-reported the
+      // employee's actual state (they had a document to re-upload).
+      // Since the trail's open step is derived from the DB status of
+      // the tasks (see backend/src/onboardings/utils/trail-order.util.ts
+      // — SETTLED = {completed, cancelled}), flipping this task off
+      // 'completed' is what puts the docs step back at the front of
+      // the trail with no other coordination needed.
       await client.query(
         `UPDATE joinee_document_requirements SET status = $2 WHERE id = $1`,
         [upload.requirement_id, dto.decision === 'approved' ? 'approved' : 'rejected'],
       );
+
+      if (dto.decision === 'rejected' && upload.onboarding_task_id) {
+        await this.reopenDocumentTaskIfCompleted(
+          client,
+          upload.onboarding_task_id,
+          actor.id,
+        );
+      }
 
       await this.activityLog.log(
         {
@@ -231,6 +254,43 @@ export class JoineeDocumentsService {
 
       return { uploadId, reviewStatus: dto.decision };
     });
+  }
+
+  /**
+   * Reopen the gating doc-upload task if a review just rejected the
+   * document that closed it. Idempotent — a task that was never
+   * completed, or that has been re-completed by a subsequent upload
+   * arriving between review calls, is a no-op. Only the 'employee'
+   * completion fields are cleared (the checkpoint is not a
+   * doc-upload task).
+   */
+  private async reopenDocumentTaskIfCompleted(
+    client: PoolClient,
+    taskId: string,
+    actorId: string,
+  ): Promise<void> {
+    const { rows } = await client.query<{ id: string }>(
+      `UPDATE onboarding_tasks
+          SET status                 = 'pending',
+              completed_at           = NULL,
+              employee_confirmed_by  = NULL,
+              employee_confirmed_at  = NULL
+        WHERE id = $1
+          AND status = 'completed'
+          AND system_key = 'document_upload'
+        RETURNING id`,
+      [taskId],
+    );
+    if (!rows[0]) return;
+    await this.activityLog.log(
+      {
+        actorId,
+        action: 'onboarding_task.reopened_by_document_rejection',
+        entityType: 'onboarding_task',
+        entityId: taskId,
+      },
+      client,
+    );
   }
 
   /** HR's "documents waiting on me" queue. */

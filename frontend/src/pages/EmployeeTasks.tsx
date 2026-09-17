@@ -15,6 +15,18 @@ import type { DashboardResponse, TaskRow } from '../types/onboarding';
  *  condenses. Enough that a nudge of the wheel doesn't fold the greeting away,
  *  small enough that it is gone by the time the trail needs the room. */
 const HERO_CONDENSE_AFTER = 24;
+/**
+ * Un-condense at a smaller scroll than condense engaged at.
+ *
+ * Without this gap the boundary is a single number, and condensing is not a
+ * passive observation — it collapses the greeting, which shortens the document
+ * and can pull scrollY back across that very number. That re-expands the hero,
+ * which lengthens the document, which crosses it again: the hero vibrates,
+ * replaying its 240 ms padding and box-shadow transitions on every flip. A gap
+ * means the way out is not the way in, so a shift that follows the condense
+ * can't undo it.
+ */
+const HERO_UNCONDENSE_AT = 12;
 
 /**
  * The employee's Tasks tab: their whole onboarding as a serpentine trail.
@@ -41,6 +53,28 @@ export default function EmployeeTasks() {
   const [checklistBusy, setChecklistBusy] = useState(false);
   const heroAnchorRef = useRef<HTMLDivElement>(null);
   const [heroStuck, setHeroStuck] = useState(false);
+  /**
+   * True while the roadmap's mark is sailing, during which the hero holds
+   * whatever shape it already had.
+   *
+   * The hero condenses on scroll position, and the voyage tows scroll
+   * position — so without this the two form a loop. Condensing collapses a
+   * 22rem greeting, which lifts the trail; the tow scrolls up to keep the
+   * mark pinned; that smaller scrollY reads as "not past the hero any more",
+   * so it expands; the trail drops; the tow scrolls back down; it condenses
+   * again. That is the hero bouncing two or three times on its way down, and
+   * it can't be tuned out with a threshold — the shift the hero causes is an
+   * order of magnitude bigger than any sensible gap between condense and
+   * un-condense. Holding it still for the crossing removes the loop instead
+   * of damping it: no layout shift, so the tow has nothing to chase.
+   *
+   * A ref rather than state because only the scroll listener reads it, and
+   * re-rendering on cast-off would be the very layout churn this avoids.
+   */
+  const sailingRef = useRef(false);
+  const onVoyage = useCallback((sailing: boolean) => {
+    sailingRef.current = sailing;
+  }, []);
 
   const loadAll = useCallback(async () => {
     try {
@@ -76,8 +110,14 @@ export default function EmployeeTasks() {
   useEffect(() => {
     const read = () => {
       const anchor = heroAnchorRef.current;
-      if (!anchor) return;
-      setHeroStuck(anchor.getBoundingClientRect().top <= -HERO_CONDENSE_AFTER);
+      if (!anchor || sailingRef.current) return;
+      const past = -anchor.getBoundingClientRect().top;
+      // Reading the current state through the functional setter rather than
+      // closing over heroStuck keeps this effect off the flip, so the listener
+      // isn't torn down and rebound every time the hero changes shape.
+      setHeroStuck((wasStuck) =>
+        wasStuck ? past > HERO_UNCONDENSE_AT : past >= HERO_CONDENSE_AFTER,
+      );
     };
     read();
     window.addEventListener('scroll', read, { passive: true });
@@ -266,7 +306,12 @@ export default function EmployeeTasks() {
         <p className="muted">No steps on your onboarding yet — check back shortly.</p>
       ) : (
         <section className="tasks-trail">
-          <TaskRoadmap steps={roadmapSteps} currentId={currentStepId} onSelect={openStep} />
+          <TaskRoadmap
+            steps={roadmapSteps}
+            currentId={currentStepId}
+            onSelect={openStep}
+            onVoyage={onVoyage}
+          />
         </section>
       )}
 
