@@ -342,7 +342,7 @@ export default function StartHere() {
               <span className="qa-icon">💬</span>
               Community
             </a>
-            */}
+            
             <a className="quick-access-tile" href="/documents">
               <span className="qa-icon">📄</span>
               Documents
