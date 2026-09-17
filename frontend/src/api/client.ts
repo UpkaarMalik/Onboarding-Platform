@@ -147,9 +147,11 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   // Access-cookie expired mid-request: try a refresh once, then retry
   // the original request with the fresh cookie. Refresh endpoint calls
   // are already exempt via _isRetryAfterRefresh to prevent recursion.
+  const isLoginPath = path.startsWith('/auth/login/');
   if (
     res.status === 401 &&
     !options._isRetryAfterRefresh &&
+    !isLoginPath &&
     path !== '/auth/refresh' &&
     path !== '/auth/logout' &&
     path !== '/auth/me'
@@ -183,6 +185,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     // signed in", which is a normal state, not a session timeout.
     if (
       res.status === 401 &&
+      !isLoginPath &&
       path !== '/auth/me' &&
       path !== '/auth/logout' &&
       !options._isRetryAfterRefresh
