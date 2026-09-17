@@ -7,13 +7,21 @@ import StartHere from './pages/StartHere';
 import EmployeeTasks from './pages/EmployeeTasks';
 import HrDashboard from './pages/HrDashboard';
 import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
-import Community from './pages/Community';
 import AdminNotes from './pages/AdminNotes';
 import Documents from './pages/Documents';
 import Benefits from './pages/Benefits';
-import CompanyLife from './pages/CompanyLife';
-import WorkLog from './pages/WorkLog';
 import AuditLog from './pages/AuditLog';
+// PARKED-FEATURE: diary, community, gallery
+//
+// Parked, not removed — the pages, their backend modules and every
+// route below are intact on disk and come back by uncommenting. Grep
+// `PARKED-FEATURE` to find every piece: this file, Layout's nav arrays,
+// StartHere's diary section and quick tiles, and the backend
+// AppModule's DiaryModule/CommunityModule registration.
+//
+// import Community from './pages/Community';
+// import CompanyLife from './pages/CompanyLife';
+// import WorkLog from './pages/WorkLog';
 
 function RoleHome() {
   const { user } = useAuth();
@@ -54,11 +62,15 @@ export default function App() {
               </Route>
 
               <Route path="/benefits" element={<Benefits />} />
-              <Route path="/community" element={<Community />} />
               <Route path="/documents" element={<Documents />} />
+              <Route path="/audit-log" element={<AuditLog />} />
+              {/* PARKED-FEATURE: diary, community, gallery. Unrouted rather
+                  than redirected — the catch-all below already sends an old
+                  /community or /work-log bookmark to the role's home page.
+              <Route path="/community" element={<Community />} />
               <Route path="/events" element={<CompanyLife />} />
               <Route path="/work-log" element={<WorkLog />} />
-              <Route path="/audit-log" element={<AuditLog />} />
+              */}
             </Route>
           </Route>
 

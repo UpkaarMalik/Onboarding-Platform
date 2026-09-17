@@ -9,14 +9,18 @@ import { UsersService, UserRow } from '../users/users.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { generateTempPassword } from './utils/credential-generator';
-import {
-  generateOtpCode,
-  hashOtp,
-  verifyOtpHash,
-  sendOtpSms,
-  OTP_TTL_MS,
-  OTP_MAX_ATTEMPTS,
-} from './utils/otp';
+// OTP-LOGIN-DISABLED — mobile + OTP login is retired; Joinee ID +
+// password is the only method. The utils in ./utils/otp are left on
+// disk untouched, just unreferenced. Grep `OTP-LOGIN-DISABLED` across
+// backend and frontend to find every piece and uncomment to restore.
+// import {
+//   generateOtpCode,
+//   hashOtp,
+//   verifyOtpHash,
+//   sendOtpSms,
+//   OTP_TTL_MS,
+//   OTP_MAX_ATTEMPTS,
+// } from './utils/otp';
 import { TokenService } from './tokens/token.service';
 import { SessionsService, IssuedSession } from './sessions/sessions.service';
 
@@ -39,11 +43,9 @@ export type AuthenticatedResult = {
   user: ReturnType<UsersService['toPublicUser']>;
 };
 
-/** Method 1 (Joinee ID + password) can end in one of two shapes: fully
+/** Joinee ID + password can end in one of two shapes: fully
  *  authenticated, or "here's a password-reset pre-auth token" if the
- *  password on file is still the HR-issued temp one. Method 2 (mobile
- *  OTP) never has a reset step, so its own results are always
- *  AuthenticatedResult once verified. */
+ *  password on file is still the HR-issued temp one. */
 type PasswordLoginResult =
   | AuthenticatedResult
   | { status: 'password_reset_required'; preAuthToken: string };
@@ -180,32 +182,34 @@ export class AuthService {
     };
   }
 
-  private async issueLoginOtp(user: UserRow): Promise<void> {
-  const code = generateOtpCode();
-
-  console.log('========================');
-  console.log('OTP GENERATED:', code);
-  console.log('PHONE:', user.phone_number);
-  console.log('========================');
-
-  const otpHash = await hashOtp(code);
-  const expiresAt = new Date(Date.now() + OTP_TTL_MS);
-
-  await this.usersService.setLoginOtp(
-    user.id,
-    otpHash,
-    expiresAt,
-  );
-
-  console.log('OTP SAVED TO DATABASE');
-
-  await sendOtpSms(user.phone_number, code);
-
-  console.log('SMS FUNCTION FINISHED');
-}
+  // OTP-LOGIN-DISABLED
+  //
+  // private async issueLoginOtp(user: UserRow): Promise<void> {
+  //   const code = generateOtpCode();
+  //
+  //   console.log('========================');
+  //   console.log('OTP GENERATED:', code);
+  //   console.log('PHONE:', user.phone_number);
+  //   console.log('========================');
+  //
+  //   const otpHash = await hashOtp(code);
+  //   const expiresAt = new Date(Date.now() + OTP_TTL_MS);
+  //
+  //   await this.usersService.setLoginOtp(
+  //     user.id,
+  //     otpHash,
+  //     expiresAt,
+  //   );
+  //
+  //   console.log('OTP SAVED TO DATABASE');
+  //
+  //   await sendOtpSms(user.phone_number, code);
+  //
+  //   console.log('SMS FUNCTION FINISHED');
+  // }
 
   // ============================================================
-  // Method 1 — Joinee ID + password. No company email, no OTP.
+  // Joinee ID + password — the only login method.
   // ============================================================
 
   async loginWithPassword(
@@ -270,72 +274,73 @@ export class AuthService {
   }
 
   // ============================================================
-  // Method 2 — mobile number + OTP. No password involved at all.
+  // OTP-LOGIN-DISABLED — mobile number + OTP. Was a second, entirely
+  // independent login method with no password involved at all.
   // ============================================================
-
-  async requestMobileOtp(phoneNumber: string): Promise<{ preAuthToken: string }> {
-    const user = await this.usersService.findByPhoneNumber(phoneNumber);
-    // Same generic message either way — doesn't confirm/deny whether a
-    // number is registered.
-    if (!user) throw new UnauthorizedException('Invalid credentials');
-    if (user.status === 'disabled') {
-      throw new ForbiddenException('This account has been disabled');
-    }
-
-    await this.issueLoginOtp(user);
-    return { preAuthToken: this.tokens.signPreAuth(user.id, 'otp_login') };
-  }
-
-  async verifyMobileOtp(
-    userId: string,
-    code: string,
-    userAgent: string | null,
-  ): Promise<PasswordLoginResult> {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
-
-    if (!user.login_otp_hash || !user.login_otp_expires_at) {
-      throw new UnauthorizedException('No verification code pending — request a new one');
-    }
-    if (user.login_otp_expires_at.getTime() < Date.now()) {
-      await this.usersService.clearLoginOtp(userId);
-      throw new UnauthorizedException('Verification code expired — request a new one');
-    }
-    if (user.login_otp_attempts >= OTP_MAX_ATTEMPTS) {
-      await this.usersService.clearLoginOtp(userId);
-      throw new UnauthorizedException('Too many attempts — request a new code');
-    }
-
-    const codeOk = await verifyOtpHash(code, user.login_otp_hash);
-    if (!codeOk) {
-      await this.usersService.incrementOtpAttempts(userId);
-      throw new UnauthorizedException('Invalid code');
-    }
-
-    await this.usersService.clearLoginOtp(userId);
-
-    // A first-time login must set a real password before it gets a
-    // session, whichever method got the user here. Proving identity by
-    // OTP is what authorizes the reset — the user has never seen the
-    // HR-issued temp password and doesn't need to. The token is minted
-    // with the 'password_reset' purpose, so the OTP pre-auth token this
-    // call consumed can't be replayed against the reset endpoint.
-    if (user.must_reset_password) {
-      return {
-        status: 'password_reset_required',
-        preAuthToken: this.tokens.signPreAuth(user.id, 'password_reset'),
-      };
-    }
-
-    return this.issueTokens(user, userAgent);
-  }
-
-  async resendMobileOtp(userId: string): Promise<{ sent: true }> {
-    const user = await this.usersService.findById(userId);
-    if (!user) throw new NotFoundException('User not found');
-    await this.issueLoginOtp(user);
-    return { sent: true };
-  }
+  //
+  // async requestMobileOtp(phoneNumber: string): Promise<{ preAuthToken: string }> {
+  //   const user = await this.usersService.findByPhoneNumber(phoneNumber);
+  //   // Same generic message either way — doesn't confirm/deny whether a
+  //   // number is registered.
+  //   if (!user) throw new UnauthorizedException('Invalid credentials');
+  //   if (user.status === 'disabled') {
+  //     throw new ForbiddenException('This account has been disabled');
+  //   }
+  //
+  //   await this.issueLoginOtp(user);
+  //   return { preAuthToken: this.tokens.signPreAuth(user.id, 'otp_login') };
+  // }
+  //
+  // async verifyMobileOtp(
+  //   userId: string,
+  //   code: string,
+  //   userAgent: string | null,
+  // ): Promise<PasswordLoginResult> {
+  //   const user = await this.usersService.findById(userId);
+  //   if (!user) throw new NotFoundException('User not found');
+  //
+  //   if (!user.login_otp_hash || !user.login_otp_expires_at) {
+  //     throw new UnauthorizedException('No verification code pending — request a new one');
+  //   }
+  //   if (user.login_otp_expires_at.getTime() < Date.now()) {
+  //     await this.usersService.clearLoginOtp(userId);
+  //     throw new UnauthorizedException('Verification code expired — request a new one');
+  //   }
+  //   if (user.login_otp_attempts >= OTP_MAX_ATTEMPTS) {
+  //     await this.usersService.clearLoginOtp(userId);
+  //     throw new UnauthorizedException('Too many attempts — request a new code');
+  //   }
+  //
+  //   const codeOk = await verifyOtpHash(code, user.login_otp_hash);
+  //   if (!codeOk) {
+  //     await this.usersService.incrementOtpAttempts(userId);
+  //     throw new UnauthorizedException('Invalid code');
+  //   }
+  //
+  //   await this.usersService.clearLoginOtp(userId);
+  //
+  //   // A first-time login must set a real password before it gets a
+  //   // session, whichever method got the user here. Proving identity by
+  //   // OTP is what authorizes the reset — the user has never seen the
+  //   // HR-issued temp password and doesn't need to. The token is minted
+  //   // with the 'password_reset' purpose, so the OTP pre-auth token this
+  //   // call consumed can't be replayed against the reset endpoint.
+  //   if (user.must_reset_password) {
+  //     return {
+  //       status: 'password_reset_required',
+  //       preAuthToken: this.tokens.signPreAuth(user.id, 'password_reset'),
+  //     };
+  //   }
+  //
+  //   return this.issueTokens(user, userAgent);
+  // }
+  //
+  // async resendMobileOtp(userId: string): Promise<{ sent: true }> {
+  //   const user = await this.usersService.findById(userId);
+  //   if (!user) throw new NotFoundException('User not found');
+  //   await this.issueLoginOtp(user);
+  //   return { sent: true };
+  // }
 
   // ============================================================
   // Token refresh — DB-backed, with rotation.

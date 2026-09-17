@@ -38,6 +38,38 @@ interface RequestOptions {
 const CSRF_COOKIE = 'csrf_token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/**
+ * Endpoints where a 401 is an answer about the credentials just
+ * presented, NOT a verdict on an existing session.
+ *
+ * Signing in with the wrong password is a normal thing to do, and the
+ * server says so with a 401. Without this set the fetch layer read that
+ * as "your session died": it fired a pointless /auth/refresh (there is
+ * no session to refresh — the user is trying to create one) and then
+ * hard-redirected to /login via location.assign. That navigation
+ * remounted the whole app, which wiped the error message the login form
+ * had just set — so a wrong password looked like the page reloading and
+ * silently clearing itself, with nothing explaining why.
+ *
+ * These paths must therefore throw ApiError and let the form render the
+ * message, which is what every caller already expects.
+ */
+const AUTH_ENTRY_POINTS = new Set([
+  '/auth/login/password',
+  '/auth/login/password/complete-reset',
+  // OTP-LOGIN-DISABLED
+  // '/auth/login/otp/request',
+  // '/auth/login/otp/verify',
+  // '/auth/login/otp/resend',
+]);
+
+/** A 401 here means "not signed in", which is either a normal state
+ *  (/auth/me on a fresh visit, /auth/logout when already logged out) or
+ *  a credential rejection — never a session that timed out under us. */
+function isAuthEntryPoint(path: string): boolean {
+  return path === '/auth/me' || path === '/auth/logout' || AUTH_ENTRY_POINTS.has(path);
+}
+
 /** Reads the `csrf_token` cookie the server set at login. Non-HttpOnly
  *  on purpose — the whole point of the double-submit pattern is that
  *  our own JS can echo it back in a header that a cross-site attacker
@@ -153,8 +185,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     !options._isRetryAfterRefresh &&
     !isLoginPath &&
     path !== '/auth/refresh' &&
-    path !== '/auth/logout' &&
-    path !== '/auth/me'
+    !isAuthEntryPoint(path)
   ) {
     const refreshed = await tryRefreshOnce();
     if (refreshed) {
@@ -180,16 +211,10 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     // The session is genuinely dead — refresh already tried and lost.
     // Redirect from ONE place, here, so every caller doesn't need to
     // check `err.statusCode === 401` and reproduce the same logic.
-    // Exceptions: /auth/me (used to test whether we're signed in) and
-    // /auth/logout (already logging out) — a 401 there means "not
-    // signed in", which is a normal state, not a session timeout.
-    if (
-      res.status === 401 &&
-      !isLoginPath &&
-      path !== '/auth/me' &&
-      path !== '/auth/logout' &&
-      !options._isRetryAfterRefresh
-    ) {
+    // The auth entry points are exempt: a 401 from them is a statement
+    // about credentials, and redirecting would destroy the very form
+    // that needs to show why (see AUTH_ENTRY_POINTS).
+    if (res.status === 401 && !isAuthEntryPoint(path) && !options._isRetryAfterRefresh) {
       redirectToLoginOnce();
     }
     throw new ApiError(res.status, code, message || 'Something went wrong');

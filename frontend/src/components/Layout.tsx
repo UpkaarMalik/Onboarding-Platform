@@ -21,19 +21,22 @@ const IC = {
   tasks: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2" width="12" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M6 6l1.5 1.5L10 5M6 10l1.5 1.5L10 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
 };
 
+// PARKED-FEATURE: diary, community, gallery — the tabs are commented out
+// of all three role menus below. The IC.gallery / IC.diary / IC.community
+// icons are left defined above so restoring a tab is a one-line change.
 const NAV_EMPLOYEE: NavItem[] = [
   { to: '/start-here', label: 'Home', icon: IC.home },
   { to: '/tasks', label: 'My Tasks', icon: IC.tasks },
-  { to: '/events', label: 'Gallery', icon: IC.gallery },
+  // { to: '/events', label: 'Gallery', icon: IC.gallery },
   { to: '/documents', label: 'Policies', icon: IC.policies },
-  { to: '/work-log', label: 'Diary', icon: IC.diary },
+  // { to: '/work-log', label: 'Diary', icon: IC.diary },
   { to: '/benefits', label: 'Benefits', icon: IC.benefits },
-  { to: '/community', label: 'Community', icon: IC.community },
+  // { to: '/community', label: 'Community', icon: IC.community },
 ];
 
 const NAV_TASK_OWNER: NavItem[] = [
   { to: '/my-tasks', label: 'My Tasks', icon: IC.tasks },
-  { to: '/community', label: 'Community', icon: IC.community },
+  // { to: '/community', label: 'Community', icon: IC.community },
   { to: '/documents', label: 'Policies', icon: IC.policies },
 ];
 
@@ -41,11 +44,11 @@ const NAV_SUPERADMIN: NavItem[] = [
   // The roster that used to live at /hr/overview is now a section of the
   // HR home, so it no longer earns its own tab.
   { to: '/hr', label: 'Home', icon: IC.home, end: true },
-  { to: '/events', label: 'Gallery', icon: IC.gallery },
+  // { to: '/events', label: 'Gallery', icon: IC.gallery },
   { to: '/documents', label: 'Policies', icon: IC.policies },
-  { to: '/work-log', label: 'Diary', icon: IC.diary },
+  // { to: '/work-log', label: 'Diary', icon: IC.diary },
   { to: '/benefits', label: 'Benefits', icon: IC.benefits },
-  { to: '/community', label: 'Community', icon: IC.community },
+  // { to: '/community', label: 'Community', icon: IC.community },
 ];
 
 const ROLE_LABELS: Record<string, string> = {

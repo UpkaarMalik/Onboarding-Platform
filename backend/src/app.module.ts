@@ -12,11 +12,13 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
 import { EntitlementsModule } from './entitlements/entitlements.module';
 import { NotesModule } from './notes/notes.module';
 import { ActivityLogModule } from './activity-log/activity-log.module';
-import { CommunityModule } from './community/community.module';
+// PARKED-FEATURE: community
+// import { CommunityModule } from './community/community.module';
 import { DocumentsModule } from './documents/documents.module';
 import { JoineeDocumentsModule } from './joinee-documents/joinee-documents.module';
 import { EmployeeProfileModule } from './employee-profile/employee-profile.module';
-import { DiaryModule } from './diary/diary.module';
+// PARKED-FEATURE: diary
+// import { DiaryModule } from './diary/diary.module';
 
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
@@ -39,11 +41,15 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter';
     KnowledgeModule,
     EntitlementsModule,
     NotesModule,
-    CommunityModule,
     DocumentsModule,
     JoineeDocumentsModule,
     EmployeeProfileModule,
-    DiaryModule,
+    // PARKED-FEATURE: diary, community. Un-registering the modules is
+    // all it takes — Nest never maps their controllers, so /diary and
+    // /community/* now 404. The module, controller and service files
+    // are untouched on disk, as are their tables and the rows in them.
+    // CommunityModule,
+    // DiaryModule,
 
     // Remaining feature modules get added here as later steps build them.
   ],

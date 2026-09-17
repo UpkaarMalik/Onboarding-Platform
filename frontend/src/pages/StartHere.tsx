@@ -108,11 +108,16 @@ export default function StartHere() {
       const notesRes = await authedFetch<{ data: any[] }>('/notes');
       setNotes(notesRes.data);
 
-      const diaryRes = await authedFetch<any[]>('/diary');
-      setDiary(diaryRes);
-      const today = todayIso();
-      const todayEntry = diaryRes.find((d) => d.entry_date === today);
-      setDiaryDraft(todayEntry?.content ?? '');
+      // PARKED-FEATURE: diary. This shares the try block with the
+      // dashboard, knowledge and notes loads, so leaving it in place
+      // against an unregistered /diary would 404 and take the whole home
+      // page down with it — not just the diary section.
+      //
+      // const diaryRes = await authedFetch<any[]>('/diary');
+      // setDiary(diaryRes);
+      // const today = new Date().toISOString().slice(0, 10);
+      // const todayEntry = diaryRes.find((d) => d.entry_date === today);
+      // setDiaryDraft(todayEntry?.content ?? '');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
     } finally {
@@ -165,19 +170,21 @@ export default function StartHere() {
     }
   }
 
-  async function saveDiaryEntry(e: FormEvent) {
-    e.preventDefault();
-    if (!diaryDraft.trim()) return;
-    setSavingDiary(true);
-    try {
-      await authedFetch('/diary', { method: 'POST', body: { content: diaryDraft } });
-      await loadAll();
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSavingDiary(false);
-    }
-  }
+  // PARKED-FEATURE: diary
+  //
+  // async function saveDiaryEntry(e: FormEvent) {
+  //   e.preventDefault();
+  //   if (!diaryDraft.trim()) return;
+  //   setSavingDiary(true);
+  //   try {
+  //     await authedFetch('/diary', { method: 'POST', body: { content: diaryDraft } });
+  //     await loadAll();
+  //   } catch (err) {
+  //     alert(err instanceof ApiError ? err.message : 'Something went wrong');
+  //   } finally {
+  //     setSavingDiary(false);
+  //   }
+  // }
 
   async function submitRating(rating: number) {
     setSubmittingRating(true);
@@ -318,6 +325,8 @@ export default function StartHere() {
               <span className="qa-icon">📝</span>
               My Notes
             </a>
+            {/* PARKED-FEATURE: diary, community — quick-access tiles.
+
             <a
               className="quick-access-tile"
               onClick={(e) => {
@@ -333,6 +342,7 @@ export default function StartHere() {
               <span className="qa-icon">💬</span>
               Community
             </a>
+            */}
             <a className="quick-access-tile" href="/documents">
               <span className="qa-icon">📄</span>
               Documents
@@ -430,7 +440,60 @@ export default function StartHere() {
         </section>
       </Reveal>
 
-      {/* Private notes and diary removed from home — available via sidebar */}
+      <Reveal>
+        <section id="notes-section">
+          <h2>Your private notes</h2>
+          <p className="muted">
+            Only you can see the note content — SuperAdmin can see that notes exist and read the text,
+            but never who wrote them.
+          </p>
+          <form onSubmit={addNote} className="note-form">
+            <textarea
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              placeholder="Write something only you can see…"
+            />
+            <button type="submit">Add note</button>
+          </form>
+          <ul className="notes-list">
+            {notes.map((n) => (
+              <li key={n.id}>{n.content}</li>
+            ))}
+          </ul>
+        </section>
+      </Reveal>
+
+      {/* PARKED-FEATURE: diary — the home page's diary section.
+
+      <Reveal>
+        <section id="diary-section">
+          <h2>Your diary</h2>
+          <p className="muted">
+            A private log of what you got done each day — only you can ever see this, on your own
+            dashboard. Newest day first.
+          </p>
+          <form onSubmit={saveDiaryEntry} className="note-form">
+            <textarea
+              value={diaryDraft}
+              onChange={(e) => setDiaryDraft(e.target.value)}
+              placeholder="What did you get done today?"
+            />
+            <button type="submit" disabled={savingDiary}>
+              {savingDiary ? 'Saving…' : "Save today's entry"}
+            </button>
+          </form>
+          <ul className="notes-list diary-list">
+            {diary.map((d) => (
+              <li key={d.id}>
+                <span className="diary-date">{d.entry_date}</span>
+                <span>{d.content}</span>
+              </li>
+            ))}
+            {diary.length === 0 && <p className="muted">Nothing logged yet.</p>}
+          </ul>
+        </section>
+      </Reveal>
+      */}
       </div>{/* end entrance-body */}
     </div>
   );

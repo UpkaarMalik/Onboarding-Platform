@@ -17,8 +17,9 @@ import { AuthService, AuthenticatedResult } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import {
   PasswordLoginDto,
-  RequestOtpDto,
-  OtpCodeDto,
+  // OTP-LOGIN-DISABLED
+  // RequestOtpDto,
+  // OtpCodeDto,
   CompletePasswordResetDto,
 } from './dto/login.dto';
 import { PreAuthGuard } from './guards/pre-auth.guard';
@@ -110,37 +111,40 @@ export class AuthController {
   }
 
   // ============================================================
-  // Method 2 — mobile OTP.
+  // OTP-LOGIN-DISABLED — mobile OTP. These three routes are no longer
+  // registered, so /auth/login/otp/* now 404s. Uncomment together with
+  // AuthService.requestMobileOtp / verifyMobileOtp / resendMobileOtp,
+  // the two DTOs, and the frontend tab in Login.tsx.
   // ============================================================
-
-  @Post('login/otp/request')
-  @SkipCsrf()
-  requestOtp(@Body() dto: RequestOtpDto) {
-    return this.authService.requestMobileOtp(dto.phoneNumber);
-  }
-
-  @UseGuards(PreAuthGuard)
-  @Post('login/otp/verify')
-  @SkipCsrf()
-  async verifyOtp(
-    @PreAuthUser() ctx: PreAuthContext,
-    @Body() dto: OtpCodeDto,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    this.assertPurpose(ctx, 'otp_login');
-    const ua = (req.headers['user-agent'] as string | undefined) ?? null;
-    const result = await this.authService.verifyMobileOtp(ctx.userId, dto.code, ua);
-    return this.finalizeLoginResult(res, result);
-  }
-
-  @UseGuards(PreAuthGuard)
-  @Post('login/otp/resend')
-  @SkipCsrf()
-  resendOtp(@PreAuthUser() ctx: PreAuthContext) {
-    this.assertPurpose(ctx, 'otp_login');
-    return this.authService.resendMobileOtp(ctx.userId);
-  }
+  //
+  // @Post('login/otp/request')
+  // @SkipCsrf()
+  // requestOtp(@Body() dto: RequestOtpDto) {
+  //   return this.authService.requestMobileOtp(dto.phoneNumber);
+  // }
+  //
+  // @UseGuards(PreAuthGuard)
+  // @Post('login/otp/verify')
+  // @SkipCsrf()
+  // async verifyOtp(
+  //   @PreAuthUser() ctx: PreAuthContext,
+  //   @Body() dto: OtpCodeDto,
+  //   @Req() req: Request,
+  //   @Res({ passthrough: true }) res: Response,
+  // ) {
+  //   this.assertPurpose(ctx, 'otp_login');
+  //   const ua = (req.headers['user-agent'] as string | undefined) ?? null;
+  //   const result = await this.authService.verifyMobileOtp(ctx.userId, dto.code, ua);
+  //   return this.finalizeLoginResult(res, result);
+  // }
+  //
+  // @UseGuards(PreAuthGuard)
+  // @Post('login/otp/resend')
+  // @SkipCsrf()
+  // resendOtp(@PreAuthUser() ctx: PreAuthContext) {
+  //   this.assertPurpose(ctx, 'otp_login');
+  //   return this.authService.resendMobileOtp(ctx.userId);
+  // }
 
   private assertPurpose(ctx: PreAuthContext, purpose: PreAuthContext['purpose']) {
     if (ctx.purpose !== purpose) {

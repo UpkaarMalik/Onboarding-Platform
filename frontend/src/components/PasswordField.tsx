@@ -7,6 +7,10 @@ interface PasswordFieldProps {
   autoComplete?: string;
   minLength?: number;
   required?: boolean;
+  /** Marks the input as the one the current error message is about, so
+   *  assistive tech ties the two together and the field can be styled
+   *  as invalid. */
+  invalid?: boolean;
 }
 
 /**
@@ -24,6 +28,7 @@ export default function PasswordField({
   autoComplete,
   minLength,
   required,
+  invalid,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
 
@@ -38,6 +43,8 @@ export default function PasswordField({
           autoComplete={autoComplete}
           minLength={minLength}
           required={required}
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? 'auth-error' : undefined}
         />
         <button
           type="button"
