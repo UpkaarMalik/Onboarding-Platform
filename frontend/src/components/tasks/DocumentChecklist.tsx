@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthedFetch } from '../../api/useAuthedFetch';
 import { ApiError, API_BASE_URL, openFileInline } from '../../api/client';
-import { useAuth } from '../../auth/AuthContext';
 import { formatDate } from '../../lib/format';
 import type { JoineeDocumentRow } from '../../types/onboarding';
 
@@ -40,7 +39,6 @@ export default function DocumentChecklist({
   onParentCompleted: () => void;
 }) {
   const authedFetch = useAuthedFetch();
-  const { accessToken } = useAuth();
   const [docs, setDocs] = useState<JoineeDocumentRow[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,12 +61,20 @@ export default function DocumentChecklist({
     try {
       const form = new FormData();
       form.append('file', file);
+      // Auth cookie is attached by `credentials: 'include'`; CSRF
+      // token is echoed from the same-named cookie the login flow set
+      // (double-submit pattern — see backend CsrfGuard).
+      const csrf = document.cookie
+        .split('; ')
+        .find((c) => c.startsWith('csrf_token='))
+        ?.slice('csrf_token='.length) ?? '';
       const res = await fetch(
         `${API_BASE_URL}/joinee-documents/requirements/${requirementId}/upload`,
         {
           method: 'POST',
-          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+          headers: csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {},
           body: form,
+          credentials: 'include',
         },
       );
       if (!res.ok) {
@@ -92,7 +98,7 @@ export default function DocumentChecklist({
       // The file is served through the API with a Bearer token, so a plain
       // <a href> can't fetch it — openFileInline pulls it down and hands the
       // browser a blob URL, which its native image/PDF viewer renders.
-      await openFileInline(`/joinee-documents/uploads/${uploadId}/file`, accessToken);
+      await openFileInline(`/joinee-documents/uploads/${uploadId}/file`);
     } catch {
       setError('Could not open that document');
     }

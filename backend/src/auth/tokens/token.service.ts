@@ -17,13 +17,12 @@ export interface AccessPayload {
   sub: string;
   role: string;
   departmentId: string | null;
+  /** Session id (user_sessions.id). Lets JwtStrategy verify the
+   *  backing session is still live on every authed request. */
+  sid: string;
   type: 'access';
 }
 
-export interface RefreshPayload {
-  sub: string;
-  type: 'refresh';
-}
 
 /**
  * Every token kind gets its own secret AND a `type` claim checked on
@@ -63,11 +62,15 @@ export class TokenService {
 
   // ---- access (real bearer credential) ----
 
-  signAccessToken(user: Pick<UserRow, 'id' | 'role' | 'department_id'>): string {
+  signAccessToken(
+    user: Pick<UserRow, 'id' | 'role' | 'department_id'>,
+    sessionId: string,
+  ): string {
     const payload: AccessPayload = {
       sub: user.id,
       role: user.role,
       departmentId: user.department_id,
+      sid: sessionId,
       type: 'access',
     };
     return this.jwt.sign(payload, {
@@ -87,26 +90,14 @@ export class TokenService {
     return payload;
   }
 
-  // ---- refresh (long-lived, exchanges for a new access token) ----
-
-  signRefreshToken(user: Pick<UserRow, 'id'>): string {
-    const payload: RefreshPayload = { sub: user.id, type: 'refresh' };
-    return this.jwt.sign(payload, {
-      secret: this.config.get<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.config.get<string>('JWT_REFRESH_EXPIRES_IN'),
-    });
-  }
-
-  verifyRefreshToken(token: string): RefreshPayload {
-    const payload = this.safeVerify<RefreshPayload>(
-      token,
-      this.config.get<string>('JWT_REFRESH_SECRET')!,
-    );
-    if (payload.type !== 'refresh') {
-      throw new UnauthorizedException('Invalid token for this operation');
-    }
-    return payload;
-  }
+  // ---- refresh ---------------------------------------------------
+  // No JWT here anymore. The refresh credential is now an OPAQUE random
+  // string carried in an HttpOnly cookie, whose sha256 hash is the
+  // primary key lookup in `user_sessions`. Signing wouldn't add
+  // anything (the DB row IS the source of truth) and the JWT form used
+  // to invite the "old signature still verifies after logout" bug that
+  // motivated moving to a DB-backed session store in the first place.
+  // See SessionsService.
 
   private safeVerify<T extends object>(token: string, secret: string): T {
     try {
