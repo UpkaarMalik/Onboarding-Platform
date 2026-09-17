@@ -4,6 +4,13 @@ export class CreateEntitlementDto {
   @IsString()
   name!: string;
 
+  @IsIn(['device', 'insurance', 'perks'])
+  category!: 'device' | 'insurance' | 'perks';
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
   @IsIn(['company_wide', 'department'])
   scope!: 'company_wide' | 'department';
 

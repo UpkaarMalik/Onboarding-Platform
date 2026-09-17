@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ApiError, openFileInline } from '../api/client';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
+import { format } from 'date-fns';
 import {
   formatDate,
   onboardingStatusLabel,
@@ -301,9 +302,9 @@ export default function HrOverview({
                     <circle cx="8" cy="8" r="6.5" />
                     <path d="M8 4.5V8l2.5 1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  <span>{clockTime.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  <span>{format(clockTime, 'EEE, d MMM yyyy')}</span>
                   <span style={{ color: 'var(--color-muted)' }}>•</span>
-                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{clockTime.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>{format(clockTime, 'hh:mm:ss a')}</span>
                 </div>
                 <button type="button" className="btn-solid" style={{ fontSize: 14, padding: '10px 24px', whiteSpace: 'nowrap', borderRadius: 12 }} onClick={() => setShowCreateJoinee(true)}>
                   + Create New Joinee

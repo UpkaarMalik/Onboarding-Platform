@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { ApiError } from '../api/client';
+import { formatDateTime } from '../lib/format';
 
 /**
  * SuperAdmin/HR visibility into private notes: content only, never
@@ -41,7 +42,7 @@ export default function AdminNotes() {
           {notes.map((n) => (
             <li key={n.id}>
               {n.content}
-              <div className="task-meta">{new Date(n.created_at).toLocaleString()}</div>
+              <div className="task-meta">{formatDateTime(n.created_at)}</div>
             </li>
           ))}
           {notes.length === 0 && <p className="muted">No notes yet.</p>}

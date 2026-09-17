@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
+import { formatDateTime } from '../lib/format';
 import Reveal from '../components/Reveal';
 
 /* ------------------------------------------------------------------ */
@@ -615,7 +616,7 @@ export default function Community() {
                       )}
                     </div>
                     <span style={{ fontSize: 11, color: '#999', fontFamily: 'monospace' }}>
-                      {new Date(p.created_at).toLocaleString()}
+                      {formatDateTime(p.created_at)}
                     </span>
                   </div>
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
+import { greeting, todayIso } from '../lib/format';
 import { ApiError } from '../api/client';
 import { fireConfetti } from '../lib/confetti';
 import { JOURNEY_STAGES } from '../lib/journey';
@@ -35,12 +36,6 @@ const MAC_TIPS = [
   { icon: '🎙️', title: 'Dictation', content: 'Press the Fn key twice to start dictation — useful for drafting a quick Slack message hands-free.' },
 ];
 
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
 
 /** Best-effort icon for a knowledge article by keyword in its title —
  *  purely cosmetic, falls back to a generic pin so an article never
@@ -114,7 +109,7 @@ export default function StartHere() {
 
       const diaryRes = await authedFetch<any[]>('/diary');
       setDiary(diaryRes);
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayIso();
       const todayEntry = diaryRes.find((d) => d.entry_date === today);
       setDiaryDraft(todayEntry?.content ?? '');
     } catch (err) {
@@ -224,7 +219,7 @@ export default function StartHere() {
               {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{firstName}</span>
             </h1>
             <Link to="/tasks" style={{ pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 24px', fontSize: 14, fontWeight: 700, color: '#fff', background: 'var(--gradient-accent)', border: 'none', borderRadius: 12, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: '0 2px 12px rgba(232,147,12,0.35)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s', flexShrink: 0, marginBottom: 6 }}>
-              {dashboard.onboarding.status === 'completed' ? 'My Tasks ✓' : 'Start Here →'}
+              {dashboard.steps.some(s => s.system_key === 'document_upload' && s.status === 'completed') ? 'My Tasks ✓' : 'Start Here →'}
             </Link>
           </div>
         </div>

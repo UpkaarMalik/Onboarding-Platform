@@ -40,7 +40,18 @@ export default function EmployeeTasks() {
   const [completing, setCompleting] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
   const heroAnchorRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLElement>(null);
   const [heroStuck, setHeroStuck] = useState(false);
+  const sailingRef = useRef(false);
+  const handleSailingChange = useCallback((s: boolean) => {
+    sailingRef.current = s;
+    if (s) {
+      heroRef.current?.classList.add('tasks-hero--sailing', 'tasks-hero--stuck');
+      setHeroStuck(true);
+    } else {
+      heroRef.current?.classList.remove('tasks-hero--sailing');
+    }
+  }, []);
 
   const loadAll = useCallback(async () => {
     try {
@@ -75,6 +86,7 @@ export default function EmployeeTasks() {
    */
   useEffect(() => {
     const read = () => {
+      if (sailingRef.current) return;
       const anchor = heroAnchorRef.current;
       if (!anchor) return;
       setHeroStuck(anchor.getBoundingClientRect().top <= -HERO_CONDENSE_AFTER);
@@ -213,7 +225,7 @@ export default function EmployeeTasks() {
 
       {error && <p className="error-text">{error}</p>}
 
-      <header className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}>
+      <header ref={heroRef} className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}>
         <span className="eyebrow">
           <span className="tasks-eyebrow-dot" />
           {doneSteps} of {totalSteps} steps done
@@ -266,7 +278,7 @@ export default function EmployeeTasks() {
         <p className="muted">No steps on your onboarding yet — check back shortly.</p>
       ) : (
         <section className="tasks-trail">
-          <TaskRoadmap steps={roadmapSteps} currentId={currentStepId} onSelect={openStep} />
+          <TaskRoadmap steps={roadmapSteps} currentId={currentStepId} onSelect={openStep} onSailingChange={handleSailingChange} />
         </section>
       )}
 

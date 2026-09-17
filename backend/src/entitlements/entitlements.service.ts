@@ -15,6 +15,8 @@ import { Pagination, paginateRows } from '../common/list-query.util';
 export interface EntitlementRow {
   id: string;
   name: string;
+  category: 'device' | 'insurance' | 'perks';
+  description: string;
   scope: 'company_wide' | 'department';
   department_id: string | null;
   total_quantity: number | null;
@@ -58,10 +60,10 @@ export class EntitlementsService {
     // available_quantity starts equal to total_quantity; both NULL
     // means unlimited (e.g. a learning budget nobody needs to ration).
     const { rows } = await this.db.query<EntitlementRow>(
-      `INSERT INTO entitlements (name, scope, department_id, total_quantity, available_quantity)
-       VALUES ($1, $2, $3, $4, $4)
+      `INSERT INTO entitlements (name, category, description, scope, department_id, total_quantity, available_quantity)
+       VALUES ($1, $2, $3, $4, $5, $6, $6)
        RETURNING *`,
-      [dto.name, dto.scope, dto.departmentId ?? null, dto.totalQuantity ?? null],
+      [dto.name, dto.category, dto.description ?? '', dto.scope, dto.departmentId ?? null, dto.totalQuantity ?? null],
     );
     const entitlement = rows[0];
 
@@ -70,7 +72,7 @@ export class EntitlementsService {
       action: 'entitlement.created',
       entityType: 'entitlement',
       entityId: entitlement.id,
-      metadata: { name: dto.name, scope: dto.scope, totalQuantity: dto.totalQuantity ?? null },
+      metadata: { name: dto.name, category: dto.category, scope: dto.scope, totalQuantity: dto.totalQuantity ?? null },
     });
 
     return entitlement;
@@ -84,14 +86,23 @@ export class EntitlementsService {
   async listVisibleForActor(actor: AuthenticatedUser, pagination: Pagination) {
     const user = await this.usersService.findById(actor.id);
     const departmentId = user?.department_id ?? null;
+    const isAdmin = actor.role === 'superadmin_hr';
 
-    const { rows } = await this.db.query<EntitlementRow & { total_count: number }>(
-      `SELECT *, COUNT(*) OVER()::int AS total_count FROM entitlements
-       WHERE status = 'active'
-         AND (scope = 'company_wide' OR department_id = $1)
-       ORDER BY name
+    const { rows } = await this.db.query<EntitlementRow & { department_name: string | null; claimed: boolean; total_count: number }>(
+      `SELECT e.*,
+              d.name AS department_name,
+              EXISTS (
+                SELECT 1 FROM entitlement_assignments ea
+                WHERE ea.entitlement_id = e.id AND ea.user_id = $4 AND ea.status = 'claimed'
+              ) AS claimed,
+              COUNT(*) OVER()::int AS total_count
+       FROM entitlements e
+       LEFT JOIN departments d ON d.id = e.department_id
+       WHERE e.status = 'active'
+         AND ($5 OR e.scope = 'company_wide' OR e.department_id = $1)
+       ORDER BY e.category, e.name
        LIMIT $2 OFFSET $3`,
-      [departmentId, pagination.limit, pagination.offset],
+      [departmentId, pagination.limit, pagination.offset, actor.id, isAdmin],
     );
     return paginateRows(rows, pagination);
   }

@@ -3191,6 +3191,10 @@ li:hover .checkbox-mark {
   max-height: 0;
   opacity: 0;
 }
+.tasks-hero--sailing,
+.tasks-hero--sailing .tasks-hero-greeting {
+  transition: none;
+}
 /* On a short viewport even the condensed hero would own most of the screen,
    and a trail you can see two rows of is worse than one you scroll to. */
 @media (max-height: 560px) {

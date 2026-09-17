@@ -163,13 +163,16 @@ export default function TaskRoadmap({
   steps,
   currentId,
   onSelect,
+  onSailingChange,
 }: {
   steps: RoadmapItem[];
   currentId: string | null;
   onSelect: (id: string) => void;
+  onSailingChange?: (sailing: boolean) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [geom, setGeom] = useState<Geometry | null>(null);
+  const sailingRef = useRef(false);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -212,7 +215,7 @@ export default function TaskRoadmap({
 
   return (
     <div className="roadmap" ref={rootRef}>
-      <RoadmapTrail geom={geom} states={states} currentIndex={currentIndex} />
+      <RoadmapTrail geom={geom} states={states} currentIndex={currentIndex} sailingRef={sailingRef} onSailingChange={onSailingChange} />
 
       {steps.map((step, i) => {
         const state = states[i];
@@ -358,10 +361,14 @@ function RoadmapTrail({
   geom,
   states,
   currentIndex,
+  sailingRef,
+  onSailingChange,
 }: {
   geom: Geometry | null;
   states: VisualState[];
   currentIndex: number;
+  sailingRef: React.MutableRefObject<boolean>;
+  onSailingChange?: (sailing: boolean) => void;
 }) {
   // Which leg the boat still has to sail. This is held rather than derived,
   // because it depends on where the boat already IS: on the first render it
@@ -470,6 +477,8 @@ function RoadmapTrail({
     const runner = boat.parentNode as SVGGElement | null;
     const setSailing = (sailing: boolean) => {
       runner?.classList.toggle('is-sailing', sailing);
+      sailingRef.current = sailing;
+      onSailingChange?.(sailing);
     };
 
     /**
@@ -634,11 +643,27 @@ function RoadmapTrail({
     const first = path.getPointAtLength(0);
     place(first.x, first.y);
     spinTo(0);
-    setSailing(true);
-    raf = requestAnimationFrame(tick);
+
+    const depart = () => {
+      setSailing(true);
+      requestAnimationFrame(() => {
+        raf = requestAnimationFrame(tick);
+      });
+    };
+
+    let departTimer = 0 as unknown as ReturnType<typeof setTimeout>;
+    if (sailingRef.current) {
+      depart();
+    } else {
+      departTimer = setTimeout(depart, 800);
+    }
+
     return () => {
-      cancelAnimationFrame(raf);
-      setSailing(false);
+      clearTimeout(departTimer);
+      if (raf) {
+        cancelAnimationFrame(raf);
+        setSailing(false);
+      }
       unhook();
     };
     // mooring is a fresh object every render, so its coordinates are the deps:
