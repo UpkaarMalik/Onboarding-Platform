@@ -1,40 +1,33 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useAuthedFetch } from '../api/useAuthedFetch';
+import { useAuth } from '../auth/AuthContext';
 import Reveal from '../components/Reveal';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
-interface BenefitItemSpec {
-  label: string;
-  value: string;
-  /** Optional value color override (e.g. green for "Enrolled") */
-  vc?: string;
+interface Entitlement {
+  id: string;
+  name: string;
+  category: 'device' | 'insurance' | 'perks';
+  description: string;
+  scope: 'company_wide' | 'department';
+  department_id: string | null;
+  department_name: string | null;
+  total_quantity: number | null;
+  available_quantity: number | null;
+  claimed: boolean;
+  status: string;
 }
 
-interface BenefitItem {
-  key: string;
+interface Department {
+  id: string;
   name: string;
-  desc: string;
-  detail: string;
-  badge: string;
-  tagId: string;
-  /* Detail modal fields */
-  title: string;
-  subtitle: string;
-  note: string;
-  details: BenefitItemSpec[];
 }
 
-interface BenefitCategory {
-  key: string;
-  name: string;
-  subtitle: string;
-  icon: React.ReactNode;
-  items: BenefitItem[];
-}
 
 /* ------------------------------------------------------------------ */
-/*  SVG Icons for each category                                        */
+/*  SVG Icons                                                          */
 /* ------------------------------------------------------------------ */
 const DeviceIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -55,744 +48,239 @@ const PerksIcon = () => (
   </svg>
 );
 
-/* ------------------------------------------------------------------ */
-/*  Demo data                                                          */
-/* ------------------------------------------------------------------ */
-const CATEGORIES: BenefitCategory[] = [
-  {
-    key: 'device',
-    name: 'Device',
-    subtitle: 'Standard Issue Hardware',
-    icon: <DeviceIcon />,
-    items: [
-      {
-        key: 'laptop', name: 'Laptop', desc: 'Workstation asset for daily operations',
-        detail: 'Apple MacBook Pro 16" M3 Max / 36GB / 1TB SSD', badge: 'Specs & Tag', tagId: 'ASSET-2026-APL-9842',
-        title: 'Laptop Workstation', subtitle: 'Hardware Asset · IT Entitlement',
-        note: 'IT Support: Contact it-helpdesk@andpayments.com or visit 4th Floor IT Kiosk for hardware accessories or warranty repair.',
-        details: [
-          { label: 'Asset Tag', value: 'ASSET-2026-APL-9842' },
-          { label: 'Serial Number', value: 'C02G80X0MD6R' },
-          { label: 'Model', value: 'Apple MacBook Pro 16" (Space Black)' },
-          { label: 'Processor', value: 'Apple M3 Max (14-core CPU, 30-core GPU)' },
-          { label: 'Memory & Storage', value: '36GB Unified / 1TB NVMe SSD' },
-          { label: 'Assigned Date', value: 'January 15, 2026' },
-          { label: 'MDM Compliance', value: 'Jamf Pro Enrolled', vc: '#1a7a3a' },
-        ],
-      },
-      {
-        key: 'desktop', name: 'Desktop Monitor', desc: 'External display for workstation setup',
-        detail: 'Dell UltraSharp 27" 4K USB-C Hub Monitor U2723QE', badge: 'Specs & Tag', tagId: 'ASSET-2026-DIS-1104',
-        title: 'Desktop Monitor', subtitle: 'Hardware Asset · Display Entitlement',
-        note: 'For display issues or calibration, contact it-helpdesk@andpayments.com.',
-        details: [
-          { label: 'Asset Tag', value: 'ASSET-2026-DIS-1104' },
-          { label: 'Model', value: 'Dell UltraSharp U2723QE 27" 4K' },
-          { label: 'Resolution', value: '3840 x 2160 (4K UHD)' },
-          { label: 'Connectivity', value: 'USB-C Hub (90W PD), HDMI 2.0, DP 1.4' },
-          { label: 'Assigned Date', value: 'January 15, 2026' },
-          { label: 'Warranty', value: 'Dell Premium Support until Jan 2029', vc: '#1a7a3a' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'insurance',
-    name: 'Insurance',
-    subtitle: 'Full Coverage Protection',
-    icon: <InsuranceIcon />,
-    items: [
-      {
-        key: 'health_insurance', name: 'Health Insurance', desc: 'Company-sponsored group health insurance',
-        detail: 'Comprehensive medical + dental + OPD for employee & family', badge: 'Policy #882190', tagId: 'TPA-STAR-882190',
-        title: 'Health Insurance', subtitle: 'Group Medical Coverage · Policy #882190',
-        note: '24/7 Emergency Helpline: 1800-425-2255. Pre-existing diseases covered from Day 1.',
-        details: [
-          { label: 'Sum Insured', value: '₹10,00,000' },
-          { label: 'Provider', value: 'Star Health / Care' },
-          { label: 'TPA Desk ID', value: 'TPA-STAR-882190' },
-          { label: 'Policy Type', value: 'Comprehensive Group Floater Plan' },
-          { label: 'Covered Members', value: 'Self + Spouse + 2 Children' },
-          { label: 'OPD & Dental', value: '₹25,000 / year included', vc: '#1a7a3a' },
-        ],
-      },
-      {
-        key: 'house_insurance', name: 'House Insurance', desc: 'Standard house insurance sponsored by company',
-        detail: 'Coverage against property damage, fire, natural incidents', badge: 'Standard Plan', tagId: 'HDFC-ERGO-HS-4491',
-        title: 'House Insurance', subtitle: 'Corporate Home & Property Protection',
-        note: 'Relocating? Address updates reflect within 48 hours. Auto-renews on Dec 31, 2026.',
-        details: [
-          { label: 'Policy Number', value: 'HO-99412-AND' },
-          { label: 'Insurer', value: 'HDFC ERGO General' },
-          { label: 'Coverage Limit', value: '₹50,00,000 (Structure + Contents)' },
-          { label: 'Included Hazards', value: 'Fire, Burglary, Electrical, Storm' },
-          { label: 'Registered Address', value: 'Flat 402, Prestige Palms, Indiranagar, Bengaluru' },
-          { label: 'Renewal Date', value: 'Auto-renews Dec 31, 2026' },
-        ],
-      },
-    ],
-  },
-  {
-    key: 'perks',
-    name: 'Perks',
-    subtitle: 'Wellness, Food & Commute',
-    icon: <PerksIcon />,
-    items: [
-      {
-        key: 'gym_membership', name: 'Gym Membership', desc: 'Cult.fit Elite · Multi-center',
-        detail: 'Unlimited multi-city access with cultpass ELITE Corporate', badge: 'Cult.fit Access', tagId: 'CULT-PRO-8821',
-        title: 'Gym Membership', subtitle: 'Fitness & Corporate Wellness',
-        note: 'Linked to corporate email: atul@andpayments.com',
-        details: [
-          { label: 'Partner Program', value: 'cultpass ELITE / Corporate' },
-          { label: 'Access Code', value: 'CULT-PRO-8821' },
-          { label: 'Gym & Fitness', value: 'Unlimited Multi-City Access' },
-          { label: 'Valid Through', value: 'December 31, 2026', vc: '#1a7a3a' },
-          { label: 'Formats', value: 'Gym, Swimming, Yoga, Boxing' },
-          { label: 'Primary Center', value: 'Cult Indiranagar (450m from office)' },
-        ],
-      },
-      {
-        key: 'meal_card', name: 'Meal Card', desc: '$450 / month allowance',
-        detail: 'Tax-exempt food voucher on Zeta / Sodexo wallet', badge: 'Zeta / Sodexo', tagId: 'ZETA-FOOD-5532',
-        title: 'Meal Card & Cafeteria', subtitle: 'Tax-Exempt Food Voucher & Wallet',
-        note: 'Card damaged or lost? Request instant replacement via HR portal.',
-        details: [
-          { label: 'Monthly Allowance', value: '$450 / mo (100% Tax Free)', vc: '#1a7a3a' },
-          { label: 'Provider', value: 'Zeta / Sodexo · RuPay Platinum' },
-          { label: 'Card Number', value: '•••• 4921 (Exp: 09/29)' },
-          { label: 'Recharge Cycle', value: '1st of each calendar month' },
-          { label: 'Current Balance', value: '$384.50', vc: '#1a7a3a' },
-          { label: 'Merchants', value: 'Campus Cafe, Swiggy, Zomato, Zepto, Blinkit' },
-          { label: 'Online Transactions', value: 'Enabled', vc: '#1a7a3a' },
-        ],
-      },
-      {
-        key: 'parking', name: 'Parking', desc: 'Slot #B2-104 · Tower B',
-        detail: 'RFID tag spot with direct elevator access', badge: 'Basement B2', tagId: 'PARK-B2-SLOT-42',
-        title: 'Campus Parking Slot', subtitle: 'Reserved Vehicle Parking · RFID Access',
-        note: 'Changed car or registration plate? Update vehicle info in the HR portal.',
-        details: [
-          { label: 'Designated Bay', value: 'Slot #B2-104 · Basement Level 2' },
-          { label: 'Registered Plate', value: 'KA 01 MG 4420 (Sedan)' },
-          { label: 'Campus Building', value: 'Tower B, Primary HQ Campus' },
-          { label: 'RFID Access', value: 'Active (Auto-Sync)', vc: '#1a7a3a' },
-          { label: 'EV Charging', value: '7.4kW Type-2 AC at Bay 104' },
-          { label: 'Elevator', value: 'Core Lift Bank 3 (Direct to 4F/6F)' },
-        ],
-      },
-    ],
-  },
-];
+const PlusIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+);
 
-const TOTAL_ITEMS = 7;
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M4 8l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 
-type TabKey = 'all' | 'device' | 'insurance' | 'perks';
-const TABS: { id: TabKey; label: string }[] = [
-  { id: 'all', label: 'All Categories (3)' },
-  { id: 'device', label: 'Devices (2)' },
-  { id: 'insurance', label: 'Insurance (2)' },
-  { id: 'perks', label: 'Perks (3)' },
-];
+const CATEGORY_META: Record<string, { label: string; subtitle: string; icon: React.ReactNode }> = {
+  device:    { label: 'Devices',   subtitle: 'Standard Issue Hardware',   icon: <DeviceIcon /> },
+  insurance: { label: 'Insurance', subtitle: 'Full Coverage Protection',  icon: <InsuranceIcon /> },
+  perks:     { label: 'Perks',     subtitle: 'Wellness, Food & Commute', icon: <PerksIcon /> },
+};
 
 /* ------------------------------------------------------------------ */
-/*  Inline style objects                                               */
+/*  Inline styles                                                      */
 /* ------------------------------------------------------------------ */
 const S = {
-  page: {
-    maxWidth: 960,
-    margin: '0 auto',
-    padding: '0.5rem 0 2rem',
-  } as React.CSSProperties,
+  page: { maxWidth: 960, margin: '0 auto', padding: '0.5rem 0 2rem' } as React.CSSProperties,
 
-  /* Breadcrumb */
-  breadcrumb: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  } as React.CSSProperties,
+  breadcrumb: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } as React.CSSProperties,
   breadcrumbTag: {
-    fontSize: 11,
-    fontWeight: 700,
-    color: '#e8930c',
-    border: '1.5px solid #e8930c',
-    borderRadius: 6,
-    padding: '3px 10px',
-    letterSpacing: 0.5,
+    fontSize: 11, fontWeight: 700, color: '#e8930c', border: '1.5px solid #e8930c',
+    borderRadius: 6, padding: '3px 10px', letterSpacing: 0.5,
   } as React.CSSProperties,
   breadcrumbSep: { color: '#ccc' } as React.CSSProperties,
   breadcrumbText: { fontSize: 13, color: '#999' } as React.CSSProperties,
 
-  /* Header row */
   headerRow: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    flexWrap: 'wrap' as const,
-    gap: 12,
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+    marginBottom: 24, flexWrap: 'wrap' as const, gap: 12,
   } as React.CSSProperties,
-  titleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-  } as React.CSSProperties,
-  title: {
-    margin: 0,
-    fontSize: 32,
-    fontWeight: 800,
-  } as React.CSSProperties,
+  titleRow: { display: 'flex', alignItems: 'center', gap: 12 } as React.CSSProperties,
+  title: { margin: 0, fontSize: 32, fontWeight: 800 } as React.CSSProperties,
   adminBadge: {
-    fontSize: 11,
-    fontWeight: 700,
-    color: '#e8930c',
-    border: '1.5px solid #e8930c',
-    borderRadius: 6,
-    padding: '3px 10px',
-    letterSpacing: 0.5,
+    fontSize: 11, fontWeight: 700, color: '#e8930c', border: '1.5px solid #e8930c',
+    borderRadius: 6, padding: '3px 10px', letterSpacing: 0.5,
   } as React.CSSProperties,
-  headerSub: {
-    margin: '6px 0 0',
-    color: '#777',
-    fontSize: 14,
-  } as React.CSSProperties,
+  headerSub: { margin: '6px 0 0', color: '#777', fontSize: 14 } as React.CSSProperties,
   addBtn: {
-    background: '#e8930c',
-    color: '#fff',
-    border: 'none',
-    padding: '14px 28px',
-    borderRadius: 12,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    transition: 'all 0.2s ease',
-    flexShrink: 0,
+    background: '#e8930c', color: '#fff', border: 'none', padding: '14px 28px',
+    borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8,
+    transition: 'all 0.2s ease', flexShrink: 0,
   } as React.CSSProperties,
 
-  /* Stats grid */
   statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 0,
-    background: '#fff',
-    border: '1px solid #e8e4dc',
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 24,
+    display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0,
+    background: '#fff', border: '1px solid #e8e4dc', borderRadius: 16,
+    overflow: 'hidden', marginBottom: 24,
   } as React.CSSProperties,
-  statCell: (borderRight: boolean, borderBottom: boolean): React.CSSProperties => ({
-    padding: '20px 24px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 14,
-    borderRight: borderRight ? '1px solid #f2efe8' : 'none',
-    borderBottom: borderBottom ? '1px solid #f2efe8' : 'none',
-    cursor: 'pointer',
-    transition: 'background 0.15s ease',
+  statCell: (last: boolean): React.CSSProperties => ({
+    padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 14,
+    borderRight: last ? 'none' : '1px solid #f2efe8',
   }),
   statIcon: (bg: string): React.CSSProperties => ({
-    width: 44,
-    height: 44,
-    background: bg,
-    borderRadius: 12,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
+    width: 44, height: 44, background: bg, borderRadius: 12,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   }),
-  statLabel: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#999',
-    letterSpacing: 0.5,
-  } as React.CSSProperties,
+  statLabel: { fontSize: 11, fontWeight: 600, color: '#999', letterSpacing: 0.5 } as React.CSSProperties,
   statValue: (color?: string): React.CSSProperties => ({
-    fontSize: 16,
-    fontWeight: 700,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
+    fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
     color: color || 'inherit',
   }),
-  greenDot: {
-    width: 8,
-    height: 8,
-    background: '#34c759',
-    borderRadius: '50%',
-    display: 'inline-block',
-  } as React.CSSProperties,
+  greenDot: { width: 8, height: 8, background: '#34c759', borderRadius: '50%', display: 'inline-block' } as React.CSSProperties,
 
-  /* Tab filter pills */
   tabContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    flexWrap: 'wrap' as const,
-    gap: 12,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    marginBottom: 20, flexWrap: 'wrap' as const, gap: 12,
   } as React.CSSProperties,
-  tabPillWrap: {
-    display: 'flex',
-    gap: 0,
-    background: '#f0ebe3',
-    borderRadius: 12,
-    padding: 4,
-  } as React.CSSProperties,
+  tabPillWrap: { display: 'flex', gap: 0, background: '#f0ebe3', borderRadius: 12, padding: 4 } as React.CSSProperties,
   tabPill: (active: boolean): React.CSSProperties => ({
-    background: active ? '#fff' : 'transparent',
-    border: 'none',
-    padding: '10px 20px',
-    fontSize: 13,
-    fontWeight: active ? 600 : 400,
-    color: active ? '#1a1a1a' : '#777',
-    borderRadius: 10,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'all 0.15s ease',
+    background: active ? '#fff' : 'transparent', border: 'none', padding: '10px 20px',
+    fontSize: 13, fontWeight: active ? 600 : 400, color: active ? '#1a1a1a' : '#777',
+    borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', transition: 'all 0.15s ease',
     boxShadow: active ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
   }),
-  tabStatus: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontSize: 13,
-    color: '#777',
-  } as React.CSSProperties,
 
-  /* Category cards */
   cardGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-    gap: 20,
-    marginBottom: 32,
-  } as React.CSSProperties,
-  card: {
-    background: '#fff',
-    border: '1px solid #e8e4dc',
-    borderRadius: 16,
-    padding: '28px 24px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    textAlign: 'center' as const,
-    gap: 14,
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-  } as React.CSSProperties,
-  cardIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: '#fef7ec',
-    border: '1.5px solid #f5d4a0',
-  } as React.CSSProperties,
-  cardName: {
-    fontSize: 18,
-    fontWeight: 700,
-  } as React.CSSProperties,
-  cardSub: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 2,
-  } as React.CSSProperties,
-  cardMeta: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  } as React.CSSProperties,
-  cardCount: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: '#777',
-    background: '#f5f4f2',
-    borderRadius: 6,
-    padding: '3px 10px',
-  } as React.CSSProperties,
-  cardActive: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#1a7a3a',
-  } as React.CSSProperties,
-  cardSmallDot: {
-    width: 7,
-    height: 7,
-    background: '#34c759',
-    borderRadius: '50%',
-    display: 'inline-block',
-  } as React.CSSProperties,
-  cardLink: {
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#e8930c',
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: 16, marginBottom: 32,
   } as React.CSSProperties,
 
-  /* Footer */
+  benefitCard: (claimed: boolean): React.CSSProperties => ({
+    background: '#fff', border: `1.5px solid ${claimed ? '#b5e2c4' : '#e8e4dc'}`,
+    borderRadius: 16, padding: '20px 22px', cursor: 'pointer',
+    transition: 'all 0.2s ease', display: 'flex', flexDirection: 'column', gap: 12,
+  }),
+  cardTop: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 } as React.CSSProperties,
+  cardIconBox: (cat: string): React.CSSProperties => ({
+    width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center',
+    justifyContent: 'center', flexShrink: 0,
+    background: cat === 'device' ? '#fef7ec' : cat === 'insurance' ? '#eef6ff' : '#f5f0ff',
+    border: `1.5px solid ${cat === 'device' ? '#f5d4a0' : cat === 'insurance' ? '#b3d4f7' : '#d4c4f0'}`,
+  }),
+  cardName: { fontSize: 15, fontWeight: 700, lineHeight: 1.3 } as React.CSSProperties,
+  cardDesc: { fontSize: 12, color: '#777', lineHeight: 1.4 } as React.CSSProperties,
+  cardFooter: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    borderTop: '1px solid #f2efe8', paddingTop: 12, marginTop: 'auto',
+  } as React.CSSProperties,
+  badge: (bg: string, color: string, border: string): React.CSSProperties => ({
+    fontSize: 11, fontWeight: 600, color, background: bg, border: `1px solid ${border}`,
+    borderRadius: 6, padding: '3px 10px', display: 'inline-flex', alignItems: 'center', gap: 4,
+  }),
+  quantityText: { fontSize: 11, color: '#999' } as React.CSSProperties,
+
   footer: {
-    background: '#fff',
-    border: '1px solid #e8e4dc',
-    borderRadius: 14,
-    padding: '16px 24px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap' as const,
-    gap: 8,
+    background: '#fff', border: '1px solid #e8e4dc', borderRadius: 14, padding: '16px 24px',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    flexWrap: 'wrap' as const, gap: 8,
   } as React.CSSProperties,
-  footerText: {
-    fontSize: 13,
-    color: '#777',
-  } as React.CSSProperties,
-  footerLink: {
-    color: '#e8930c',
-    fontWeight: 600,
-    textDecoration: 'none',
-  } as React.CSSProperties,
-  footerRight: {
-    fontSize: 12,
-    color: '#bbb',
-  } as React.CSSProperties,
+  footerText: { fontSize: 13, color: '#777' } as React.CSSProperties,
+  footerLink: { color: '#e8930c', fontWeight: 600, textDecoration: 'none' } as React.CSSProperties,
+  footerRight: { fontSize: 12, color: '#bbb' } as React.CSSProperties,
 
-  /* Overlay */
   overlay: {
-    position: 'fixed' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0,0,0,0.5)',
-    zIndex: 100,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backdropFilter: 'blur(4px)',
+    position: 'fixed' as const, top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex',
+    alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)',
     animation: 'benefitsFadeIn 0.2s ease',
   } as React.CSSProperties,
-
-  /* Category modal */
-  catModal: {
-    background: '#fff',
-    borderRadius: 20,
-    width: 640,
-    maxWidth: '90vw',
-    maxHeight: '80vh',
-    overflowY: 'auto' as const,
+  modal: {
+    background: '#fff', borderRadius: 20, width: 560, maxWidth: '90vw',
+    maxHeight: '80vh', overflowY: 'auto' as const,
     boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
     animation: 'benefitsSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
   } as React.CSSProperties,
   modalHeader: {
-    padding: '24px 28px',
-    borderBottom: '1px solid #f2efe8',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    padding: '24px 28px', borderBottom: '1px solid #f2efe8',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
   } as React.CSSProperties,
-  modalTitle: {
-    margin: 0,
-    fontSize: 20,
-    fontWeight: 800,
-  } as React.CSSProperties,
-  modalSub: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 2,
-  } as React.CSSProperties,
+  modalTitle: { margin: 0, fontSize: 20, fontWeight: 800 } as React.CSSProperties,
+  modalSub: { fontSize: 12, color: '#999', marginTop: 2 } as React.CSSProperties,
   closeBtn: {
-    background: '#f5f4f2',
-    border: 'none',
-    width: 36,
-    height: 36,
-    borderRadius: '50%',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 18,
-    color: '#555',
-    flexShrink: 0,
+    background: '#f5f4f2', border: 'none', width: 36, height: 36, borderRadius: '50%',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 18, color: '#555', flexShrink: 0,
   } as React.CSSProperties,
-  catModalBody: {
-    padding: '20px 28px',
-  } as React.CSSProperties,
-  catItemCard: {
-    background: '#faf9f7',
-    border: '1px solid #e8e4dc',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 12,
-    cursor: 'pointer',
-    transition: 'all 0.15s ease',
-  } as React.CSSProperties,
-  catItemRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  } as React.CSSProperties,
-  catItemLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-  } as React.CSSProperties,
-  orangeDot: {
-    width: 8,
-    height: 8,
-    background: '#e8930c',
-    borderRadius: '50%',
-    display: 'inline-block',
-    flexShrink: 0,
-  } as React.CSSProperties,
-  catItemName: {
-    fontSize: 14,
-    fontWeight: 700,
-  } as React.CSSProperties,
-  activeBadge: {
-    fontSize: 10,
-    fontWeight: 600,
-    color: '#1a7a3a',
-    background: '#edfcf2',
-    border: '1px solid #b5e2c4',
-    borderRadius: 4,
-    padding: '2px 8px',
-  } as React.CSSProperties,
-  deactivatedBadge: {
-    fontSize: 10,
-    fontWeight: 600,
-    color: '#c0392b',
-    background: '#fdecea',
-    border: '1px solid #f5c6c0',
-    borderRadius: 4,
-    padding: '2px 8px',
-  } as React.CSSProperties,
-  catItemRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  } as React.CSSProperties,
-  grayBadge: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: '#777',
-    background: '#f5f4f2',
-    borderRadius: 4,
-    padding: '2px 8px',
-  } as React.CSSProperties,
-  catItemDesc: {
-    fontSize: 12,
-    color: '#777',
-    margin: '6px 0 0 18px',
-  } as React.CSSProperties,
-  catItemDetail: {
-    fontSize: 11,
-    color: '#999',
-    margin: '4px 0 0 18px',
-    background: '#fff',
-    border: '1px solid #eee',
-    borderRadius: 8,
-    padding: '6px 10px',
-  } as React.CSSProperties,
-  catItemFooter: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTop: '1px solid #f0ece5',
-  } as React.CSSProperties,
-  tagId: {
-    fontSize: 10,
-    color: '#bbb',
-    fontFamily: 'monospace',
-  } as React.CSSProperties,
-  viewSpecs: {
-    fontSize: 12,
-    fontWeight: 600,
-    color: '#e8930c',
-  } as React.CSSProperties,
-  catModalFooter: {
-    padding: '16px 28px',
-    borderTop: '1px solid #f2efe8',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  } as React.CSSProperties,
-  syncNote: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    fontSize: 12,
-    color: '#1a7a3a',
-  } as React.CSSProperties,
-  doneBtn: {
-    background: '#f5f4f2',
-    border: '1px solid #ddd',
-    padding: '8px 20px',
-    borderRadius: 10,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
+  modalBody: { padding: '20px 28px' } as React.CSSProperties,
+  modalFooter: {
+    padding: '16px 28px', borderTop: '1px solid #f2efe8',
+    display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10,
   } as React.CSSProperties,
 
-  /* Item detail modal */
-  itemModal: {
-    background: '#fff',
-    borderRadius: 20,
-    width: 560,
-    maxWidth: '90vw',
-    maxHeight: '80vh',
-    overflowY: 'auto' as const,
-    boxShadow: '0 24px 64px rgba(0,0,0,0.2)',
-    animation: 'benefitsSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-  } as React.CSSProperties,
-  itemTitleRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  } as React.CSSProperties,
-  itemModalTitle: {
-    margin: 0,
-    fontSize: 18,
-    fontWeight: 800,
-  } as React.CSSProperties,
-  itemModalBody: {
-    padding: '20px 28px',
-  } as React.CSSProperties,
   specRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '10px 0',
-    borderBottom: '1px solid #f5f3ee',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '10px 0', borderBottom: '1px solid #f5f3ee',
   } as React.CSSProperties,
-  specLabel: {
-    fontSize: 13,
-    color: '#999',
-  } as React.CSSProperties,
-  specValue: (color?: string): React.CSSProperties => ({
-    fontSize: 13,
-    fontWeight: 600,
-    color: color || '#1a1a1a',
-    textAlign: 'right',
-    maxWidth: '60%',
-  }),
+  specLabel: { fontSize: 13, color: '#999' } as React.CSSProperties,
+  specValue: { fontSize: 13, fontWeight: 600, color: '#1a1a1a', textAlign: 'right' as const, maxWidth: '60%' } as React.CSSProperties,
+
   noteBox: {
-    marginTop: 16,
-    background: '#fef7ec',
-    border: '1px solid #f5d4a0',
-    borderRadius: 12,
-    padding: '12px 16px',
-    fontSize: 12,
-    color: '#8b5e1a',
-    lineHeight: 1.5,
-  } as React.CSSProperties,
-  itemModalFooter: {
-    padding: '16px 28px',
-    borderTop: '1px solid #f2efe8',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  } as React.CSSProperties,
-  backBtn: {
-    background: '#fff',
-    border: '1px solid #ddd',
-    padding: '8px 16px',
-    borderRadius: 10,
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-  } as React.CSSProperties,
-  rightBtns: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-  } as React.CSSProperties,
-  toggleBtn: (isDeactivated: boolean): React.CSSProperties => ({
-    background: isDeactivated ? '#edfcf2' : '#fdecea',
-    color: isDeactivated ? '#1a7a3a' : '#c0392b',
-    border: `1px solid ${isDeactivated ? '#b5e2c4' : '#f5c6c0'}`,
-    padding: '8px 18px',
-    borderRadius: 10,
-    fontSize: 12,
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'all 0.2s ease',
-  }),
-  closeModalBtn: {
-    background: '#f5f4f2',
-    border: '1px solid #ddd',
-    padding: '8px 20px',
-    borderRadius: 10,
-    fontSize: 13,
-    fontWeight: 600,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
+    marginTop: 16, background: '#fef7ec', border: '1px solid #f5d4a0',
+    borderRadius: 12, padding: '12px 16px', fontSize: 12, color: '#8b5e1a', lineHeight: 1.5,
   } as React.CSSProperties,
 
-  /* Toast */
-  toast: (isActive: boolean): React.CSSProperties => ({
-    position: 'fixed',
-    top: 24,
-    right: 24,
-    zIndex: 200,
-    background: isActive ? '#edfcf2' : '#fdecea',
-    color: isActive ? '#1a7a3a' : '#c0392b',
-    border: `1px solid ${isActive ? '#b5e2c4' : '#f5c6c0'}`,
-    borderRadius: 14,
-    padding: '14px 20px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
+  formGroup: { marginBottom: 16 } as React.CSSProperties,
+  formLabel: { display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#333' } as React.CSSProperties,
+  formInput: {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #e0dcd4', borderRadius: 10,
+    fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const,
+    transition: 'border-color 0.15s ease',
+  } as React.CSSProperties,
+  formSelect: {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #e0dcd4', borderRadius: 10,
+    fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const,
+    background: '#fff', cursor: 'pointer',
+  } as React.CSSProperties,
+  formTextarea: {
+    width: '100%', padding: '10px 14px', border: '1.5px solid #e0dcd4', borderRadius: 10,
+    fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' as const,
+    resize: 'vertical' as const, minHeight: 80,
+  } as React.CSSProperties,
+
+  btnSolid: {
+    background: '#e8930c', color: '#fff', border: 'none', padding: '10px 24px',
+    borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+  } as React.CSSProperties,
+  btnOutline: {
+    background: '#f5f4f2', color: '#333', border: '1px solid #ddd', padding: '10px 24px',
+    borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+  } as React.CSSProperties,
+  claimBtn: (claimed: boolean): React.CSSProperties => ({
+    background: claimed ? '#edfcf2' : '#e8930c',
+    color: claimed ? '#1a7a3a' : '#fff',
+    border: claimed ? '1px solid #b5e2c4' : 'none',
+    padding: '10px 24px', borderRadius: 10, fontSize: 14, fontWeight: 600,
+    cursor: claimed ? 'default' : 'pointer', fontFamily: 'inherit',
+    display: 'flex', alignItems: 'center', gap: 6,
+  }),
+
+  toast: (ok: boolean): React.CSSProperties => ({
+    position: 'fixed', top: 24, right: 24, zIndex: 200,
+    background: ok ? '#edfcf2' : '#fdecea', color: ok ? '#1a7a3a' : '#c0392b',
+    border: `1px solid ${ok ? '#b5e2c4' : '#f5c6c0'}`, borderRadius: 14,
+    padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 10,
     boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
-    animation: 'benefitsSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-    maxWidth: 400,
+    animation: 'benefitsSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)', maxWidth: 400,
   }),
-  toastIcon: (isActive: boolean): React.CSSProperties => ({
-    width: 28,
-    height: 28,
-    borderRadius: '50%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: isActive ? '#d4edda' : '#f8d7da',
-    flexShrink: 0,
-  }),
-  toastTitle: {
-    fontSize: 13,
-    fontWeight: 700,
-  } as React.CSSProperties,
-  toastMsg: {
-    fontSize: 11,
-    opacity: 0.8,
-    marginTop: 1,
-  } as React.CSSProperties,
+  toastTitle: { fontSize: 13, fontWeight: 700 } as React.CSSProperties,
+  toastMsg: { fontSize: 11, opacity: 0.8, marginTop: 1 } as React.CSSProperties,
 };
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 export default function Benefits() {
-  const [activeTab, setActiveTab] = useState<TabKey>('all');
-  const [openCat, setOpenCat] = useState<string | null>(null);
-  const [openItem, setOpenItem] = useState<string | null>(null);
-  const [deactivated, setDeactivated] = useState<Record<string, boolean>>({});
-  const [toast, setToast] = useState<{ title: string; msg: string; isActive: boolean } | null>(null);
+  const authedFetch = useAuthedFetch();
+  const { user } = useAuth();
+  const isHR = user?.role === 'superadmin_hr';
 
-  /* Inject keyframe animations once */
+  const [items, setItems] = useState<Entitlement[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openCat, setOpenCat] = useState<string | null>(null);
+  const [selectedItem, setSelectedItem] = useState<Entitlement | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const [toast, setToast] = useState<{ title: string; msg: string; ok: boolean } | null>(null);
+
+  /* Form state for Add Entitlement */
+  const [formName, setFormName] = useState('');
+  const [formCategory, setFormCategory] = useState<'device' | 'insurance' | 'perks'>('device');
+  const [formScope, setFormScope] = useState<string>('company_wide');
+  const [formDesc, setFormDesc] = useState('');
+  const [formQty, setFormQty] = useState('');
+  const [formSubmitting, setFormSubmitting] = useState(false);
+
   useEffect(() => {
     const id = 'benefits-keyframes';
     if (document.getElementById(id)) return;
@@ -805,42 +293,102 @@ export default function Benefits() {
     document.head.appendChild(style);
   }, []);
 
-  /* Derived */
-  const activeCount = TOTAL_ITEMS - Object.keys(deactivated).length;
-  const filteredCategories = activeTab === 'all' ? CATEGORIES : CATEGORIES.filter((c) => c.key === activeTab);
+  const loadEntitlements = useCallback(async () => {
+    try {
+      const data = await authedFetch<{ data: Entitlement[] }>('/entitlements?limit=50');
+      setItems(data.data);
+    } catch {
+      /* silent — page shows empty state */
+    } finally {
+      setLoading(false);
+    }
+  }, [authedFetch]);
 
-  const openCategory = openCat ? CATEGORIES.find((c) => c.key === openCat) : null;
-  const openItemData = openItem
-    ? CATEGORIES.flatMap((c) => c.items).find((it) => it.key === openItem)
-    : null;
+  const loadDepartments = useCallback(async () => {
+    try {
+      const data = await authedFetch<Department[]>('/departments');
+      setDepartments(data);
+    } catch { /* ignore */ }
+  }, [authedFetch]);
 
-  /* Handlers */
-  const handleToggle = useCallback(() => {
-    if (!openItem || !openItemData) return;
-    const wasDeactivated = !!deactivated[openItem];
-    setDeactivated((prev) => {
-      const next = { ...prev };
-      if (wasDeactivated) delete next[openItem];
-      else next[openItem] = true;
-      return next;
-    });
-    const action = wasDeactivated ? 'Activated' : 'Deactivated';
-    setToast({
-      title: `${openItemData.title} ${action}`,
-      msg: 'HR notification sent. Change synced with operations system.',
-      isActive: wasDeactivated,
-    });
+  useEffect(() => {
+    void loadEntitlements();
+    if (isHR) void loadDepartments();
+  }, [loadEntitlements, loadDepartments, isHR]);
+
+  const grouped = items.reduce<Record<string, Entitlement[]>>((acc, e) => {
+    (acc[e.category] ??= []).push(e);
+    return acc;
+  }, {});
+
+  const claimedCount = items.filter((e) => e.claimed).length;
+  const categoryKeys = ['device', 'insurance', 'perks'].filter((k) => grouped[k]?.length);
+  const openCatItems = openCat ? grouped[openCat] ?? [] : [];
+
+  const showToast = (title: string, msg: string, ok: boolean) => {
+    setToast({ title, msg, ok });
     setTimeout(() => setToast(null), 3500);
-  }, [openItem, openItemData, deactivated]);
+  };
+
+  async function handleClaim(entitlement: Entitlement) {
+    if (entitlement.claimed || claiming) return;
+    setClaiming(true);
+    try {
+      await authedFetch(`/entitlements/${entitlement.id}/claim`, { method: 'POST' });
+      showToast(`${entitlement.name} Claimed`, 'Entitlement has been assigned to you.', true);
+      setSelectedItem(null);
+      await loadEntitlements();
+    } catch {
+      showToast('Claim Failed', 'Could not claim this entitlement. It may already be claimed or unavailable.', false);
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  async function handleAddEntitlement(e: React.FormEvent) {
+    e.preventDefault();
+    if (!formName.trim()) return;
+    setFormSubmitting(true);
+    try {
+      const body: Record<string, unknown> = {
+        name: formName.trim(),
+        category: formCategory,
+        description: formDesc.trim(),
+        scope: formScope === 'company_wide' ? 'company_wide' : 'department',
+      };
+      if (formScope !== 'company_wide') body.departmentId = formScope;
+      if (formQty) body.totalQuantity = parseInt(formQty, 10);
+
+      await authedFetch('/entitlements', { method: 'POST', body });
+      showToast('Entitlement Created', `"${formName.trim()}" has been added.`, true);
+      setShowAddModal(false);
+      resetForm();
+      await loadEntitlements();
+    } catch {
+      showToast('Creation Failed', 'Could not create entitlement. Please check the form and try again.', false);
+    } finally {
+      setFormSubmitting(false);
+    }
+  }
+
+  function resetForm() {
+    setFormName('');
+    setFormCategory('device');
+    setFormScope('company_wide');
+    setFormDesc('');
+    setFormQty('');
+  }
+
+  if (loading) return <BenefitsSkeleton />;
 
   return (
     <div style={S.page}>
       {/* ---------- Breadcrumb ---------- */}
       <Reveal>
         <div style={S.breadcrumb}>
-          <span style={S.breadcrumbTag}>HR OPERATIONS PORTAL</span>
+          <span style={S.breadcrumbTag}>EMPLOYEE PORTAL</span>
           <span style={S.breadcrumbSep}>&rsaquo;</span>
-          <span style={S.breadcrumbText}>Employee Entitlements</span>
+          <span style={S.breadcrumbText}>Benefits &amp; Entitlements</span>
         </div>
 
         {/* ---------- Header ---------- */}
@@ -848,23 +396,30 @@ export default function Benefits() {
           <div>
             <div style={S.titleRow}>
               <h1 style={S.title}>Benefits</h1>
-              <span style={S.adminBadge}>ADMIN VIEW</span>
+              {isHR && <span style={S.adminBadge}>HR ADMIN</span>}
             </div>
             <p style={S.headerSub}>
-              Manage and assign employee entitlements across all categories.
+              {isHR
+                ? 'Manage and assign employee entitlements across all categories.'
+                : 'View and claim your available entitlements.'}
             </p>
           </div>
-          <button type="button" style={S.addBtn}>
-            <span style={{ fontSize: 18 }}>+</span> Add Entitlement
-          </button>
+          {isHR && (
+            <button
+              type="button"
+              style={S.addBtn}
+              onClick={() => { resetForm(); setShowAddModal(true); }}
+            >
+              <PlusIcon /> Add Entitlement
+            </button>
+          )}
         </div>
       </Reveal>
 
-      {/* ---------- Stats Grid (2x2) ---------- */}
+      {/* ---------- Stats ---------- */}
       <Reveal delay={0.06}>
         <div style={S.statsGrid}>
-          {/* Active Status */}
-          <div style={S.statCell(true, true)}>
+          <div style={S.statCell(false)}>
             <div style={S.statIcon('#fef7ec')}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <path d="M10 18a8 8 0 100-16 8 8 0 000 16z" stroke="#e8930c" strokeWidth="1.3" />
@@ -872,14 +427,13 @@ export default function Benefits() {
               </svg>
             </div>
             <div>
-              <div style={S.statLabel}>ACTIVE STATUS</div>
+              <div style={S.statLabel}>CLAIMED</div>
               <div style={S.statValue()}>
-                {activeCount} / {TOTAL_ITEMS} Assigned <span style={S.greenDot} />
+                {claimedCount} / {items.length} <span style={S.greenDot} />
               </div>
             </div>
           </div>
-          {/* Categories */}
-          <div style={S.statCell(false, true)}>
+          <div style={S.statCell(false)}>
             <div style={S.statIcon('#fef7ec')}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <rect x="5" y="3" width="10" height="14" rx="1.5" stroke="#e8930c" strokeWidth="1.3" />
@@ -888,24 +442,10 @@ export default function Benefits() {
             </div>
             <div>
               <div style={S.statLabel}>CATEGORIES</div>
-              <div style={S.statValue()}>3 Categories</div>
+              <div style={S.statValue()}>{categoryKeys.length} Categories</div>
             </div>
           </div>
-          {/* Renewal Cycle */}
-          <div style={S.statCell(true, false)}>
-            <div style={S.statIcon('#fef7ec')}>
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <rect x="3" y="4" width="14" height="12" rx="1.5" stroke="#e8930c" strokeWidth="1.3" />
-                <path d="M3 8h14M7 4v-2M13 4v-2" stroke="#e8930c" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-            </div>
-            <div>
-              <div style={S.statLabel}>RENEWAL CYCLE</div>
-              <div style={S.statValue()}>Annual (Dec 2026)</div>
-            </div>
-          </div>
-          {/* Desk Support */}
-          <div style={S.statCell(false, false)}>
+          <div style={S.statCell(true)}>
             <div style={S.statIcon('#edfcf2')}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
                 <circle cx="10" cy="10" r="7" stroke="#1a7a3a" strokeWidth="1.3" />
@@ -913,73 +453,175 @@ export default function Benefits() {
               </svg>
             </div>
             <div>
-              <div style={S.statLabel}>DESK SUPPORT</div>
-              <div style={S.statValue('#1a7a3a')}>HR Desk Open</div>
+              <div style={S.statLabel}>AVAILABLE</div>
+              <div style={S.statValue('#1a7a3a')}>
+                {items.filter((e) => !e.claimed).length} unclaimed
+              </div>
             </div>
-          </div>
-        </div>
-      </Reveal>
-
-      {/* ---------- Filter Tabs ---------- */}
-      <Reveal delay={0.12}>
-        <div style={S.tabContainer}>
-          <div style={S.tabPillWrap}>
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                style={S.tabPill(activeTab === tab.id)}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div style={S.tabStatus}>
-            <span style={S.greenDot} />
-            All 3 categories active &amp; verified
           </div>
         </div>
       </Reveal>
 
       {/* ---------- Category Cards ---------- */}
-      <Reveal delay={0.18}>
+      <Reveal delay={0.12}>
         <div style={S.cardGrid}>
-          {filteredCategories.map((cat) => (
-            <div
-              key={cat.key}
-              style={S.card}
-              onClick={() => { setOpenCat(cat.key); setOpenItem(null); }}
-              onMouseEnter={(e) => {
-                const el = e.currentTarget;
-                el.style.boxShadow = '0 8px 28px rgba(232,147,12,0.12)';
-                el.style.borderColor = '#e8930c';
-                el.style.transform = 'translateY(-3px)';
-              }}
-              onMouseLeave={(e) => {
-                const el = e.currentTarget;
-                el.style.boxShadow = '';
-                el.style.borderColor = '#e8e4dc';
-                el.style.transform = '';
-              }}
-            >
-              <div style={S.cardIconBox}>{cat.icon}</div>
-              <div>
-                <div style={S.cardName}>{cat.name}</div>
-                <div style={S.cardSub}>{cat.subtitle}</div>
-              </div>
-              <div style={S.cardMeta}>
-                <span style={S.cardCount}>{cat.items.length} item{cat.items.length !== 1 ? 's' : ''}</span>
-                <span style={S.cardActive}>
-                  <span style={S.cardSmallDot} />
-                  All Active
+          {categoryKeys.map((cat) => {
+            const meta = CATEGORY_META[cat];
+            const catItems = grouped[cat];
+            const allClaimed = catItems.every((e) => e.claimed);
+            return (
+              <div
+                key={cat}
+                style={{
+                  background: '#fff', border: '1px solid #e8e4dc', borderRadius: 16,
+                  padding: '28px 24px', display: 'flex', flexDirection: 'column' as const,
+                  alignItems: 'center', textAlign: 'center' as const, gap: 14,
+                  cursor: 'pointer', transition: 'all 0.2s ease',
+                }}
+                onClick={() => { setOpenCat(cat); setSelectedItem(null); }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = '0 8px 28px rgba(232,147,12,0.12)';
+                  e.currentTarget.style.borderColor = '#e8930c';
+                  e.currentTarget.style.transform = 'translateY(-3px)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = '';
+                  e.currentTarget.style.borderColor = '#e8e4dc';
+                  e.currentTarget.style.transform = '';
+                }}
+              >
+                <div style={{
+                  width: 56, height: 56, borderRadius: 16, display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  background: '#fef7ec', border: '1.5px solid #f5d4a0',
+                }}>
+                  {meta?.icon}
+                </div>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 700 }}>{meta?.label || cat}</div>
+                  <div style={{ fontSize: 12, color: '#999', marginTop: 2 }}>{meta?.subtitle}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 600, color: '#777',
+                    background: '#f5f4f2', borderRadius: 6, padding: '3px 10px',
+                  }}>
+                    {catItems.length} item{catItems.length !== 1 ? 's' : ''}
+                  </span>
+                  <span style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: 11, fontWeight: 600,
+                    color: allClaimed ? '#1a7a3a' : '#e8930c',
+                  }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: '50%', display: 'inline-block',
+                      background: allClaimed ? '#34c759' : '#e8930c',
+                    }} />
+                    {allClaimed ? 'All Claimed' : 'Available'}
+                  </span>
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#e8930c' }}>
+                  View Details &rarr;
                 </span>
               </div>
-              <span style={S.cardLink}>View Details &rarr;</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Reveal>
+
+      {items.length === 0 && !loading && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#999' }}>
+          <p style={{ fontSize: 16 }}>No entitlements available yet.</p>
+          {isHR && <p style={{ fontSize: 13 }}>Use "+ Add Entitlement" to create one.</p>}
+        </div>
+      )}
+
+      {/* ---------- Category Modal ---------- */}
+      {openCat && !selectedItem && (
+        <div
+          style={S.overlay}
+          onClick={() => setOpenCat(null)}
+        >
+          <div style={{ ...S.modal, width: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalHeader}>
+              <div>
+                <h2 style={S.modalTitle}>{CATEGORY_META[openCat]?.label} Entitlements</h2>
+                <div style={S.modalSub}>{CATEGORY_META[openCat]?.subtitle}</div>
+              </div>
+              <button type="button" style={S.closeBtn} onClick={() => setOpenCat(null)}>
+                &#10005;
+              </button>
+            </div>
+
+            <div style={S.modalBody}>
+              {openCatItems.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    background: '#faf9f7', border: '1px solid #e8e4dc', borderRadius: 14,
+                    padding: 16, marginBottom: 12, cursor: 'pointer', transition: 'all 0.15s ease',
+                  }}
+                  onClick={() => setSelectedItem(item)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#e8930c';
+                    e.currentTarget.style.background = '#fef7ec';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#e8e4dc';
+                    e.currentTarget.style.background = '#faf9f7';
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ width: 8, height: 8, background: '#e8930c', borderRadius: '50%', flexShrink: 0 }} />
+                      <span style={{ fontSize: 14, fontWeight: 700 }}>{item.name}</span>
+                      {item.claimed ? (
+                        <span style={S.badge('#edfcf2', '#1a7a3a', '#b5e2c4')}>
+                          <CheckIcon /> Claimed
+                        </span>
+                      ) : (
+                        <span style={S.badge('#fef7ec', '#e8930c', '#f5d4a0')}>Available</span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {item.scope === 'department' && item.department_name && (
+                        <span style={S.badge('#f5f4f2', '#777', '#e0dcd4')}>{item.department_name}</span>
+                      )}
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path d="M6 4l4 4-4 4" stroke="#ccc" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#777', margin: '6px 0 0 18px' }}>{item.description}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0ece5' }}>
+                    {item.total_quantity !== null ? (
+                      <span style={{ fontSize: 10, color: '#bbb', fontFamily: 'monospace' }}>
+                        {item.available_quantity}/{item.total_quantity} available
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 10, color: '#bbb', fontFamily: 'monospace' }}>Unlimited</span>
+                    )}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#e8930c' }}>View Details &rarr;</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ ...S.modalFooter, justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#1a7a3a' }}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 14A6 6 0 108 2a6 6 0 000 12z" fill="#edfcf2" stroke="#1a7a3a" strokeWidth="1" />
+                  <path d="M5.5 8l2 2 3-3" stroke="#1a7a3a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Direct sync with HR Operations system
+              </div>
+              <button type="button" style={S.btnOutline} onClick={() => setOpenCat(null)}>
+                Done &amp; Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---------- Footer ---------- */}
       <div style={S.footer}>
@@ -992,176 +634,217 @@ export default function Benefits() {
         <div style={S.footerRight}>&copy; 2026 AndPayments Inc.</div>
       </div>
 
-      {/* ---------- Category Modal ---------- */}
-      {openCat && !openItem && openCategory && (
-        <div
-          style={S.overlay}
-          onClick={() => { setOpenCat(null); setOpenItem(null); }}
-        >
-          <div style={S.catModal} onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
+      {/* ---------- Detail Modal ---------- */}
+      {selectedItem && (
+        <div style={{ ...S.overlay, zIndex: 110 }} onClick={() => { setSelectedItem(null); setOpenCat(null); }}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
             <div style={S.modalHeader}>
               <div>
-                <h2 style={S.modalTitle}>{openCategory.name} Entitlements</h2>
-                <div style={S.modalSub}>{openCategory.subtitle}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h2 style={S.modalTitle}>{selectedItem.name}</h2>
+                  {selectedItem.claimed ? (
+                    <span style={S.badge('#edfcf2', '#1a7a3a', '#b5e2c4')}>Claimed</span>
+                  ) : (
+                    <span style={S.badge('#fef7ec', '#e8930c', '#f5d4a0')}>Available</span>
+                  )}
+                </div>
+                <div style={S.modalSub}>
+                  {CATEGORY_META[selectedItem.category]?.label} Entitlement
+                  {selectedItem.department_name && ` · ${selectedItem.department_name}`}
+                </div>
               </div>
-              <button
-                type="button"
-                style={S.closeBtn}
-                onClick={() => { setOpenCat(null); setOpenItem(null); }}
-              >
+              <button type="button" style={S.closeBtn} onClick={() => { setSelectedItem(null); setOpenCat(null); }}>
                 &#10005;
               </button>
             </div>
 
-            {/* Item list */}
-            <div style={S.catModalBody}>
-              {openCategory.items.map((item) => {
-                const isDeactivated = !!deactivated[item.key];
-                return (
-                  <div
-                    key={item.key}
-                    style={S.catItemCard}
-                    onClick={() => setOpenItem(item.key)}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = '#e8930c';
-                      e.currentTarget.style.background = '#fef7ec';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = '#e8e4dc';
-                      e.currentTarget.style.background = '#faf9f7';
-                    }}
-                  >
-                    <div style={S.catItemRow}>
-                      <div style={S.catItemLeft}>
-                        <span style={S.orangeDot} />
-                        <span style={S.catItemName}>{item.name}</span>
-                        <span style={isDeactivated ? S.deactivatedBadge : S.activeBadge}>
-                          {isDeactivated ? 'Deactivated' : 'Active'}
-                        </span>
-                      </div>
-                      <div style={S.catItemRight}>
-                        <span style={S.grayBadge}>{item.badge}</span>
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                          <path d="M6 4l4 4-4 4" stroke="#ccc" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                      </div>
-                    </div>
-                    <div style={S.catItemDesc}>{item.desc}</div>
-                    <div style={S.catItemDetail}>{item.detail}</div>
-                    <div style={S.catItemFooter}>
-                      <span style={S.tagId}>{item.tagId}</span>
-                      <span style={S.viewSpecs}>View Full Specs &rarr;</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Footer */}
-            <div style={S.catModalFooter}>
-              <div style={S.syncNote}>
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 14A6 6 0 108 2a6 6 0 000 12z" fill="#edfcf2" stroke="#1a7a3a" strokeWidth="1" />
-                  <path d="M5.5 8l2 2 3-3" stroke="#1a7a3a" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                Direct sync with HR Operations system
+            <div style={S.modalBody}>
+              <div style={S.specRow}>
+                <span style={S.specLabel}>Category</span>
+                <span style={S.specValue}>{CATEGORY_META[selectedItem.category]?.label}</span>
               </div>
-              <button
-                type="button"
-                style={S.doneBtn}
-                onClick={() => { setOpenCat(null); setOpenItem(null); }}
-              >
-                Done &amp; Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---------- Item Detail Modal ---------- */}
-      {openItem && openItemData && (
-        <div
-          style={{ ...S.overlay, zIndex: 110 }}
-          onClick={() => { setOpenItem(null); setOpenCat(null); }}
-        >
-          <div style={S.itemModal} onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div style={S.modalHeader}>
-              <div>
-                <div style={S.itemTitleRow}>
-                  <h2 style={S.itemModalTitle}>{openItemData.title}</h2>
-                  <span style={deactivated[openItem] ? S.deactivatedBadge : S.activeBadge}>
-                    {deactivated[openItem] ? 'Deactivated' : 'Active'}
-                  </span>
-                </div>
-                <div style={S.modalSub}>{openItemData.subtitle}</div>
+              <div style={S.specRow}>
+                <span style={S.specLabel}>Scope</span>
+                <span style={S.specValue}>
+                  {selectedItem.scope === 'company_wide' ? 'All Departments' : selectedItem.department_name}
+                </span>
               </div>
-              <button
-                type="button"
-                style={S.closeBtn}
-                onClick={() => { setOpenItem(null); setOpenCat(null); }}
-              >
-                &#10005;
-              </button>
-            </div>
-
-            {/* Spec rows */}
-            <div style={S.itemModalBody}>
-              {openItemData.details.map((row) => (
-                <div key={row.label} style={S.specRow}>
-                  <span style={S.specLabel}>{row.label}</span>
-                  <span style={S.specValue(row.vc)}>{row.value}</span>
+              {selectedItem.description && (
+                <div style={S.specRow}>
+                  <span style={S.specLabel}>Description</span>
+                  <span style={S.specValue}>{selectedItem.description}</span>
                 </div>
-              ))}
-              {openItemData.note && (
-                <div style={S.noteBox}>{openItemData.note}</div>
               )}
+              {selectedItem.total_quantity !== null && (
+                <>
+                  <div style={S.specRow}>
+                    <span style={S.specLabel}>Total Quantity</span>
+                    <span style={S.specValue}>{selectedItem.total_quantity}</span>
+                  </div>
+                  <div style={S.specRow}>
+                    <span style={S.specLabel}>Available</span>
+                    <span style={{ ...S.specValue, color: (selectedItem.available_quantity ?? 0) > 0 ? '#1a7a3a' : '#c0392b' }}>
+                      {selectedItem.available_quantity}
+                    </span>
+                  </div>
+                </>
+              )}
+              <div style={S.specRow}>
+                <span style={S.specLabel}>Status</span>
+                <span style={{ ...S.specValue, color: selectedItem.claimed ? '#1a7a3a' : '#e8930c' }}>
+                  {selectedItem.claimed ? 'Claimed' : 'Not Claimed'}
+                </span>
+              </div>
+
+              <div style={S.noteBox}>
+                {selectedItem.category === 'device'
+                  ? 'Contact it-helpdesk@andpayments.com or visit 4th Floor IT Kiosk for hardware issues.'
+                  : selectedItem.category === 'insurance'
+                    ? '24/7 Emergency Helpline: 1800-425-2255. Pre-existing diseases covered from Day 1.'
+                    : 'For any perk-related queries, reach out to people@andpayments.com.'}
+              </div>
             </div>
 
-            {/* Footer */}
-            <div style={S.itemModalFooter}>
-              <button
-                type="button"
-                style={S.backBtn}
-                onClick={() => setOpenItem(null)}
-              >
-                &larr; Back to category
-              </button>
-              <div style={S.rightBtns}>
+            <div style={S.modalFooter}>
+              {openCat ? (
                 <button
                   type="button"
-                  style={S.toggleBtn(!!deactivated[openItem])}
-                  onClick={handleToggle}
+                  style={{
+                    background: '#fff', border: '1px solid #ddd', padding: '8px 16px',
+                    borderRadius: 10, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                  onClick={() => setSelectedItem(null)}
                 >
-                  {deactivated[openItem] ? 'Activate' : 'Deactivate'}
+                  &larr; Back to category
                 </button>
-                <button
-                  type="button"
-                  style={S.closeModalBtn}
-                  onClick={() => { setOpenItem(null); setOpenCat(null); }}
-                >
+              ) : (
+                <button type="button" style={S.btnOutline} onClick={() => setSelectedItem(null)}>
                   Close
                 </button>
+              )}
+              <div style={{ display: 'flex', gap: 10 }}>
+                {!selectedItem.claimed && (
+                  <button
+                    type="button"
+                    style={S.claimBtn(false)}
+                    disabled={claiming}
+                    onClick={() => handleClaim(selectedItem)}
+                  >
+                    {claiming ? 'Claiming...' : 'Claim Entitlement'}
+                  </button>
+                )}
+                {selectedItem.claimed && (
+                  <button type="button" style={S.claimBtn(true)} disabled>
+                    <CheckIcon /> Already Claimed
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ---------- Toast Notification ---------- */}
+      {/* ---------- Add Entitlement Modal (HR only) ---------- */}
+      {showAddModal && isHR && (
+        <div style={S.overlay} onClick={() => setShowAddModal(false)}>
+          <div style={{ ...S.modal, width: 520 }} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modalHeader}>
+              <div>
+                <h2 style={S.modalTitle}>Add Entitlement</h2>
+                <div style={S.modalSub}>Create a new benefit for employees</div>
+              </div>
+              <button type="button" style={S.closeBtn} onClick={() => setShowAddModal(false)}>
+                &#10005;
+              </button>
+            </div>
+
+            <form onSubmit={handleAddEntitlement}>
+              <div style={S.modalBody}>
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Name *</label>
+                  <input
+                    style={S.formInput}
+                    type="text"
+                    placeholder="e.g. MacBook Pro 16&quot; M3 Max"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Category *</label>
+                  <select
+                    style={S.formSelect}
+                    value={formCategory}
+                    onChange={(e) => setFormCategory(e.target.value as 'device' | 'insurance' | 'perks')}
+                  >
+                    <option value="device">Device</option>
+                    <option value="insurance">Insurance</option>
+                    <option value="perks">Perks</option>
+                  </select>
+                </div>
+
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Department Scope *</label>
+                  <select
+                    style={S.formSelect}
+                    value={formScope}
+                    onChange={(e) => setFormScope(e.target.value)}
+                  >
+                    <option value="company_wide">All Departments</option>
+                    {departments.map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Description</label>
+                  <textarea
+                    style={S.formTextarea}
+                    placeholder="Brief description of this entitlement..."
+                    value={formDesc}
+                    onChange={(e) => setFormDesc(e.target.value)}
+                  />
+                </div>
+
+                <div style={S.formGroup}>
+                  <label style={S.formLabel}>Total Quantity</label>
+                  <input
+                    style={S.formInput}
+                    type="number"
+                    min="0"
+                    placeholder="Leave blank for unlimited"
+                    value={formQty}
+                    onChange={(e) => setFormQty(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={S.modalFooter}>
+                <button type="button" style={S.btnOutline} onClick={() => setShowAddModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" style={S.btnSolid} disabled={formSubmitting || !formName.trim()}>
+                  {formSubmitting ? 'Creating...' : 'Create Entitlement'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- Toast ---------- */}
       {toast && (
-        <div style={S.toast(toast.isActive)}>
-          <div style={S.toastIcon(toast.isActive)}>
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path
-                d="M4 8l3 3 5-5"
-                stroke={toast.isActive ? '#1a7a3a' : '#c0392b'}
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
+        <div style={S.toast(toast.ok)}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%', display: 'flex',
+            alignItems: 'center', justifyContent: 'center',
+            background: toast.ok ? '#d4edda' : '#f8d7da', flexShrink: 0,
+          }}>
+            <CheckIcon />
           </div>
           <div>
             <div style={S.toastTitle}>{toast.title}</div>
@@ -1169,6 +852,27 @@ export default function Benefits() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function BenefitsSkeleton() {
+  return (
+    <div style={S.page}>
+      <div style={{ marginBottom: 24 }}>
+        <span className="skeleton-line" style={{ width: '9rem' }} />
+        <span className="skeleton-line" style={{ width: '18rem', height: '2.2rem' }} />
+        <span className="skeleton-line" style={{ width: '26rem' }} />
+      </div>
+      <div style={S.cardGrid}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ ...S.benefitCard(false), cursor: 'default' }}>
+            <span className="skeleton-line" style={{ width: '60%', height: '1.1rem' }} />
+            <span className="skeleton-line" style={{ width: '80%' }} />
+            <span className="skeleton-line" style={{ width: '40%' }} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

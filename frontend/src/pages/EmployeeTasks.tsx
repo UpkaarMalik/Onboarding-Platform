@@ -52,6 +52,7 @@ export default function EmployeeTasks() {
   const [completing, setCompleting] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
   const heroAnchorRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLElement>(null);
   const [heroStuck, setHeroStuck] = useState(false);
   /**
    * True while the roadmap's mark is sailing, during which the hero holds
@@ -109,6 +110,7 @@ export default function EmployeeTasks() {
    */
   useEffect(() => {
     const read = () => {
+      if (sailingRef.current) return;
       const anchor = heroAnchorRef.current;
       if (!anchor || sailingRef.current) return;
       const past = -anchor.getBoundingClientRect().top;
@@ -253,7 +255,7 @@ export default function EmployeeTasks() {
 
       {error && <p className="error-text">{error}</p>}
 
-      <header className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}>
+      <header ref={heroRef} className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}>
         <span className="eyebrow">
           <span className="tasks-eyebrow-dot" />
           {doneSteps} of {totalSteps} steps done

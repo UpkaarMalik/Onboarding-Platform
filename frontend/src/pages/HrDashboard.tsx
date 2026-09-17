@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError, openFileInline } from '../api/client';
-import { formatDate, formatDateShort, todayIso } from '../lib/format';
+import { formatDate, formatDateShort, todayIso, daysAgoIso, greeting } from '../lib/format';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
 import OceanBanner from '../components/OceanBanner';
@@ -78,20 +78,7 @@ interface EmployeeProfile {
 }
 
 
-/** ISO date `n` days before today, in the viewer's calendar. */
-function isoDaysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  const pad = (v: number) => String(v).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
+const isoDaysAgo = daysAgoIso;
 
 /**
  * The HR/SuperAdmin dashboard: an overview (stat tiles, pipeline stage

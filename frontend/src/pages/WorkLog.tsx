@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, type FormEvent } from 'react';
+import { format } from 'date-fns';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
+import { isToday, isYesterday, formatMonthDay } from '../lib/format';
 import Reveal from '../components/Reveal';
 
 /* ------------------------------------------------------------------ */
@@ -32,37 +34,21 @@ interface SectionDrafts {
 /* ------------------------------------------------------------------ */
 
 function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function yesterdayISO(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return format(new Date(), 'yyyy-MM-dd');
 }
 
 function formatPageDate(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  return `${day} / ${month} / ${year}`;
+  return format(new Date(dateStr + 'T00:00:00'), 'dd / MM / yyyy');
 }
 
 function formatNavLabel(dateStr: string): string {
-  const today = todayISO();
-  const yesterday = yesterdayISO();
-  if (dateStr === today) return 'Today';
-  if (dateStr === yesterday) return 'Yesterday';
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (isToday(dateStr)) return 'Today';
+  if (isYesterday(dateStr)) return 'Yesterday';
+  return formatMonthDay(dateStr);
 }
 
 function formatDiaryRef(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${month}-${day}`;
+  return format(new Date(dateStr + 'T00:00:00'), 'MM-dd');
 }
 
 function wordCount(text: string): number {
@@ -1001,10 +987,7 @@ export default function WorkLog() {
                   </p>
                   {note.created_at && (
                     <div className="diary-note-date">
-                      {new Date(note.created_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
+                      {formatMonthDay(note.created_at)}
                     </div>
                   )}
                 </div>

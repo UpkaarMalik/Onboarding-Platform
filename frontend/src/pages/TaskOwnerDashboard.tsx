@@ -2,16 +2,10 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
+import { greeting } from '../lib/format';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
 import AnimatedProgressBar from '../components/AnimatedProgressBar';
-
-function greeting() {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-}
 
 /**
  * The TaskOwner dashboard: tasks scoped to owner_user_id = self,
