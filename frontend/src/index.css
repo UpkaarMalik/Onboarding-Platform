@@ -3022,6 +3022,14 @@ li:hover .checkbox-mark {
   display: flex;
   flex-direction: column;
   gap: 1.75rem;
+  /* Kill Chrome's automatic scroll anchoring on this subtree. Condensing the
+     hero collapses a 22rem greeting, which shortens the document by more than
+     a hundred pixels mid-voyage — exactly the layout shift Chrome tries to
+     "compensate" for by nudging scrollY behind our back. That nudge is not a
+     scroll the trail commanded, so the tow reads it as the employee taking
+     the wheel and lets go, and the page stops following the mark. Opting out
+     leaves the voyage effect the single owner of scroll position. */
+  overflow-anchor: none;
 }
 .tasks-hero {
   /* Full width, matching the trail block below it. The progress panel used to

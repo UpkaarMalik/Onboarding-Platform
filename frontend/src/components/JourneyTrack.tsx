@@ -44,17 +44,31 @@ export default function JourneyTrack({
     return () => clearInterval(interval);
   }, [activeIndex]);
 
-  const fillPercent = stages.length > 1 ? (animatedIndex / (stages.length - 1)) * 100 : 0;
-
+  /**
+   * Both fill and marker run to the same point: the CURRENT step's
+   * node centre. Node k sits at `k / (N-1) * 100%` of the line's
+   * inner coordinate frame (the line's 18px horizontal margin makes
+   * its 0%/100% land on the first and last node centres), so the
+   * marker uses that formula and the fill runs up to it. Splitting
+   * the two — marker at the node, fill stopping short at
+   * `doneCount / N` — left a visible gap between the end of the
+   * orange and the marker, which read as the orange being missing.
+   * The hero's "N of M done" copy is a separate count, and is what it
+   * is; the LINE is now unambiguously "you've walked from step 1 to
+   * this step".
+   */
   function isDone(stage: { done?: boolean }, i: number) {
     return stage.done ?? i < animatedIndex;
   }
+  const fillPercent =
+    stages.length > 1 ? (animatedIndex / (stages.length - 1)) * 100 : 0;
+  const markerPercent = fillPercent;
 
   return (
     <div className={`journey-track${compact ? ' journey-track--compact' : ''}`}>
       <div className="journey-line">
         <div className="journey-line-fill" style={{ width: `${fillPercent}%` }} />
-        <div className="journey-marker" style={{ left: `${fillPercent}%` }} />
+        <div className="journey-marker" style={{ left: `${markerPercent}%` }} />
       </div>
       <div className="journey-nodes">
         {stages.map((s, i) => (

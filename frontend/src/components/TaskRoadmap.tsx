@@ -163,10 +163,16 @@ export default function TaskRoadmap({
   steps,
   currentId,
   onSelect,
+  onVoyage,
 }: {
   steps: RoadmapItem[];
   currentId: string | null;
   onSelect: (id: string) => void;
+  /** Called with true when the mark casts off and false when it ties up.
+   *  The page around the trail needs to know, because for as long as this is
+   *  true the scroll position belongs to the voyage — see the note on the tow
+   *  in RoadmapTrail, and the hero's scroll listener in EmployeeTasks. */
+  onVoyage?: (sailing: boolean) => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [geom, setGeom] = useState<Geometry | null>(null);
@@ -212,7 +218,12 @@ export default function TaskRoadmap({
 
   return (
     <div className="roadmap" ref={rootRef}>
-      <RoadmapTrail geom={geom} states={states} currentIndex={currentIndex} />
+      <RoadmapTrail
+        geom={geom}
+        states={states}
+        currentIndex={currentIndex}
+        onVoyage={onVoyage}
+      />
 
       {steps.map((step, i) => {
         const state = states[i];
@@ -358,11 +369,18 @@ function RoadmapTrail({
   geom,
   states,
   currentIndex,
+  onVoyage,
 }: {
   geom: Geometry | null;
   states: VisualState[];
   currentIndex: number;
+  onVoyage?: (sailing: boolean) => void;
 }) {
+  // Mirrored into a ref so the voyage effect can announce itself without
+  // taking the callback as a dependency: a parent that re-creates the
+  // function would otherwise restart the crossing from t = 0.
+  const onVoyageRef = useRef(onVoyage);
+  onVoyageRef.current = onVoyage;
   // Which leg the boat still has to sail. This is held rather than derived,
   // because it depends on where the boat already IS: on the first render it
   // sails the whole route walked so far, and from then on only the leg it has
@@ -470,6 +488,7 @@ function RoadmapTrail({
     const runner = boat.parentNode as SVGGElement | null;
     const setSailing = (sailing: boolean) => {
       runner?.classList.toggle('is-sailing', sailing);
+      onVoyageRef.current?.(sailing);
     };
 
     /**
@@ -502,16 +521,24 @@ function RoadmapTrail({
      *
      * It lets go the instant they take the scroll themselves, which is watched
      * two ways. Wheel, touch and the scrolling keys release it on the input
-     * itself, before the page has moved at all. And every scroll event is
-     * checked against the position this code last commanded: a scroll to
-     * somewhere we did not ask for is somebody else's, which is the only way
-     * to catch a scrollbar drag — dragging the bar produces no wheel, no
-     * touch and no keystroke. Reading the position BACK after each scrollTo
-     * rather than trusting the number we passed is what makes that comparison
-     * safe, since the browser clamps and rounds what it is given.
+     * itself, before the page has moved at all. Scroll events are the backstop
+     * for the one gesture those miss — a scrollbar drag produces no wheel, no
+     * touch and no keystroke — by checking where the page ended up against
+     * where this code last asked it to go.
      */
     let towing = true;
     let commanded = window.scrollY;
+    // When the tow last moved the page itself. A running voyage commands a
+    // scroll every frame, so a scroll event arriving within a few frames of
+    // one of ours is either ours or the browser reacting to it — clamping
+    // scrollY because the condensing hero just shortened the document, say.
+    // Those reactions are indistinguishable by position from somebody
+    // grabbing the scrollbar, and treating them as such drops the tow and
+    // strands the page for the rest of the crossing. Wheel, touch and the
+    // scrolling keys are unaffected: they release the tow on the input
+    // itself, which is how an employee actually takes over.
+    let commandedAt = 0;
+    const SELF_SCROLL_WINDOW = 100;
     const yield_ = () => {
       towing = false;
     };
@@ -519,6 +546,7 @@ function RoadmapTrail({
       if (SCROLL_KEYS.has(e.key)) yield_();
     };
     const onScroll = () => {
+      if (performance.now() - commandedAt < SELF_SCROLL_WINDOW) return;
       if (Math.abs(window.scrollY - commanded) > 2) yield_();
     };
     window.addEventListener('wheel', yield_, { passive: true });
@@ -532,16 +560,26 @@ function RoadmapTrail({
       window.removeEventListener('scroll', onScroll);
     };
 
-    // The furthest down the page the tow has pulled, so it can only ever pull
-    // further. A leg always runs from an earlier step to a later one, so the
-    // boat only ever sails DOWN the page and the page has no business going
-    // back up with it. Without this the hero condensing early in the voyage —
-    // which lifts the whole trail by its own height — reads as the page
-    // stuttering backwards before it sets off. Starts below zero rather than
-    // at the current scroll, so the very first pull can still bring someone
-    // back UP to a boat moored above where they happen to be sitting.
-    let towedTo = -1;
-
+    /**
+     * The page follows the boat, every frame, with nothing held back.
+     *
+     * Two guards used to live here and both were wrong, in opposite ways.
+     *
+     * A high-water mark on the target ("only ever pull further down the page")
+     * was silently defeated by the hero: condensing it collapses the greeting
+     * and lifts the whole trail in document coordinates, so every target for
+     * the rest of the voyage evaluated BELOW the mark and the tow quietly
+     * stopped while the mark kept sailing. Comparing against the live scrollY
+     * instead needed a slack margin to avoid firing on sub-pixel deltas, and
+     * that margin turned a continuous tow into a series of jumps its own size
+     * — the page juddering rather than gliding.
+     *
+     * Neither guard was needed. The boat sails DOWN a leg by construction, so
+     * the target rises on its own; the only thing that lowers it is the trail
+     * being lifted by a layout shift, and in that case scrolling up by the
+     * same amount is precisely what holds the mark still on screen. Forward
+     * motion is the boat's job, not the scroll's.
+     */
     const follow = (y: number) => {
       const svg = svgRef.current;
       if (!towing || !svg) return;
@@ -552,10 +590,12 @@ function RoadmapTrail({
       const furthest = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
       const want = pageY - window.innerHeight * BOAT_VIEW_ANCHOR;
       const target = Math.min(Math.max(0, want), furthest);
-      if (towedTo >= 0 && target <= towedTo) return;
-      towedTo = target;
       window.scrollTo(0, target);
+      // Read the position BACK rather than trusting the number we passed: the
+      // browser clamps and rounds what it is given, and `commanded` is only
+      // useful to onScroll if it is what actually happened.
       commanded = window.scrollY;
+      commandedAt = performance.now();
     };
 
     /** Nothing to sail — put the boat where it belongs and, if this is the
