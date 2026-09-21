@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ApiError, openFileInline } from '../api/client';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
+import { avatarClass } from '../lib/deptColor';
 import { format } from 'date-fns';
 import {
   formatDate,
@@ -92,7 +93,6 @@ interface CredentialSummary {
   note: string;
 }
 
-const AVATAR_COLORS = ['#2f8f5b', '#7c3aed', '#c94a3c', '#2f8f5b', '#8b6914', '#3f7cb0', '#e8930c', '#b91c8a'];
 const PAGE_LIMIT = 100;
 /** Rows per page in the roster. */
 const ROSTER_PAGE_SIZE = 8;
@@ -635,7 +635,8 @@ function RosterRow({
   const initials = parts.length >= 2
     ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     : (name[0] ?? '?').toUpperCase();
-  const colorIdx = index % AVATAR_COLORS.length;
+  // Department, not row index: the tint should survive a sort or a filter.
+  const deptTint = avatarClass(row.department_id);
 
   return (
     /* The row is the control: it carries role/tabIndex/aria-label, and the
@@ -656,7 +657,7 @@ function RosterRow({
       }}
     >
       <span className="roster-joinee">
-        <span className={`roster-avatar avatar-${colorIdx}`} aria-hidden="true">
+        <span className={`roster-avatar ${deptTint}`} aria-hidden="true">
           {initials}
         </span>
         <span className="roster-joinee-text">
