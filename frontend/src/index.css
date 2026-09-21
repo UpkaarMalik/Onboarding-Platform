@@ -603,198 +603,397 @@ button.danger:hover:not(:disabled) {
   background: white;
 }
 
-/* --- Glassmorphic dark sidebar (.sb) --- */
-.sb {
-  width: 256px;
-  min-height: 100vh;
-  background: #14161a;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 4px 0 32px -4px rgba(0, 0, 0, 0.45);
+/* --- Top navigation — liquid glass --- */
+.app-shell {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: 24px 16px;
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  z-index: 30;
-  flex-shrink: 0;
-  transition: all 0.3s;
+  min-height: 100vh;
 }
-.sb-brand {
+
+/* The strip itself carries only a light wash: the capsule below is the
+   glass, and stacking two blurred layers turns both to mud. The wash is
+   here so page content scrolling underneath does not collide with it. */
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  margin-bottom: 32px;
+  gap: 16px;
+  padding: 14px 28px;
+  background: rgba(251, 249, 244, 0.72);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  border-bottom: 1px solid var(--color-border);
 }
-.sb-logo {
+
+.topnav-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  text-decoration: none;
+  user-select: none;
+}
+.topnav-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-glow);
+}
+.topnav-brand-text {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  color: var(--color-text);
+}
+.topnav-brand-text b {
+  font-weight: 800;
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* --- the glass capsule ---
+   Auto margins float it between the brand and the user menu, which is what
+   the reference does; true viewport-centring would need absolute
+   positioning and would overlap both at narrow widths. */
+.topnav-glass {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 auto;
+  padding: 8px;
+  border-radius: 99px;
+  background: rgba(255, 248, 236, 0.6);
+  -webkit-backdrop-filter: blur(50px) saturate(200%);
+  backdrop-filter: blur(50px) saturate(200%);
+  /* Multi-layer insets are what read as thickness: a hard light edge on
+     top, refraction underneath, and a hairline shell. */
+  box-shadow:
+    0 20px 60px -12px rgba(26, 22, 17, 0.12),
+    0 6px 20px -6px rgba(26, 22, 17, 0.08),
+    inset 0 2px 3px -1px rgba(255, 255, 255, 0.9),
+    inset 0 -2px 4px -1px rgba(255, 244, 226, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+/* The curved aqua reflection across the top half — the "wet" pass. */
+.topnav-sheen {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  right: 1px;
+  height: 46%;
+  border-radius: 99px 99px 24px 24px / 99px 99px 12px 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0));
+  pointer-events: none;
+  z-index: 6;
+}
+/* The light cone that tracks the cursor, clipped to the capsule. */
+.topnav-glare-clip {
+  position: absolute;
+  inset: 0;
+  border-radius: 99px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+.topnav-glare {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(circle 90px at var(--x, 50%) var(--y, 50%), rgba(255, 255, 255, 0.5), transparent);
+  mix-blend-mode: overlay;
+  transition: opacity 0.3s var(--ease);
+}
+.topnav-glass:hover .topnav-glare {
+  opacity: 1;
+}
+
+/* Search sits inside the capsule, left of the first nav item. */
+.topnav-search-btn {
+  position: relative;
+  z-index: 3;
+  flex: none;
+  display: grid;
+  place-items: center;
   width: 40px;
   height: 40px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
-  background: linear-gradient(135deg, #d97706, #fbbf24);
-  color: #fff;
-  font-weight: 700;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.3);
-}
-.sb-title {
-  font-weight: 700;
-  font-size: 16px;
-  color: #fff;
-  letter-spacing: -0.01em;
-  line-height: 1;
-}
-.sb-sub {
-  font-size: 12px;
-  color: #a8a29e;
-  font-weight: 500;
-  margin-top: 4px;
-}
-.sb-checklist {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: #e8930c;
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: inherit;
+  background: transparent;
+  color: var(--color-muted);
   cursor: pointer;
-  margin-bottom: 20px;
-  transition: background 0.15s;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
 }
-.sb-checklist:hover {
-  background: #d17e08;
+.topnav-search-btn:hover {
+  color: var(--color-accent-ink);
+  background: var(--color-surface-alt);
+  border-color: transparent;
   transform: none;
   box-shadow: none;
 }
-.sb-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
+.topnav-divider {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  margin: 0 6px 0 2px;
+  background: var(--color-border);
+  z-index: 3;
 }
-.sb-link {
+
+.topnav-items {
+  position: relative;
   display: flex;
+  gap: 4px;
+  z-index: 3;
+}
+/* Measured from whichever link react-router marked active, so the URL
+   drives it — a redirect or the back button moves it too. */
+.topnav-pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 40px;
+  border-radius: 99px;
+  background: var(--color-surface);
+  box-shadow:
+    0 4px 12px rgba(26, 22, 17, 0.09),
+    0 1px 2px rgba(26, 22, 17, 0.05),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
+  /* Apple's overshoot curve — the pill arrives and settles. */
+  transition: transform 0.5s cubic-bezier(0.34, 1.2, 0.64, 1),
+    width 0.5s cubic-bezier(0.34, 1.2, 0.64, 1), opacity 0.2s var(--ease);
+  pointer-events: none;
+  z-index: 1;
+}
+.topnav-link {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  color: #d6d3d1;
-  font-size: 14px;
-  font-weight: 500;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 99px;
   text-decoration: none;
-  transition: background 0.15s, color 0.15s;
-}
-.sb-link:hover {
-  background: rgba(41, 37, 36, 0.4);
-  color: #fff;
-}
-.sb-link--active {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%) !important;
-  color: #fff !important;
+  white-space: nowrap;
+  font-size: 14px;
   font-weight: 600;
-  box-shadow: 0 4px 16px -2px rgba(245, 158, 11, 0.45),
-              0 1px 1px 0 rgba(255, 255, 255, 0.25) inset;
+  letter-spacing: -0.01em;
+  color: var(--color-muted);
+  transition: color 0.25s var(--ease);
 }
-.sb-link svg {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  stroke-width: 1.8;
+.topnav-link:hover,
+.topnav-link--active {
+  color: var(--color-text);
 }
-.sb-link--active svg {
-  stroke-width: 2;
+.topnav-link-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  pointer-events: none;
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
-.sb-footer {
-  border-top: 1px solid rgba(41, 37, 36, 0.6);
-  padding-top: 16px;
-  margin-top: 12px;
+.topnav-link:active .topnav-link-inner {
+  transform: scale(0.94);
 }
-.sb-user-card {
-  border-radius: 12px;
-  padding: 10px 12px;
+
+/* The search field takes the links' place inside the capsule rather than
+   overlaying the bar — same footprint, nothing to keep in sync. */
+.topnav-search {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  background: #1b1c1e;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: background 0.15s;
+  gap: 8px;
+  height: 40px;
+  padding-right: 4px;
+  width: clamp(220px, 32vw, 380px);
 }
-.sb-user-card:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.sb-user {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.sb-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #e8930c;
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.sb-uinfo {
-  display: flex;
-  flex-direction: column;
+.topnav-search input {
+  flex: 1;
   min-width: 0;
+  height: 40px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--color-text);
 }
-.sb-uname {
+.topnav-search-esc {
+  flex: none;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 99px;
+  background: var(--color-surface-alt);
+  font-family: inherit;
   font-size: 12px;
   font-weight: 600;
-  color: #fff;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sb-urole {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-top: 1px;
-}
-.sb-signout {
-  background: none;
-  border: none;
-  color: #e8930c;
-  font-size: 12px;
-  font-weight: 500;
-  font-family: inherit;
+  color: var(--color-accent-ink);
   cursor: pointer;
-  padding: 0;
-  transition: color 0.15s;
-  white-space: nowrap;
 }
-.sb-signout:hover {
-  color: #fbbf24;
-  text-decoration: underline;
+.topnav-search-esc:hover {
+  background: #ffefd6;
+  border-color: transparent;
   transform: none;
   box-shadow: none;
 }
 
+/* --- user menu --- */
+.topnav-user {
+  position: relative;
+  flex: none;
+}
+.topnav-user-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s var(--ease);
+}
+.topnav-user-btn:hover {
+  background: var(--color-surface);
+  border-color: transparent;
+  transform: none;
+  box-shadow: none;
+}
+.topnav-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  /* The department tint (.avatar-0 … .avatar-7) paints over this; the
+     gradient is the fallback for a user with no department on file. */
+  background: var(--gradient-accent);
+}
+.topnav-user-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+  text-align: left;
+}
+.topnav-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.topnav-user-id {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.topnav-chev {
+  flex: none;
+  color: var(--color-muted-soft);
+  transition: transform 0.2s var(--ease);
+}
+.topnav-chev.is-open {
+  transform: rotate(180deg);
+}
+
+.topnav-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 210px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: var(--shadow-lg), inset 0 0 0 1px var(--color-border);
+  z-index: 50;
+}
+.topnav-menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+.topnav-menu-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.topnav-menu-role {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.topnav-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.topnav-menu-item:hover {
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  border-color: transparent;
+  transform: none;
+  box-shadow: none;
+}
+.topnav-menu-item--danger {
+  color: var(--color-danger);
+}
+.topnav-menu-item--danger:hover {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-ink);
+}
+/* No /profile route exists yet, so the item is present but inert rather
+   than silently doing nothing on click. */
+.topnav-menu-item[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.topnav-menu-item[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--color-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topnav-pill,
+  .topnav-glare,
+  .topnav-link-inner {
+    transition: none;
+  }
+}
+
 .app-main {
   flex: 1;
-  padding: 0 36px;
-  max-width: calc(100vw - 256px);
   width: 100%;
-  margin-left: 256px;
+  padding: 24px 36px 0;
   background: #f7f2ea;
   background-image: radial-gradient(circle, #e8930c40 1.2px, transparent 1.2px);
   background-size: 20px 20px;
@@ -803,9 +1002,9 @@ button.danger:hover:not(:disabled) {
      scroll container — overflow-y computes to `auto` alongside it — and a
      scroll container captures every `position: sticky` descendant. That is
      what stopped .tasks-hero sticking: it was pinning itself to .app-main's
-     own scrollport, which barely scrolls, while the window did the scrolling.
-     `clip` hides the same overflow without creating a scrollport, so sticky
-     children keep answering to the window. */
+     own scrollport, while the window did the scrolling. `clip` hides the
+     same overflow without creating a scrollport, so sticky children keep
+     answering to the window. */
   overflow-x: clip;
   box-sizing: border-box;
 }
@@ -3695,14 +3894,18 @@ li:hover .checkbox-mark {
   justify-content: center;
   box-shadow: var(--shadow-sm);
 }
-.roster-avatar.avatar-0 { background: #2f8f5b; }
-.roster-avatar.avatar-1 { background: #7c3aed; }
-.roster-avatar.avatar-2 { background: #c94a3c; }
-.roster-avatar.avatar-3 { background: #2f8f5b; }
-.roster-avatar.avatar-4 { background: #8b6914; }
-.roster-avatar.avatar-5 { background: #3f7cb0; }
-.roster-avatar.avatar-6 { background: #e8930c; }
-.roster-avatar.avatar-7 { background: #b91c8a; }
+/* Department tints (lib/deptColor.ts hashes a department into one of these).
+   Unscoped so the nav avatar and the roster share one palette — same team,
+   same colour wherever the person appears. Slot 3 used to repeat slot 0's
+   green, which collapsed two departments onto one colour. */
+.avatar-0 { background: #2f8f5b; }
+.avatar-1 { background: #7c3aed; }
+.avatar-2 { background: #c94a3c; }
+.avatar-3 { background: #0f8a8a; }
+.avatar-4 { background: #8b6914; }
+.avatar-5 { background: #3f7cb0; }
+.avatar-6 { background: #e8930c; }
+.avatar-7 { background: #b91c8a; }
 .roster-joinee-text {
   display: flex;
   flex-direction: column;
@@ -6989,60 +7192,35 @@ li:hover .checkbox-mark {
 
 /* ============================================================
    Shell — narrow viewports
-   The sidebar is a fixed 300px with .app-main offset by the same amount,
-   which leaves a phone about 75px of page. Below 900px it drops to an icon
-   rail; the labels are bare text nodes inside .sb-link, so font-size: 0 on
-   the link is what hides them without touching the markup. Desktop is
-   untouched.
+   The capsule is the widest thing in the bar, so the labels go first (they
+   are bare text nodes inside .topnav-link-inner, so font-size: 0 hides them
+   without touching the markup), then the brand word and the user's name.
    ============================================================ */
-@media (max-width: 900px) {
-  .sb {
-    width: 68px;
-    padding: 20px 8px;
-    align-items: center;
+@media (max-width: 1100px) {
+  .topnav {
+    gap: 10px;
+    padding: 12px 16px;
   }
-  .sb-brand {
-    justify-content: center;
-    margin-bottom: 18px;
-  }
-  .sb-brand > div:last-child,
-  .sb-user > div:last-child {
+  .topnav-user-text {
     display: none;
   }
-  .sb-logo {
-    width: 34px;
-    height: 34px;
-    font-size: 14px;
+}
+@media (max-width: 860px) {
+  .topnav-brand-text {
+    display: none;
   }
-  .sb-nav {
-    width: 100%;
+  .topnav-link {
+    padding: 0 12px;
   }
-  .sb-link {
-    justify-content: center;
+  .topnav-link-inner {
     gap: 0;
-    padding: 11px 0;
     font-size: 0;
   }
-  .sb-link svg {
-    width: 20px;
-    height: 20px;
-  }
-  .sb-footer {
-    width: 100%;
-    align-items: center;
-  }
-  .sb-avatar {
-    width: 32px;
-    height: 32px;
-    font-size: 12px;
-  }
-  .sb-signout {
-    font-size: 11px;
+  .topnav-search {
+    width: clamp(160px, 44vw, 280px);
   }
   .app-main {
-    margin-left: 68px;
-    max-width: calc(100vw - 68px);
-    padding: 0 16px;
+    padding: 18px 16px 0;
   }
 }
 
@@ -7228,5 +7406,273 @@ li:hover .checkbox-mark {
   .hr-lede-bullet {
     width: 7px;
     height: 7px;
+  }
+}
+
+/* ============================================================
+   HR home — glass redesign
+
+   One ambient colour wash behind the page, everything above it a
+   frosted panel. Replaces the old "surface box holding surface boxes":
+   the panels now float on the wash instead of being outlined twice.
+   Colours are the existing amber accent plus three pastel companions
+   (sky / mint / lilac) used only as tone on the cards.
+
+   Appended deliberately — it overrides the block above rather than
+   editing it, so the original layout rules stay readable and one
+   deletion of this block reverts the look.
+   ============================================================ */
+.hr-dashboard {
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-strong: rgba(255, 255, 255, 0.76);
+  --glass-line: rgba(255, 255, 255, 0.72);
+  --glass-blur: saturate(180%) blur(18px);
+  --glass-shadow: 0 16px 40px -22px rgba(60, 40, 15, 0.35),
+    0 2px 8px -4px rgba(60, 40, 15, 0.08);
+  position: relative;
+  isolation: isolate;
+  gap: var(--space-4);
+}
+
+/* The wash. Fixed, so it does not scroll with the content and the glass
+   above it keeps shifting colour as the page moves. -1 against the
+   isolated stacking context above, so it never covers anything. */
+.hr-dashboard::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40rem 26rem at 82% -8%, rgba(249, 146, 58, 0.22), transparent 62%),
+    radial-gradient(34rem 24rem at 2% 26%, rgba(120, 180, 255, 0.16), transparent 64%),
+    radial-gradient(30rem 22rem at 92% 74%, rgba(206, 158, 255, 0.16), transparent 64%),
+    radial-gradient(28rem 20rem at 20% 98%, rgba(120, 216, 168, 0.15), transparent 64%);
+}
+
+/* --- the two panels ---
+   No outer box. Each panel is its own pane of glass on the wash. */
+.home-panels {
+  background: none;
+  border: 0;
+  padding: 0;
+  gap: var(--space-3);
+}
+.home-panel {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-line);
+  border-radius: 24px;
+  box-shadow: var(--glass-shadow);
+  padding: var(--space-4);
+}
+.home-section-head {
+  margin-bottom: var(--space-3);
+}
+.home-section-head h2 {
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* --- stat cards ---
+   One --tone per card drives the chip, the number, the hover glow and
+   the selected ring, so a card is one colour decision rather than five. */
+.home-card {
+  position: relative;
+  overflow: hidden;
+  align-items: center;
+  background: var(--glass-strong);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 20px;
+  box-shadow: 0 1px 2px rgba(60, 40, 15, 0.04);
+  padding: 18px 20px;
+}
+/* Top-left highlight, the thing that makes flat white read as glass. */
+.home-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.7), transparent 48%);
+}
+.home-card > * {
+  position: relative;
+}
+.home-card--info { --tone: #3f7cb0; --tone-ink: var(--color-info-ink); --tone-soft: rgba(63, 124, 176, 0.14); }
+.home-card--success { --tone: #2f8f5b; --tone-ink: var(--color-success-ink); --tone-soft: rgba(47, 143, 91, 0.14); }
+.home-card--danger { --tone: #d9534a; --tone-ink: var(--color-danger-ink); --tone-soft: rgba(217, 83, 74, 0.14); }
+.home-card--accent { --tone: #e88f30; --tone-ink: var(--color-accent-ink); --tone-soft: rgba(232, 143, 48, 0.16); }
+.home-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 34px -18px color-mix(in srgb, var(--tone) 70%, transparent),
+    0 2px 8px -4px rgba(60, 40, 15, 0.1);
+}
+.home-card.is-active {
+  background: var(--glass-strong);
+  border-color: color-mix(in srgb, var(--tone) 45%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tone) 55%, transparent),
+    0 14px 30px -18px color-mix(in srgb, var(--tone) 70%, transparent);
+}
+.home-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--tone-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+.home-card-value {
+  font-size: 34px;
+  letter-spacing: -0.04em;
+}
+.home-card--info .home-card-value,
+.home-card--success .home-card-value,
+.home-card--danger .home-card-value,
+.home-card--accent .home-card-value {
+  color: var(--tone-ink);
+}
+.home-card-label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.home-card-sub {
+  font-size: var(--text-xs);
+  color: var(--color-muted);
+}
+
+/* --- upcoming joinees --- */
+.home-event {
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+}
+.home-event:hover {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(255, 255, 255, 1);
+  box-shadow: 0 10px 22px -16px rgba(60, 40, 15, 0.6);
+}
+.home-event-date {
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(253, 230, 209, 0.95), rgba(252, 211, 177, 0.85));
+}
+
+/* --- everything below the panels, so the page reads as one system --- */
+.roster-shell,
+.hr-dashboard section {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-line);
+  border-radius: 24px;
+  box-shadow: var(--glass-shadow);
+}
+.hr-dashboard section h2 {
+  letter-spacing: -0.02em;
+}
+
+/* Safari <18 and Firefox without backdrop-filter get opaque panels rather
+   than washed-out translucent ones. */
+@supports not (backdrop-filter: blur(1px)) {
+  .home-panel,
+  .roster-shell,
+  .hr-dashboard section {
+    background: rgba(255, 255, 255, 0.93);
+  }
+}
+
+@media (max-width: 760px) {
+  .home-panel {
+    padding: var(--space-3);
+    border-radius: 20px;
+  }
+  .home-card-value {
+    font-size: 30px;
+  }
+}
+
+/* ============================================================
+   HR home — the greeting card
+
+   One compact band: greeting, the two live numbers, and the CTA.
+   ============================================================ */
+.hr-dashboard .hr-welcome {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 108px;
+  background: linear-gradient(115deg, #fffaf1 0%, #fff4e2 45%, #ffeed4 100%);
+  border: 1px solid var(--color-border);
+  border-radius: 28px;
+  box-shadow: 0 18px 40px -26px rgba(26, 22, 17, 0.28);
+  padding: var(--space-4) var(--space-5);
+  margin: 0;
+}
+.hr-welcome-copy {
+  min-width: 0;
+}
+.hr-welcome-title {
+  margin: 0 0 6px;
+  font-size: clamp(26px, 3.2vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.08;
+  color: var(--color-text);
+}
+.hr-welcome-sub {
+  margin: 0;
+  font-size: var(--text-md);
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+.hr-welcome-blocked {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.hr-welcome-cta {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  white-space: nowrap;
+  min-height: var(--tap);
+  padding: 0 var(--space-4);
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+  background: var(--gradient-accent);
+  border: 0;
+  border-radius: 14px;
+  cursor: pointer;
+  box-shadow: 0 16px 30px -12px rgba(217, 119, 6, 0.7);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.hr-welcome-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 34px -12px rgba(217, 119, 6, 0.8);
+}
+.hr-welcome-cta:active {
+  transform: translateY(0);
+}
+.hr-welcome-cta:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .hr-dashboard .hr-welcome {
+    display: block;
+    padding: var(--space-4);
+    border-radius: 22px;
+  }
+  .hr-welcome-cta {
+    width: 100%;
+    justify-content: center;
+    margin: var(--space-4) 0 0;
   }
 }

@@ -5,7 +5,6 @@ import { ApiError, openFileInline } from '../api/client';
 import { formatDate, formatDateShort, todayIso, daysAgoIso, greeting } from '../lib/format';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
-import OceanBanner from '../components/OceanBanner';
 import HrOverview, { CreateJoineeWizard, CustomSelect, type RosterFilter } from './HrOverview';
 
 interface Department {
@@ -80,6 +79,8 @@ interface EmployeeProfile {
 
 const isoDaysAgo = daysAgoIso;
 
+
+
 /**
  * The HR/SuperAdmin dashboard: an overview (stat tiles, pipeline stage
  * counts, per-employee progress, a needs-attention feed pulled from
@@ -92,8 +93,6 @@ const isoDaysAgo = daysAgoIso;
 export default function HrDashboard() {
   const authedFetch = useAuthedFetch();
   const { user } = useAuth();
-  const [timeOfDay, setTimeOfDay] = useState<number | null>(null);
-  const [sliderDragging, setSliderDragging] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedOnboarding, setSelectedOnboarding] = useState<any | null>(null);
@@ -123,7 +122,6 @@ export default function HrDashboard() {
   /** Bumped whenever something below changes the roster, so the embedded
    *  HrOverview refetches instead of showing a stale list. */
   const [rosterReload, setRosterReload] = useState(0);
-  const [clockOpen, setClockOpen] = useState(false);
   /* The cards scroll the roster into view rather than opening a panel that
      shoves it down the page with no warning. */
   const rosterRef = useRef<HTMLDivElement>(null);
@@ -200,6 +198,15 @@ export default function HrDashboard() {
   const attentionRows = overviewRows.filter((o) => attentionIds.has(o.id));
   const blockedCount = attention.filter((t) => t.is_blocked).length;
   const overdueCount = attention.length - blockedCount;
+  /* The greeting subline counts people, not tasks: everyone still running,
+     and how many of them have at least one blocked task. */
+  const activeOnboardingRows = overviewRows.filter(
+    (o) => o.status !== 'completed' && o.status !== 'cancelled',
+  );
+  const blockedOnboardingIds = new Set(
+    attention.filter((t) => t.is_blocked).map((t) => t.onboarding_id),
+  );
+  const blockedJoinees = activeOnboardingRows.filter((o) => blockedOnboardingIds.has(o.id)).length;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   /* Say which of the two it actually is. "13 blocked or overdue tasks" made
      the reader guess, and left "13" looking unrelated to the 5 above it. */
@@ -283,64 +290,32 @@ export default function HrDashboard() {
     });
   }
 
-  const clockValue =
-    timeOfDay ?? (new Date().getHours() + new Date().getMinutes() / 60) / 24;
-  const clockLabel = `${String(Math.floor(clockValue * 24) % 24).padStart(2, '0')}:${String(
-    Math.floor(((clockValue * 24) % 1) * 60),
-  ).padStart(2, '0')}`;
-
   return (
     <div className="hr-dashboard">
-      <div className="hr-hero">
-        <OceanBanner height={240} timeOfDay={timeOfDay ?? undefined} animSpeed={sliderDragging ? 6 : 1} />
-
-        <div className="hr-hero-clock">
-          <div className="hr-time-card" onClick={() => setClockOpen(!clockOpen)}>
-            <span className="hr-time-card-icon">☀️</span>
-            <span className="hr-time-card-value">{clockLabel}</span>
-            {clockOpen && (
-              <div className="hr-time-card-slider" onClick={e => e.stopPropagation()}>
-                <span>DAWN</span>
-                <input
-                  type="range" min="0" max="1000"
-                  value={Math.round(clockValue * 1000)}
-                  onChange={(e) => setTimeOfDay(parseInt(e.target.value) / 1000)}
-                  onMouseDown={() => setSliderDragging(true)} onMouseUp={() => setSliderDragging(false)}
-                  onTouchStart={() => setSliderDragging(true)} onTouchEnd={() => setSliderDragging(false)}
-                  aria-label="Time of day"
-                />
-                <span>NIGHT</span>
-              </div>
+      {/* The greeting card: who you are, the two numbers worth reading at a
+          glance, and the one action. */}
+      <section className="hr-welcome">
+        <div className="hr-welcome-copy">
+          <h1 className="hr-welcome-title">
+            {greeting()}, {user?.full_name?.split(' ')[0] ?? 'there'}
+          </h1>
+          <p className="hr-welcome-sub">
+            {plural(activeOnboardingRows.length, 'joinee')} onboarding
+            {blockedJoinees > 0 && (
+              <>
+                {' \u00b7 '}
+                <span className="hr-welcome-blocked">{blockedJoinees} blocked</span>
+              </>
             )}
-          </div>
+          </p>
         </div>
 
-        <div className="hr-hero-overlay">
-          <span className="hr-hero-badge">HR / SuperAdmin</span>
-          <div className="hr-hero-row">
-            <h1 className="hr-hero-title">
-              {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{user?.full_name?.split(' ')[0] ?? 'there'}</span>
-            </h1>
-            <button type="button" className="hr-hero-cta" onClick={() => setShowAddJoiner(true)}>
-              <span className="hr-hero-cta-label">+ Create New Joinee</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        <button type="button" className="hr-welcome-cta" onClick={() => setShowAddJoiner(true)}>
+          + Create New Joinee
+        </button>
+      </section>
 
       {error && <p className="error-text">{error}</p>}
-
-      {/* Exactly two flex items: the bullet, and the whole sentence. Leaving
-          the words as bare text made every inline span its own flex item,
-          which on a phone broke the line into side-by-side columns. */}
-      <p className="hr-lede">
-        <span className="hr-lede-bullet" aria-hidden="true" />
-        <span className="hr-lede-text">
-          Create joinees, manage onboarding access, track progress
-          <span className="hr-lede-amp"> &amp; </span>
-          explore all HR features <span className="hr-lede-here">right from here.</span>
-        </span>
-      </p>
 
       <Reveal>
         {/* One rectangle, two boxes. Each column owns its heading so the two
