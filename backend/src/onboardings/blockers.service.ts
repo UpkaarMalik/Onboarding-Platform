@@ -9,6 +9,7 @@ import { DatabaseService } from '../database/database.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateBlockerDto } from './dto/create-blocker.dto';
+import { ResolveBlockerDto } from './dto/resolve-blocker.dto';
 
 /** Postgres unique_violation. The one-open-blocker-per-task rule is an
  *  index, not a read-then-write check, so this is how a lost race
@@ -22,6 +23,7 @@ export interface BlockerRow {
   owner_user_id: string | null;
   reason: string;
   waiting_since: Date;
+  /** text, not a Date: see the RETURNING casts below. */
   expected_at: string | null;
   resolved_at: Date | null;
   resolved_by: string | null;
@@ -88,7 +90,12 @@ export class BlockersService {
              onboarding_task_id, owner_role, owner_user_id,
              reason, expected_at, created_by
            ) VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
+           -- expected_at LAST and cast to text, overriding the * above: a
+           -- a pg date column becomes a JS Date and serializes as midnight
+           -- UTC, so "expected Friday" came back as Thursday anywhere east of
+           -- UTC. Same cast the read path already applies — see
+           -- blocker-payload.util.
+           RETURNING *, expected_at::text AS expected_at`,
           [
             taskId,
             // Defaults to the task's own owner, which is the answer
@@ -142,7 +149,11 @@ export class BlockersService {
     });
   }
 
-  async resolve(blockerId: string, actor: AuthenticatedUser): Promise<BlockerRow> {
+  async resolve(
+    blockerId: string,
+    actor: AuthenticatedUser,
+    dto: ResolveBlockerDto = {},
+  ): Promise<BlockerRow> {
     const { rows } = await this.db.query<
       BlockerRow & { task_owner_role: string; task_owner_user_id: string | null }
     >(
@@ -177,7 +188,7 @@ export class BlockersService {
         `UPDATE blockers
             SET resolved_at = now(), resolved_by = $2
           WHERE id = $1 AND resolved_at IS NULL
-          RETURNING *`,
+          RETURNING *, expected_at::text AS expected_at`,
         [blockerId, actor.id],
       );
       const blocker = resolvedRows[0];
@@ -206,6 +217,8 @@ export class BlockersService {
             // How long it actually sat there. The number this whole
             // feature exists to make askable without Slack.
             waitingSince: blocker.waiting_since,
+            // Optional, and only present when someone bothered to say why.
+            ...(dto.note ? { note: dto.note } : {}),
           },
         },
         client,

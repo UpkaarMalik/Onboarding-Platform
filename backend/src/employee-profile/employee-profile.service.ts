@@ -1,4 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  OPEN_BLOCKER_JSON,
+  openBlockerJoin,
+} from '../onboardings/utils/blocker-payload.util';
 import { DatabaseService } from '../database/database.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { SessionsService } from '../auth/sessions/sessions.service';
@@ -164,8 +168,13 @@ export class EmployeeProfileService {
               WHERE s.onboarding_task_id = ot.id)::int AS subtask_count,
              (SELECT COUNT(*) FROM onboarding_subtasks s
               WHERE s.onboarding_task_id = ot.id AND s.completed_at IS NOT NULL)::int
-               AS subtask_completed_count
+               AS subtask_completed_count,
+             -- Same shape as every other endpoint's, from the same fragment:
+             -- HR's profile is where a blocker is created and resolved, so
+             -- it has to be able to see whether there already is one.
+             ${OPEN_BLOCKER_JSON}
            FROM onboarding_tasks ot
+           ${openBlockerJoin('ot')}
            WHERE ot.onboarding_id = $1
            ORDER BY ot.due_date, ot.created_at`,
           [onboarding.id],

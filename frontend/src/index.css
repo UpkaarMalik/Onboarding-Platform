@@ -9783,3 +9783,99 @@ li:hover .checkbox-mark {
     min-height: 0;
   }
 }
+
+/* ============================================================
+   Quiet actions — "Mark as blocked" / "Resolve"
+
+   Link weight, not button weight. These sit in a list of a dozen tasks;
+   a dozen filled buttons would read as a dozen things HR is being asked
+   to do, when the answer is almost always none of them.
+   ============================================================ */
+.link-action {
+  position: relative;
+  margin-left: var(--space-2);
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-accent-ink);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  cursor: pointer;
+}
+.link-action:hover {
+  border-bottom-color: currentColor;
+}
+.link-action:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+/* 44pt target without a 44px-tall control beside 12px text. */
+.link-action::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: var(--tap);
+  transform: translate(-50%, -50%);
+}
+/* The reason, under the task it belongs to rather than beside it — a
+   sentence on the same line as a title turns every row into two columns
+   that do not line up with the row above. */
+.blocker-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--color-warning-ink);
+}
+.link-action:disabled {
+  color: var(--color-muted-soft);
+  cursor: default;
+  border-bottom-color: transparent;
+}
+
+/* ── Blocker line ────────────────────────────────────────────────────
+   One line, one look, wherever a blocked task appears. Wraps rather than
+   truncates: the reason is the part that matters and a clipped "Device
+   allocation pen…" helps nobody. */
+.blocker-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+.blocker-line-dot {
+  flex-shrink: 0;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-danger);
+}
+.blocker-line-state {
+  flex-shrink: 0;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--color-danger-ink);
+}
+.blocker-line-reason {
+  font-weight: 600;
+  color: var(--color-text);
+  min-width: 0;
+}
+.blocker-line-meta {
+  color: var(--color-muted);
+}
+/* Inside a roster cell there is no room for the reason AND the meta, so
+   the meta drops and the reason keeps the width. */
+.blocker-line--compact .blocker-line-meta {
+  display: none;
+}

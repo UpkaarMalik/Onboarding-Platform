@@ -427,6 +427,34 @@ describe('Blockers (e2e)', () => {
     expect(after).toEqual(before);
   });
 
+  it('records the resolution note in the activity log, not on the blocker', async () => {
+    // The note is audit information — written once, never edited, only read
+    // back as history — so it lives in the append-only log rather than as a
+    // nullable column that would be a second, weaker home for the same fact.
+    const res = await post(`/onboarding-tasks/${permTaskId}/block`, hr)
+      .send({ reason: 'Waiting on IT', expectedAt: '2026-09-25' })
+      .expect(201);
+    expect(res.body.expected_at).toBe('2026-09-25');
+
+    await post(`/blockers/${res.body.id}/resolve`, hr)
+      .send({ note: 'Laptop arrived and was handed over' })
+      .expect(201);
+
+    const { rows } = await db.query<{ metadata: any }>(
+      `SELECT metadata FROM activity_logs
+        WHERE action = 'blocker.resolved' AND entity_id = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [permTaskId],
+    );
+    expect(rows[0].metadata.note).toBe('Laptop arrived and was handed over');
+
+    // And resolving without one is still fine — the note is optional.
+    const second = await post(`/onboarding-tasks/${permTaskId}/block`, hr)
+      .send({ reason: 'Again' })
+      .expect(201);
+    await post(`/blockers/${second.body.id}/resolve`, hr).send({}).expect(201);
+  });
+
   it('keeps the summary to HR', async () => {
     await request(app.getHttpServer())
       .get('/onboardings/summary')

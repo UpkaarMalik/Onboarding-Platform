@@ -17,6 +17,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { OnboardingsService } from './onboardings.service';
 import { CreateOnboardingDto } from './dto/create-onboarding.dto';
+import { CreateJoineeDto } from './dto/create-joinee.dto';
 import { ProvisionCompanyEmailDto } from './dto/provision-company-email.dto';
 import { CreateAdHocTaskDto } from './dto/create-ad-hoc-task.dto';
 import { UpdateAssignmentsDto } from './dto/update-assignments.dto';
@@ -84,6 +85,21 @@ export class OnboardingsController {
   @Get('stuck')
   listStuck(@Query() query: Record<string, string | undefined>) {
     return this.onboardingsService.listStuckTasks(query);
+  }
+
+  /**
+   * Account + onboarding in one all-or-nothing request, returning the
+   * one-time login credentials.
+   *
+   * The wizard used to make two calls and could strand a half-made person
+   * in the system when the second failed. The old endpoints stay for now;
+   * this is the one the wizard uses.
+   */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin_hr')
+  @Post('joinee')
+  createJoinee(@CurrentUser() actor: AuthenticatedUser, @Body() dto: CreateJoineeDto) {
+    return this.onboardingsService.createJoinee(dto, actor.id);
   }
 
   // Declared before ':id/tasks' for the same reason 'ratings' is —

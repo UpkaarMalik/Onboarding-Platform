@@ -5,6 +5,7 @@ import { ApiError } from '../api/client';
 import Modal from '../components/Modal';
 import JourneyTrack from '../components/JourneyTrack';
 import TaskRoadmap, { type RoadmapItem } from '../components/TaskRoadmap';
+import BlockerLine from '../components/BlockerLine';
 import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
 import DocumentChecklist from '../components/tasks/DocumentChecklist';
 import { fireConfetti } from '../lib/confetti';
@@ -182,6 +183,7 @@ export default function EmployeeTasks() {
       system_key: s.system_key ?? rich?.system_key ?? null,
       subtask_count: s.subtask_count ?? rich?.subtask_count ?? 0,
       subtask_completed_count: s.subtask_completed_count ?? rich?.subtask_completed_count ?? 0,
+      blocker: s.blocker ?? rich?.blocker ?? null,
     };
   });
 
@@ -242,6 +244,9 @@ export default function EmployeeTasks() {
   const activeIsDocuments = activeTask?.system_key === 'document_upload';
   const activeHasSubtasks = (activeTask?.subtask_count ?? 0) > 0;
   const activeIsChecklistDriven = activeIsDocuments || activeHasSubtasks;
+  /* Closed by someone other than the joinee — they can see it and see what it
+     is waiting on, but they cannot tick it. */
+  const activeIsOwnerClosed = activeTask?.completion_mode === 'owner';
 
   return (
     <div className="tasks-page">
@@ -344,8 +349,20 @@ export default function EmployeeTasks() {
               {/* A checklist-driven task has no "Mark done" button: it completes
                   on its own once the last required item is ticked or the last
                   document submitted, so offering both would be two ways to
-                  finish one task. */}
-              {activeTask.status !== 'completed' && !activeIsChecklistDriven && (
+                  finish one task.
+
+                  Neither does an owner-mode task. The company email & laptop
+                  handover is HR's to close (migration 0031) — the API refuses
+                  an employee confirmation on it, so offering the button was
+                  offering a 400. */}
+              {activeTask.status !== 'completed' &&
+                !activeIsChecklistDriven &&
+                activeIsOwnerClosed && (
+                  <span className="field-hint">Waiting on HR to confirm this</span>
+                )}
+              {activeTask.status !== 'completed' &&
+                !activeIsChecklistDriven &&
+                !activeIsOwnerClosed && (
                 <button
                   type="button"
                   className="btn-solid"
@@ -359,6 +376,9 @@ export default function EmployeeTasks() {
           }
         >
           {activeTask.description && <p className="modal-lede">{activeTask.description}</p>}
+          {/* Before the detail grid: if this task is stuck, that is the
+              answer to why the popup was opened at all. */}
+          {activeTask.blocker && <BlockerLine blocker={activeTask.blocker} />}
 
           <dl className="detail-grid">
             <div>

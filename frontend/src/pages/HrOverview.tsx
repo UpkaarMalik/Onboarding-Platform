@@ -1,9 +1,11 @@
 import type React from 'react';
+import EmployeeProfileModal from '../components/EmployeeProfileModal';
+import CopyButton from '../components/CopyButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
-import { ApiError, openFileInline } from '../api/client';
+import { ApiError, describeError, openFileInline } from '../api/client';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
 import { avatarClass, deptLightClass, deptSlots, type DeptSlots } from '../lib/deptColor';
@@ -859,35 +861,40 @@ export function CreateJoineeWizard({
     setBusy(true);
     setError(null);
     try {
-      const userRes = await authedFetch<{
-        user: { id: string };
+      /* One request, one transaction. This used to be POST /auth/users
+         followed by POST /onboardings: when the second failed — a
+         department with no active template answers 404 — the account
+         already existed and its one-time password had already been
+         generated and thrown away, leaving a person nobody could sign in
+         as and a row someone had to delete by hand. */
+      const res = await authedFetch<{
         credentials: { joineeId: string; temporaryPassword: string };
-      }>('/auth/users', {
+      }>('/onboardings/joinee', {
         method: 'POST',
         body: {
           fullName,
           phoneNumber: `91${phoneNumber}`,
           personalEmail,
-          role: 'employee',
           departmentId,
-        },
-      });
-      await authedFetch('/onboardings', {
-        method: 'POST',
-        body: {
-          userId: userRes.user.id,
           startDate,
+          // Both optional — HR often doesn't know the buddy on day one,
+          // and can fill either in later from the joinee's profile.
           managerName: managerName || undefined,
           buddyName: buddyName || undefined,
           requiredDocumentTypeIds: selectedDocs.size ? [...selectedDocs] : undefined,
         },
       });
       onCreated({
-        loginId: userRes.credentials.joineeId,
-        temporaryPassword: userRes.credentials.temporaryPassword,
+        loginId: res.credentials.joineeId,
+        temporaryPassword: res.credentials.temporaryPassword,
       });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      /* The server's own words, not a house error. "No active template for
+         this department" tells HR what to go and fix; "Something went
+         wrong" sends them to whoever wrote this. */
+      setError(describeError(err));
+      // Back to Confirm, where the message is, if a later step ever moves.
+      setStep(3);
     } finally {
       setBusy(false);
     }
@@ -909,8 +916,11 @@ export function CreateJoineeWizard({
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800 }}>
               Create New <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600, color: 'var(--color-accent)' }}>Joinee</span>
             </h2>
+            {/* No promise of an email: nothing here sends one. The
+                credentials are shown once, on the next screen, for HR to
+                pass on themselves. */}
             <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--color-muted)' }}>
-              Fill in the details below. An onboarding package and login credentials will be sent to the joinee's personal email.
+              Fill in the details below. You'll get their login credentials to pass on once this is done.
             </p>
           </div>
           <button className="modal-close" onClick={onClose}>
@@ -943,7 +953,7 @@ export function CreateJoineeWizard({
                     Personal Email *
                     <input type="email" value={personalEmail} onChange={(e) => setPersonalEmail(e.target.value)} placeholder="e.g. arjun@gmail.com" required style={inputStyle} />
                   </label>
-                  <span className="field-hint" style={{ fontSize: 12, color: 'var(--color-muted)' }}>Credentials will be sent to this address</span>
+                  <span className="field-hint" style={{ fontSize: 12, color: 'var(--color-muted)' }}>Their own address, for reaching them before day one</span>
                 </div>
                 <label style={labelStyle}>
                   Mobile Number *
@@ -1015,8 +1025,13 @@ export function CreateJoineeWizard({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px', marginBottom: 20 }}>
                 <ConfirmField label="Full Name" value={fullName} />
                 <ConfirmField label="Personal Email" value={personalEmail} />
+                {/* Shown with the same +91 the request sends, so what HR
+                    confirms is what gets stored. */}
+                <ConfirmField label="Mobile Number" value={phoneNumber ? `+91 ${phoneNumber}` : '—'} />
                 <ConfirmField label="Department" value={deptName} />
-                <ConfirmField label="Joining Date" value={startDate} />
+                {/* formatDate, not the raw yyyy-mm-dd the date input holds —
+                    every other date in the app reads "28 Sep 2026". */}
+                <ConfirmField label="Joining Date" value={formatDate(startDate) ?? startDate} />
                 <ConfirmField label="Manager" value={managerName || 'Not assigned'} />
                 <ConfirmField label="Buddy" value={buddyName || 'Not assigned'} />
               </div>
@@ -1058,7 +1073,7 @@ export function CreateJoineeWizard({
               disabled={busy}
               onClick={submit}
             >
-              {busy ? 'Creating…' : 'Create & Send Invite →'}
+              {busy ? 'Creating…' : 'Create joinee'}
             </button>
           )}
         </div>
@@ -1112,196 +1127,7 @@ function ConfirmField({ label, value }: { label: string; value: string }) {
    Employee Profile Modal (inline, not redirecting)
    ============================================================ */
 
-function EmployeeProfileModal({
-  userId,
-  onClose,
-  onChanged,
-}: {
-  userId: string;
-  onClose: () => void;
-  onChanged: () => void;
-}) {
-  const authedFetch = useAuthedFetch();
-  const [profile, setProfile] = useState<EmployeeProfile | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [credentials, setCredentials] = useState<CredentialSummary | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
-  const [reviewing, setReviewing] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    authedFetch<EmployeeProfile>(`/employee-profile/${userId}`)
-      .then(setProfile)
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load profile'));
-    authedFetch<CredentialSummary>(`/auth/users/${userId}/credentials`)
-      .then(setCredentials)
-      .catch(() => setCredentials(null));
-  }, [authedFetch, userId]);
-
-  useEffect(load, [load]);
-
-  async function review(uploadId: string, decision: 'approved' | 'rejected') {
-    setReviewing(uploadId);
-    try {
-      const note = decision === 'rejected'
-        ? window.prompt('Why is this being rejected?')
-        : undefined;
-      if (decision === 'rejected' && !note) return;
-      await authedFetch(`/joinee-documents/uploads/${uploadId}/review`, {
-        method: 'POST',
-        body: { decision, ...(note ? { note } : {}) },
-      });
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save');
-    } finally {
-      setReviewing(null);
-    }
-  }
-
-  async function regenerate() {
-    setRegenerating(true);
-    try {
-      const res = await authedFetch<{
-        credentials: { loginId: string; temporaryPassword: string };
-      }>(`/auth/users/${userId}/regenerate-credentials`, { method: 'POST' });
-      setCredentials({
-        joineeId: res.credentials.loginId,
-        temporaryPassword: res.credentials.temporaryPassword,
-        awaitingFirstReset: true,
-        hasLoggedIn: false,
-        canRegenerate: true,
-        note: 'New temporary password — shown once.',
-      });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not regenerate');
-    } finally {
-      setRegenerating(false);
-    }
-  }
-
-  if (!profile) {
-    return (
-      <Modal title="Employee profile" onClose={onClose}>
-        {error ? <p className="error-text">{error}</p> : <p className="muted">Loading…</p>}
-      </Modal>
-    );
-  }
-
-  const { user, onboarding, documents, tasks } = profile;
-
-  return (
-    <Modal title={user.full_name} onClose={onClose} wide>
-      {error && <p className="error-text">{error}</p>}
-
-      <section className="profile-section">
-        <h3>Details</h3>
-        <dl className="profile-grid">
-          <div><dt>Joinee ID</dt><dd><code>{user.joinee_id}</code></dd></div>
-          <div><dt>Mobile</dt><dd>{user.phone_number}</dd></div>
-          <div><dt>Personal email</dt><dd>{user.personal_email ?? <span className="muted">Not recorded</span>}</dd></div>
-          <div><dt>Department</dt><dd>{user.department_name ?? <span className="muted">None</span>}</dd></div>
-          <div><dt>Date of joining</dt><dd>{formatDate(onboarding?.start_date) ?? <span className="muted">Not onboarded</span>}</dd></div>
-          <div><dt>Account</dt><dd><span className={`status-pill status-${user.status}`}>{user.status}</span></dd></div>
-        </dl>
-      </section>
-
-      {onboarding && (
-        <section className="profile-section">
-          <h3>Manager &amp; buddy</h3>
-          <dl className="profile-grid">
-            <div><dt>Manager</dt><dd>{onboarding.manager_name ?? <span className="muted">Not assigned</span>}</dd></div>
-            <div><dt>Buddy</dt><dd>{onboarding.buddy_name ?? <span className="muted">Not assigned</span>}</dd></div>
-          </dl>
-        </section>
-      )}
-
-      <section className="profile-section">
-        <h3>Documents ({documents.length})</h3>
-        {documents.length === 0 ? (
-          <p className="muted">No documents requested.</p>
-        ) : (
-          <ul className="doc-list">
-            {documents.map((doc) => (
-              <li key={doc.requirement_id} className="doc-list__item">
-                <div className="doc-list__head">
-                  <strong>{doc.label}</strong>
-                  <span className={`status-pill status-${doc.status}`}>{doc.status.replace(/_/g, ' ')}</span>
-                </div>
-                {doc.upload_id && (
-                  <>
-                    <span className="field-hint">{doc.original_filename} · uploaded {formatDate(doc.uploaded_at)}</span>
-                    <div className="doc-list__actions">
-                      <button type="button" onClick={() =>
-                        openFileInline(`/joinee-documents/uploads/${doc.upload_id}/file`)
-                          .catch(() => setError('Could not open document'))
-                      }>Preview</button>
-                      {doc.review_status === 'pending_review' && (
-                        <>
-                          <button type="button" disabled={reviewing === doc.upload_id} onClick={() => review(doc.upload_id!, 'approved')}>Approve</button>
-                          <button type="button" className="btn-danger" disabled={reviewing === doc.upload_id} onClick={() => review(doc.upload_id!, 'rejected')}>Reject</button>
-                        </>
-                      )}
-                    </div>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="profile-section">
-        <h3>Tasks — {tasks.requiredCompleted}/{tasks.requiredTotal} required done</h3>
-        <h4 className="muted">Pending ({tasks.pending.length})</h4>
-        <ul className="task-list">
-          {tasks.pending.map((t: any) => (
-            <li key={t.id}>{t.title}<span className={`status-pill status-${t.status}`}>{t.status}</span></li>
-          ))}
-          {tasks.pending.length === 0 && <li className="muted">Nothing outstanding.</li>}
-        </ul>
-      </section>
-
-      {credentials && (
-        <section className="profile-section profile-section--creds">
-          <h3>Login credentials</h3>
-          <div className="cred-row">
-            <div className="cred-field">
-              <span className="cred-label">Joinee ID</span>
-              <span className="cred-value"><code>{credentials.joineeId}</code><CopyButton text={credentials.joineeId} /></span>
-            </div>
-            <div className="cred-field">
-              <span className="cred-label">Temporary password</span>
-              <span className="cred-value">
-                {credentials.temporaryPassword ? (
-                  <><code className="cred-secret">{credentials.temporaryPassword}</code><CopyButton text={credentials.temporaryPassword} /></>
-                ) : (
-                  <span className="cred-hidden">Not retrievable</span>
-                )}
-              </span>
-            </div>
-          </div>
-          <div className="cred-actions">
-            <button type="button" disabled={regenerating} onClick={regenerate}>
-              {regenerating ? 'Issuing…' : 'Issue a new temporary password'}
-            </button>
-          </div>
-        </section>
-      )}
-    </Modal>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch { /* */ }
-  }
-  return <button type="button" onClick={copy}>{copied ? 'Copied!' : 'Copy'}</button>;
-}
 
 function PlusIcon() {
   return (

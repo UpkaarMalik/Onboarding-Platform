@@ -10,6 +10,8 @@ import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { isOverdueSql } from './utils/overdue.util';
+import { OPEN_BLOCKER_JSON, openBlockerJoin } from './utils/blocker-payload.util';
+import { isTaskOpen } from './utils/trail-order.util';
 import { AssignTaskDto } from './dto/assign-task.dto';
 import {
   assertDateIfPresent,
@@ -128,6 +130,7 @@ export class OnboardingTasksService {
 
   async completeAsOwner(taskId: string, actor: AuthenticatedUser) {
     const task = await this.getActionableTaskOrThrow(taskId);
+    await this.assertTaskIsOpen(task);
 
     if (task.completion_mode === 'employee') {
       throw new BadRequestException('This task does not take an owner confirmation');
@@ -166,6 +169,7 @@ export class OnboardingTasksService {
 
   async completeAsEmployee(taskId: string, actor: AuthenticatedUser) {
     const task = await this.getActionableTaskOrThrow(taskId);
+    await this.assertTaskIsOpen(task);
 
     if (task.completion_mode === 'owner') {
       throw new BadRequestException('This task does not take an employee confirmation');
@@ -281,9 +285,11 @@ export class OnboardingTasksService {
            ot.priority, ot.status, ot.completion_mode, ot.is_checkpoint,
            ot.blocked_reason,
            ${isOverdueSql('ot.')} AS is_overdue,
+           ${OPEN_BLOCKER_JSON},
            u.full_name AS employee_name,
            d.name AS department_name
          FROM onboarding_tasks ot
+         ${openBlockerJoin('ot')}
          JOIN onboardings o ON o.id = ot.onboarding_id
          JOIN users u ON u.id = o.user_id
          JOIN departments d ON d.id = o.department_id
@@ -718,6 +724,42 @@ export class OnboardingTasksService {
       },
       queryable,
     );
+  }
+
+  /**
+   * Refuses a task the gate has not opened yet.
+   *
+   * Until now the order was a rendering choice: the trail drew one open step
+   * and locked the rest, but nothing stopped a client from POSTing a
+   * completion for any task it liked. "No one should be able to open the
+   * other tasks" is a rule, so it is enforced where the change happens rather
+   * than where it is drawn — and from the same function the trail draws with,
+   * so the two cannot disagree.
+   *
+   * Required tasks only, matching what the trail shows: an ad-hoc task HR
+   * schedules is not part of the journey and is not gated by it.
+   */
+  private async assertTaskIsOpen(task: OnboardingTaskRow): Promise<void> {
+    const { rows } = await this.db.query<{
+      id: string;
+      title: string;
+      status: string;
+      system_key: string | null;
+      is_required: boolean;
+    }>(
+      `SELECT id, title, status, system_key, is_required
+         FROM onboarding_tasks
+        WHERE onboarding_id = $1 AND is_required = true
+        ORDER BY due_date, created_at`,
+      [task.onboarding_id],
+    );
+    // Not part of the gated journey — nothing to check it against.
+    if (!rows.some((row) => row.id === task.id)) return;
+    if (!isTaskOpen(rows, task.id)) {
+      throw new ConflictException(
+        'This step is not open yet — finish the step before it first',
+      );
+    }
   }
 
   private async getActionableTaskOrThrow(taskId: string): Promise<OnboardingTaskRow> {
