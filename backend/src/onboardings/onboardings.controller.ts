@@ -86,6 +86,15 @@ export class OnboardingsController {
     return this.onboardingsService.listStuckTasks(query);
   }
 
+  // Declared before ':id/tasks' for the same reason 'ratings' is —
+  // a literal segment must not be readable as a uuid param.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin_hr')
+  @Get('summary')
+  getSummary() {
+    return this.onboardingsService.getSummary();
+  }
+
   // Step 21: Employee dashboard. Scoped server-side to the caller's
   // own onboarding (OnboardingsService.findByUserId(actor.id)) — never
   // an id from the URL or query string, so there's no path to another

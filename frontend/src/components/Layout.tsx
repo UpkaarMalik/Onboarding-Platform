@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { avatarClass } from '../lib/deptColor';
+import { ROSTER_PATH, rosterQueryIsActive, withParam } from '../lib/rosterQuery';
 
 interface NavItem {
   to: string;
@@ -30,8 +30,9 @@ const IC = {
 // of all three role menus below. The IC.gallery / IC.diary / IC.community
 // icons are left defined above so restoring a tab is a one-line change.
 const NAV_EMPLOYEE: NavItem[] = [
+  // Home IS the trail now: the employee had a Home and a My Tasks tab
+  // where Home was a landing page they passed through, so the two are one.
   { to: '/start-here', label: 'Home', icon: IC.home },
-  { to: '/tasks', label: 'My Tasks', icon: IC.tasks },
   // { to: '/events', label: 'Gallery', icon: IC.gallery },
   { to: '/documents', label: 'Policies', icon: IC.policies },
   // { to: '/work-log', label: 'Diary', icon: IC.diary },
@@ -56,12 +57,6 @@ const NAV_SUPERADMIN: NavItem[] = [
   // { to: '/community', label: 'Community', icon: IC.community },
 ];
 
-const ROLE_LABELS: Record<string, string> = {
-  employee: 'Employee',
-  task_owner: 'Task Owner',
-  superadmin_hr: 'HR Admin',
-};
-
 function navForRole(role: string | undefined): NavItem[] {
   if (role === 'employee') return NAV_EMPLOYEE;
   if (role === 'task_owner') return NAV_TASK_OWNER;
@@ -74,18 +69,36 @@ export default function Layout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
+  const [params, setParams] = useSearchParams();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState('');
   const [pill, setPill] = useState({ left: 0, width: 0 });
 
   const capsuleRef = useRef<HTMLElement>(null);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
   const itemsRef = useRef<HTMLDivElement>(null);
   const glareRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const searchBtnRef = useRef<HTMLButtonElement>(null);
 
   const items = navForRole(user?.role);
+
+  /* Only HR has a roster for these controls to narrow, so the search is
+     rendered for that role alone rather than as a dead icon for everyone. */
+  const canSearchRoster = user?.role === 'superadmin_hr';
+
+  const query = params.get('q') ?? '';
+
+  /* One writer for all four params: it preserves everything else on the URL
+     (notably `?profile=`), drops a key when it is cleared, and replaces the
+     history entry so typing does not fill the back button. */
+  const setParam = useCallback(
+    (key: string, value: string) => setParams(withParam(params, key, value), { replace: true }),
+    [params, setParams],
+  );
+
 
   /* The pill is measured off whichever link react-router marked active, so
      the URL drives it rather than a click handler — a redirect, a deep link
@@ -110,6 +123,14 @@ export default function Layout() {
     if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
 
+  /* A filter set from another page would narrow a list that is not on
+     screen, so searching takes you to the roster. */
+  useEffect(() => {
+    // Carrying the search string over so a pasted filter URL is not wiped.
+    if (searchOpen && pathname !== ROSTER_PATH)
+      navigate({ pathname: ROSTER_PATH, search: window.location.search });
+  }, [searchOpen, pathname, navigate]);
+
   // Close the user menu on an outside click, on Escape, and on navigation.
   useEffect(() => {
     if (!menuOpen) return;
@@ -129,6 +150,28 @@ export default function Layout() {
 
   useEffect(() => setMenuOpen(false), [pathname]);
 
+  /* The field used to stay open until its own close button was clicked — a
+     click anywhere else, including on another control, left it sitting over
+     the nav links. The search button is excluded so it still toggles rather
+     than closing and reopening on one click. */
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (searchBoxRef.current?.contains(t) || searchBtnRef.current?.contains(t)) return;
+      closeSearch();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSearch();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
+
   async function handleLogout() {
     // Server-side logout revokes the session row and clears the three
     // auth cookies. Awaiting the round trip means the browser's cookie
@@ -139,9 +182,29 @@ export default function Layout() {
     navigate('/login');
   }
 
+  /* Collapsing the field does NOT clear the filter it applied.
+   *
+   * It used to, and that was a bug with two faces. The listener below fires
+   * on mousedown, so clicking a row action on the roster wiped `q` BEFORE
+   * the click landed: the list re-rendered unfiltered, the button under the
+   * pointer was replaced by a different row's, and the click reached
+   * nothing. HR saw an action that did nothing AND their search thrown
+   * away, from one press.
+   *
+   * Keeping the filter is also the right behaviour on its own terms —
+   * closing a control should not undo what it did, any more than closing
+   * the department dropdown should reset the department. The roster shows
+   * an explicit chip for the active search, and that chip is how you clear
+   * it deliberately.
+   */
   function closeSearch() {
     setSearchOpen(false);
-    setQuery('');
+  }
+
+  /** The search button's own X, which is a deliberate "clear this". */
+  function clearSearch() {
+    setParam('q', '');
+    setSearchOpen(false);
   }
 
   function trackGlare(e: React.MouseEvent<HTMLElement>) {
@@ -159,7 +222,6 @@ export default function Layout() {
     .join('')
     .substring(0, 2)
     .toUpperCase() ?? '?';
-  const roleLabel = ROLE_LABELS[user?.role ?? ''] ?? user?.role ?? '';
 
   return (
     <div className="app-shell">
@@ -175,29 +237,46 @@ export default function Layout() {
             <span ref={glareRef} className="topnav-glare" />
           </span>
 
-          <button
-            type="button"
-            className="topnav-search-btn"
-            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-            aria-label="Search"
-            aria-expanded={searchOpen}
-          >
-            {IC.search}
-          </button>
-          <span className="topnav-divider" aria-hidden="true" />
+          {canSearchRoster && (
+            <>
+              <button
+                ref={searchBtnRef}
+                type="button"
+                className={`topnav-search-btn${rosterQueryIsActive(params) ? ' is-on' : ''}`}
+                onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+                aria-label="Search joinees"
+                aria-expanded={searchOpen}
+              >
+                {IC.search}
+              </button>
+              <span className="topnav-divider" aria-hidden="true" />
+            </>
+          )}
 
           {searchOpen ? (
-            <div className="topnav-search">
+            <div className="topnav-search" ref={searchBoxRef}>
               <input
                 ref={searchRef}
                 type="text"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Escape' && closeSearch()}
-                placeholder="Search people, documents, tasks…"
+                onChange={(e) => setParam('q', e.target.value)}
+                placeholder="Search by name, ID, or department"
+                aria-label="Search joinees"
               />
-              <button type="button" className="topnav-search-esc" onClick={closeSearch}>
-                Esc
+              {/* The same round cross every popup in the app closes with,
+                  rather than this one control spelling out "Esc".
+                  This one DOES clear the filter: pressing the X on the field
+                  you typed into is the deliberate "forget this search".
+                  Clicking elsewhere, or Escape, only collapses the field. */}
+              <button
+                type="button"
+                className="modal-close"
+                onClick={clearSearch}
+                aria-label="Clear and close search"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+                </svg>
               </button>
             </div>
           ) : (
@@ -236,7 +315,9 @@ export default function Layout() {
             aria-haspopup="menu"
             aria-expanded={menuOpen}
           >
-            <span className={`topnav-avatar ${avatarClass(user?.department_id)}`}>{initial}</span>
+            {/* No department tint here: HR accounts carry no department, so
+                this avatar keeps the amber gradient. */}
+            <span className="topnav-avatar">{initial}</span>
             <span className="topnav-user-text">
               <span className="topnav-user-name">{user?.full_name}</span>
               <span className="topnav-user-id">{user?.joinee_id}</span>
@@ -248,10 +329,6 @@ export default function Layout() {
 
           {menuOpen && (
             <div className="topnav-menu" role="menu">
-              <div className="topnav-menu-head">
-                <span className="topnav-menu-name">{user?.full_name}</span>
-                <span className="topnav-menu-role">{roleLabel} · {user?.joinee_id}</span>
-              </div>
               {/* There is no /profile route yet, so this is inert rather than
                   a click that quietly goes nowhere. */}
               <button

@@ -20,6 +20,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * An unknown thrown value as one user-facing line.
+ *
+ * `err instanceof ApiError ? err.message : 'Something went wrong'` appears
+ * around fifty times across this app, which is fifty chances for one of them
+ * to say something different about the same failure. It lives here because
+ * this is where ApiError is defined and where the guarantee it relies on is
+ * documented: a thrown ApiError's message is always clean and user-facing.
+ *
+ * A network failure never reaches here as an ApiError — fetch rejects with a
+ * TypeError before there is a response to parse — which is exactly the case
+ * the fallback covers, and exactly what a stopped backend looks like.
+ */
+export function describeError(err: unknown): string {
+  return err instanceof ApiError ? err.message : 'Something went wrong';
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -40,6 +57,25 @@ interface RequestOptions {
 
 const CSRF_COOKIE = 'csrf_token';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Fired after any successful state-changing request, so views showing
+ * derived data can re-read immediately instead of waiting for a poll or a
+ * push.
+ *
+ * Here, rather than at each call site, because this is the one place every
+ * write in the app already goes through — a new endpoint gets this for
+ * free and nobody has to remember to announce it. The event carries
+ * nothing; a listener re-reads whatever it owns.
+ *
+ * This is what makes the actor's OWN action land instantly: the person who
+ * pressed the button is usually the person looking at the feed, and for
+ * them the round trip is already over by the time this fires. The server's
+ * event stream is for everyone ELSE'S actions, and the poll is for when
+ * that stream is unavailable — three layers, cheapest and most certain
+ * first.
+ */
+export const DATA_CHANGED_EVENT = 'app:data-changed';
 
 /**
  * Endpoints where a 401 is an answer about the credentials just
@@ -102,7 +138,11 @@ function readCsrfCookie(): string {
  * request.
  */
 let redirecting = false;
-function redirectToLoginOnce(): void {
+/** Exported for AuthContext's session heartbeat, which detects a dead session
+ *  from a path (/auth/me) this module deliberately exempts from the automatic
+ *  redirect — see isAuthEntryPoint. Sharing the function rather than writing a
+ *  second one keeps the debounce and the returnTo behaviour in one place. */
+export function redirectToLoginOnce(): void {
   if (redirecting) return;
   redirecting = true;
   // A tiny defer so the current call stack unwinds and the caller sees
@@ -222,6 +262,14 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       redirectToLoginOnce();
     }
     throw new ApiError(res.status, code, message || 'Something went wrong');
+  }
+
+  /* Announced only on success, and only for methods that can change
+     something — a GET that merely read the data must not make every
+     listener re-read it, which would be an endless loop the moment a
+     listener's re-read was itself an apiFetch. */
+  if (!SAFE_METHODS.has(options.method ?? 'GET')) {
+    window.dispatchEvent(new CustomEvent(DATA_CHANGED_EVENT, { detail: { path } }));
   }
 
   return data as T;

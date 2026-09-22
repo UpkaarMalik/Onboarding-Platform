@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
-import { ApiError } from '../api/client';
+import { ApiError, describeError } from '../api/client';
 import { greeting } from '../lib/format';
 import Modal from '../components/Modal';
+import LoadError from '../components/LoadError';
 import Reveal from '../components/Reveal';
 import AnimatedProgressBar from '../components/AnimatedProgressBar';
 
@@ -30,6 +31,7 @@ export default function TaskOwnerDashboard() {
   const [activeTask, setActiveTask] = useState<any | null>(null);
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deptError, setDeptError] = useState<string | null>(null);
 
   // Department employees
   const [deptOnboardings, setDeptOnboardings] = useState<any[]>([]);
@@ -69,8 +71,14 @@ export default function TaskOwnerDashboard() {
     try {
       const res = await authedFetch<any[]>('/onboarding-tasks/department-onboardings');
       setDeptOnboardings(res);
-    } catch {
-      // Silently degrade — task owner may not have a department
+      setDeptError(null);
+    } catch (err) {
+      // The old comment said "task owner may not have a department", but
+      // that case never reaches this catch: listDepartmentOnboardings
+      // returns [] for a department-less actor rather than throwing. So
+      // anything arriving here is a real failure, and it was hiding behind
+      // an empty list that read as "your department has no joinees".
+      setDeptError(describeError(err));
     }
   }
 
@@ -153,6 +161,13 @@ export default function TaskOwnerDashboard() {
       </Reveal>
 
       {/* Department employees section */}
+      {/* Before this, a failed load left deptOnboardings empty and the whole
+          section rendered nothing — the most invisible failure of the three,
+          because there was not even a zero to notice. */}
+      {deptError && (
+        <LoadError message={deptError} onRetry={() => void loadDeptOnboardings()} />
+      )}
+
       {deptOnboardings.length > 0 && (
         <Reveal>
           <section>

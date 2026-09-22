@@ -26,6 +26,11 @@ import {
   parseSort,
 } from '../common/list-query.util';
 import { applySequenceGate, orderForTrail } from './utils/trail-order.util';
+import {
+  OPEN_BLOCKER_JSON,
+  openBlockerJoin,
+  type TaskBlocker,
+} from './utils/blocker-payload.util';
 
 const ONBOARDING_STATUS_VALUES = [
   'pre_onboarding',
@@ -176,7 +181,18 @@ export class OnboardingsService {
             action: 'onboarding.created',
             entityType: 'onboarding',
             entityId: onboarding.id,
-            metadata: { userId: user.id, departmentId: user.department_id, templateId: template.id },
+            // manager/buddy are recorded here as well as in
+            // 'onboarding.assignments_updated' — they can be filled in
+            // on the create form, and an allotment that only ever
+            // happened at creation would otherwise never appear.
+            metadata: {
+              userId: user.id,
+              departmentId: user.department_id,
+              templateId: template.id,
+              startDate: dto.startDate,
+              managerName: dto.managerName ?? null,
+              buddyName: dto.buddyName ?? null,
+            },
           },
           client,
         );
@@ -534,24 +550,84 @@ export class OnboardingsService {
       action: 'onboarding.assignments_updated',
       entityType: 'onboarding',
       entityId: onboardingId,
+      // The names, not just presence flags: "assignments updated" with
+      // no names is unreadable months later, which is the one moment
+      // an audit trail exists for. Read back off the updated row so a
+      // field left untouched logs the value that actually stands.
       metadata: {
-        managerSet: dto.managerName !== undefined,
-        buddySet: dto.buddyName !== undefined,
+        managerName: onboarding.manager_name,
+        buddyName: onboarding.buddy_name,
+        managerChanged: dto.managerName !== undefined,
+        buddyChanged: dto.buddyName !== undefined,
       },
     });
 
     return onboarding;
   }
 
+  /**
+   * The one line the HR home shows under the greeting: how many joinees
+   * are mid-onboarding, and how many of those are stuck.
+   *
+   * WHY THIS IS AN ENDPOINT AND NOT A REDUCE ON THE CLIENT.
+   * The home page already holds every onboarding row (it fetches
+   * /onboardings?limit=100 for the cards), so counting the first number
+   * in the browser would cost nothing — but the second number is not in
+   * those rows. "Blocked" is a join to an open blocker, per task, and
+   * putting it on every roster row to let the client count them would
+   * ship a list to answer a question about its length. It also silently
+   * caps at whatever limit the list was fetched with; a count does not.
+   *
+   * `blocked` is a SUBSET of `onboarding` — the summary reads
+   * "3 joinees onboarding · 1 blocked", so the 1 is one of the 3, not a
+   * fourth joinee somewhere else.
+   */
+  async getSummary() {
+    const { rows } = await this.db.query<{
+      upcoming: number;
+      onboarding: number;
+      blocked: number;
+    }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE running AND not_started)::int AS upcoming,
+         COUNT(*) FILTER (WHERE running)::int AS onboarding,
+         COUNT(*) FILTER (WHERE running AND has_open_blocker)::int AS blocked
+       FROM (
+         SELECT
+           o.status NOT IN ('completed', 'cancelled') AS running,
+           -- "Upcoming" is a running onboarding whose joining date has not
+           -- arrived. CURRENT_DATE, not now(): start_date is a DATE, so
+           -- someone joining today is counted as started, not upcoming.
+           o.start_date >= CURRENT_DATE AS not_started,
+           EXISTS (
+             SELECT 1
+               FROM onboarding_tasks ot
+               JOIN blockers b
+                 ON b.onboarding_task_id = ot.id
+                AND b.resolved_at IS NULL
+              WHERE ot.onboarding_id = o.id
+           ) AS has_open_blocker
+         FROM onboardings o
+       ) AS flagged`,
+    );
+    return rows[0];
+  }
+
   async getOnboardingTasks(onboardingId: string) {
     await this.getOnboardingOrThrow(onboardingId);
+    // Aliased to `ot` only so the blocker join has something to hang
+    // off — the column list is otherwise unchanged. `blocker` is the
+    // open one or null (OP-36).
     const { rows } = await this.db.query(
-      `SELECT id, title, description, owner_role, due_date, priority,
-              is_required, completion_mode, is_checkpoint, status,
-              ${isOverdueSql()} AS is_overdue
-       FROM onboarding_tasks
-       WHERE onboarding_id = $1
-       ORDER BY due_date, created_at`,
+      `SELECT ot.id, ot.title, ot.description, ot.owner_role, ot.due_date, ot.priority,
+              ot.is_required, ot.completion_mode, ot.is_checkpoint, ot.status,
+              ot.blocked_reason,
+              ${isOverdueSql('ot.')} AS is_overdue,
+              ${OPEN_BLOCKER_JSON}
+       FROM onboarding_tasks ot
+       ${openBlockerJoin('ot')}
+       WHERE ot.onboarding_id = $1
+       ORDER BY ot.due_date, ot.created_at`,
       [onboardingId],
     );
     return rows;
@@ -973,6 +1049,7 @@ export class OnboardingsService {
       subtask_completed_count: number;
       bucket: 'overdue' | 'today' | 'upcoming';
       is_overdue: boolean;
+      blocker: TaskBlocker | null;
     }>(
       `SELECT
          ot.id, ot.title, ot.description, ot.owner_role, ot.due_date::text AS due_date, ot.priority,
@@ -991,8 +1068,10 @@ export class OnboardingsService {
            WHEN ot.due_date = CURRENT_DATE THEN 'today'
            ELSE 'upcoming'
          END AS bucket,
-         ${isOverdueSql('ot.')} AS is_overdue
+         ${isOverdueSql('ot.')} AS is_overdue,
+         ${OPEN_BLOCKER_JSON}
        FROM onboarding_tasks ot
+       ${openBlockerJoin('ot')}
        WHERE ot.onboarding_id = $1
          AND ot.status NOT IN ('locked', 'completed', 'cancelled')
        ORDER BY ot.due_date`,
@@ -1028,6 +1107,7 @@ export class OnboardingsService {
       system_key: string | null;
       priority: string;
       blocked_reason: string | null;
+      blocker: TaskBlocker | null;
       subtask_count: number;
       subtask_completed_count: number;
     }>(
@@ -1038,16 +1118,18 @@ export class OnboardingsService {
       // JS Date, which serializes as a UTC timestamp and can render as the
       // previous day west of UTC (same reason diary.service.ts casts entry_date).
       `SELECT
-         id, title, description, status, due_date::text AS due_date, is_checkpoint,
-         system_key, priority, blocked_reason,
+         ot.id, ot.title, ot.description, ot.status, ot.due_date::text AS due_date,
+         ot.is_checkpoint, ot.system_key, ot.priority, ot.blocked_reason,
+         ${OPEN_BLOCKER_JSON},
          (SELECT COUNT(*) FROM onboarding_subtasks s
-          WHERE s.onboarding_task_id = onboarding_tasks.id)::int AS subtask_count,
+          WHERE s.onboarding_task_id = ot.id)::int AS subtask_count,
          (SELECT COUNT(*) FROM onboarding_subtasks s
-          WHERE s.onboarding_task_id = onboarding_tasks.id AND s.completed_at IS NOT NULL)::int
+          WHERE s.onboarding_task_id = ot.id AND s.completed_at IS NOT NULL)::int
            AS subtask_completed_count
-       FROM onboarding_tasks
-       WHERE onboarding_id = $1 AND is_required = true
-       ORDER BY due_date, created_at`,
+       FROM onboarding_tasks ot
+       ${openBlockerJoin('ot')}
+       WHERE ot.onboarding_id = $1 AND ot.is_required = true
+       ORDER BY ot.due_date, ot.created_at`,
       [onboarding.id],
     );
 

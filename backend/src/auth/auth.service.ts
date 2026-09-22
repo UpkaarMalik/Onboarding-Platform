@@ -1,8 +1,8 @@
 import {
-  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -39,6 +39,12 @@ const JOINEE_ID_PATTERN = /^JN-\d{4}-\d{3,}$/;
 const LOOKUP_WINDOW_MS = 60_000;
 const LOOKUP_MAX_PER_WINDOW = 20;
 
+/* A real bcrypt hash of a value nothing can present, compared against
+   when the Joinee ID does not exist so that path costs the same as one
+   that does. Generated once at module load rather than hardcoded, so it
+   always matches the cost factor above. */
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('not-a-real-password', BCRYPT_ROUNDS);
+
 /**
  * The return shape from a successful login. The three raw cookie
  * values (`accessToken`, `refreshToken`, `csrfToken`) never reach the
@@ -65,6 +71,8 @@ type PasswordLoginResult =
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly tokens: TokenService,
@@ -171,16 +179,19 @@ export class AuthService {
    * all — an active account past its forced reset has its own password
    * and regenerating would lock the user out of it.
    */
+  // Deliberately not logged. This is a read, not a change, and it is
+  // not even a deliberate one: HrOverview and HrDashboard both fetch it
+  // as part of loading a joinee's profile, so every glance at a joinee
+  // wrote a 'user.credentials_viewed' row. That was 400-odd of the
+  // first 675 log rows and it buried every real event. Issuing
+  // credentials IS logged — 'user.created' for the first temporary
+  // password and 'user.credentials_regenerated' for a replacement.
+  // Restoring this would mean putting the log() call back AND moving
+  // the fetch behind an explicit "reveal credentials" click, so that a
+  // row means someone chose to look.
   async getCredentialsSummary(userId: string, actorId: string) {
     const user = await this.usersService.findById(userId);
     if (!user) throw new NotFoundException('User not found');
-
-    await this.activityLog.log({
-      actorId,
-      action: 'user.credentials_viewed',
-      entityType: 'user',
-      entityId: userId,
-    });
 
     return {
       joineeId: user.joinee_id,
@@ -277,13 +288,34 @@ export class AuthService {
     userAgent: string | null,
   ): Promise<PasswordLoginResult> {
     const user = await this.usersService.findByJoineeId(joineeId);
-    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    /* One answer for every way a login can fail — unknown Joinee ID,
+       disabled account, wrong password — because any difference between
+       them is an oracle. The 403 "This account has been disabled" that
+       used to be here told an attacker, for free, that the ID they had
+       guessed was a real one. The real reason goes to the server log,
+       where the people entitled to it can read it.
+
+       The timing is levelled too: without the dummy compare below, an
+       unknown ID returns in microseconds while a real one pays for
+       bcrypt, and that difference is the same oracle measured with a
+       stopwatch instead of read off the screen. */
+    if (!user) {
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+      this.logger.warn(`Login rejected: no account with Joinee ID ${joineeId}`);
+      throw new UnauthorizedException('Invalid credentials');
+    }
     if (user.status === 'disabled') {
-      throw new ForbiddenException('This account has been disabled');
+      await bcrypt.compare(password, user.password_hash);
+      this.logger.warn(`Login rejected: account ${user.id} is disabled`);
+      throw new UnauthorizedException('Invalid credentials');
     }
 
     const passwordOk = await bcrypt.compare(password, user.password_hash);
-    if (!passwordOk) throw new UnauthorizedException('Invalid credentials');
+    if (!passwordOk) {
+      this.logger.warn(`Login rejected: wrong password for account ${user.id}`);
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     if (user.must_reset_password) {
       return {
@@ -344,6 +376,9 @@ export class AuthService {
   //   if (!user) throw new UnauthorizedException('Invalid credentials');
   //   if (user.status === 'disabled') {
   //     throw new ForbiddenException('This account has been disabled');
+  //     // ^ if this block is ever restored, re-import ForbiddenException —
+  //     //   and reconsider the message, which is the same oracle the
+  //     //   password path was just fixed to stop leaking.
   //   }
   //
   //   await this.issueLoginOtp(user);

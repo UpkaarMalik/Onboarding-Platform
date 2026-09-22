@@ -1,11 +1,20 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
-import { ApiError, openFileInline } from '../api/client';
-import { formatDate, formatDateShort, todayIso, daysAgoIso, greeting } from '../lib/format';
+import { ApiError, describeError, openFileInline } from '../api/client';
+import { formatDate, todayIso, daysAgoIso, greeting } from '../lib/format';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
+import LoadError from '../components/LoadError';
 import HrOverview, { CreateJoineeWizard, CustomSelect, type RosterFilter } from './HrOverview';
+import { ROSTER_PARAMS } from '../lib/rosterQuery';
+import { deptArt } from '../lib/deptArt';
+import badgeLanyard from '../assets/badge-lanyard.png';
+import PageHero from '../components/ui/PageHero';
+import ActivityFeed from '../components/ActivityFeed';
+import DepartmentDonut from '../components/DepartmentDonut';
+import { deptLightClass, deptSlots, type DeptSlots } from '../lib/deptColor';
 
 interface Department {
   id: string;
@@ -104,6 +113,13 @@ export default function HrDashboard() {
 
   const [overviewRows, setOverviewRows] = useState<any[]>([]);
   const [stuckTotal, setStuckTotal] = useState(0);
+  /* The real number of joinees, straight from the API's `total`. The list
+     beside it is capped at limit=100 and is only ever used for the filters
+     and the drill-downs, never for a headline figure. */
+  const [totalJoiners, setTotalJoiners] = useState<number | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewBusy, setOverviewBusy] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const [attention, setAttention] = useState<any[]>([]);
 
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
@@ -118,9 +134,21 @@ export default function HrDashboard() {
   /** Bumped whenever something below changes the roster, so the embedded
    *  HrOverview refetches instead of showing a stale list. */
   const [rosterReload, setRosterReload] = useState(0);
+  /** The greeting's live line. null = the server has not answered yet, which
+   *  is a different thing from zero and renders differently. */
+  const [summary, setSummary] = useState<{ upcoming: number; blocked: number } | null>(
+    null,
+  );
   /* The cards scroll the roster into view rather than opening a panel that
      shoves it down the page with no warning. */
   const rosterRef = useRef<HTMLDivElement>(null);
+  /* One slot map per page, from the full department list, so the cards below
+     and the donut agree with each other and with the roster. */
+  const slots = useMemo(() => deptSlots(departments), [departments]);
+  /* Joined into one string so the effect below has a primitive to compare:
+     a fresh URLSearchParams object every render would re-fire it forever. */
+  const [searchParams] = useSearchParams();
+  const rosterQuery = ROSTER_PARAMS.map((k) => searchParams.get(k) ?? '').join('\u0000');
 
   useEffect(() => {
     authedFetch<Department[]>('/departments')
@@ -130,18 +158,29 @@ export default function HrDashboard() {
   }, []);
 
   async function loadOverview() {
+    setOverviewBusy(true);
     try {
       const [all, stuck] = await Promise.all([
         authedFetch<{ data: any[]; total: number }>('/onboardings?limit=100'),
         authedFetch<{ data: any[]; total: number }>('/onboardings/stuck?limit=50'),
       ]);
       setOverviewRows(all.data);
+      // `total` is the count the query found, not the length of the page it
+      // returned — see paginateRows in the backend. Reading rows.length here
+      // was the bug: correct while the org fits in one page of 100, and
+      // silently frozen at 100 forever after.
+      setTotalJoiners(all.total);
       setStuckTotal(stuck.total);
       setAttention(stuck.data);
-    } catch {
-      // The detailed table below surfaces its own errors — the
-      // overview degrades to "nothing to show" rather than blocking
-      // the page on a second failure.
+      setOverviewError(null);
+    } catch (err) {
+      // Not swallowed. An empty catch here rendered a dashboard of zeros
+      // that was indistinguishable from a real org with no joinees, so the
+      // one state the reader most needed to act on was the one state the
+      // page could not express.
+      setOverviewError(describeError(err));
+    } finally {
+      setOverviewBusy(false);
     }
   }
 
@@ -149,8 +188,47 @@ export default function HrDashboard() {
     void loadOverview();
   }, []);
 
+  /**
+   * The greeting summary, counted by the server and polled.
+   *
+   * It used to be derived here from overviewRows and the stuck feed. Both are
+   * capped lists — limit=100 and limit=50 — so the counts silently stopped
+   * being true past those sizes, and "blocked" could only ever mean what the
+   * stuck feed happened to have fetched. A COUNT has no page size.
+   *
+   * ponytail: 30s polling, paused while the tab is hidden and refreshed the
+   * moment it comes back, so a backgrounded dashboard costs nothing. Two
+   * integers per query — cheaper than the limit=100 fetch this page already
+   * issues. If "the instant it happens" ever replaces "without pressing
+   * reload", this is the one thing to swap for SSE.
+   */
+  const loadSummary = useCallback(() => {
+    if (document.hidden) return;
+    authedFetch<{ upcoming: number; blocked: number }>('/onboardings/summary')
+      .then((next) => {
+        setSummary(next);
+        setSummaryError(null);
+      })
+      // A poll that fails keeps the last good numbers rather than blanking
+      // the greeting — but it says so, because a figure that has quietly
+      // stopped updating is worse than one that admits it.
+      .catch((err) => setSummaryError(describeError(err)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    loadSummary();
+    const id = window.setInterval(loadSummary, 30_000);
+    document.addEventListener('visibilitychange', loadSummary);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', loadSummary);
+    };
+  }, [loadSummary]);
+
   function refreshEverything() {
     void loadOverview();
+    loadSummary();
     setRosterReload((n) => n + 1);
   }
 
@@ -162,7 +240,7 @@ export default function HrDashboard() {
      issued" takes the provisioned address when there is one and falls back to
      the stage, because rows created before the provision flow existed carry a
      later status with no address recorded against them. */
-  const totalJoiners = overviewRows.length;
+
   const recentCutoff = isoDaysAgo(15);
   const recentRows = overviewRows.filter(
     (o) => o.start_date >= recentCutoff && o.start_date <= today,
@@ -192,15 +270,6 @@ export default function HrDashboard() {
   const attentionRows = overviewRows.filter((o) => attentionIds.has(o.id));
   const blockedCount = attention.filter((t) => t.is_blocked).length;
   const overdueCount = attention.length - blockedCount;
-  /* The greeting subline counts people, not tasks: everyone still running,
-     and how many of them have at least one blocked task. */
-  const activeOnboardingRows = overviewRows.filter(
-    (o) => o.status !== 'completed' && o.status !== 'cancelled',
-  );
-  const blockedOnboardingIds = new Set(
-    attention.filter((t) => t.is_blocked).map((t) => t.onboarding_id),
-  );
-  const blockedJoinees = activeOnboardingRows.filter((o) => blockedOnboardingIds.has(o.id)).length;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
   /* Say which of the two it actually is. "13 blocked or overdue tasks" made
      the reader guess, and left "13" looking unrelated to the 5 above it. */
@@ -222,7 +291,7 @@ export default function HrDashboard() {
       key: 'total',
       icon: '👥',
       tone: 'info' as const,
-      value: totalJoiners,
+      value: totalJoiners ?? 0,
       label: 'Total Joiners',
       sub: 'Joiners on record',
       rows: overviewRows,
@@ -265,6 +334,21 @@ export default function HrDashboard() {
       }
     : null;
 
+  /* The nav's search narrows the roster further down this page, so searching
+     brings it into view — a filter applied to a list below the fold looks
+     like nothing happened. Same rule as the cards below: only move the page
+     when the roster is actually off-screen, so later keystrokes do not
+     re-scroll a list you are already reading. */
+  useEffect(() => {
+    if (!rosterQuery.replace(/\u0000/g, '')) return;
+    const el = rosterRef.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    if (top > window.innerHeight * 0.75 || top < 0) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [rosterQuery]);
+
   function pickCard(key: string) {
     const next = activeStatFilter === key ? null : key;
     setActiveStatFilter(next);
@@ -284,59 +368,74 @@ export default function HrDashboard() {
 
   return (
     <div className="hr-dashboard">
-      {/* The greeting card: who you are, the two numbers worth reading at a
-          glance, and the one action. */}
-      <section className="hr-welcome">
-        <div className="hr-welcome-copy">
-          <h1 className="hr-welcome-title">
-            {greeting()}, {user?.full_name?.split(' ')[0] ?? 'there'}
-          </h1>
-          <p className="hr-welcome-sub">
-            {plural(activeOnboardingRows.length, 'joinee')} onboarding
-            {blockedJoinees > 0 && (
+      <PageHero
+        title={
+          <>
+            {greeting()}, <em>{user?.full_name?.split(' ')[0] ?? 'there'}</em>
+          </>
+        }
+        summary={
+          /* aria-live so a change reaching a screen reader does not depend on
+             the user happening to be on this line when it polls. */
+          <span className="page-hero-status" aria-live="polite">
+            {summary === null ? (
+              /* Nothing at all until the server answers, rather than a
+                 placeholder. The line keeps its height from the paragraph's
+                 own line-height, so the hero does not resize when the
+                 numbers land — and a wrong-looking "0" never flashes. */
+              summaryError ? (
+                <span className="muted">Could not load counts — {summaryError}</span>
+              ) : (
+                // Two blank lines, because the loaded state is two lines. One
+                // would let the hero grow under the reader as the numbers
+                // land, which is the jump this placeholder exists to avoid.
+                <>
+                  <span>{'\u00a0'}</span>
+                  <span>{'\u00a0'}</span>
+                </>
+              )
+            ) : (
               <>
-                {' \u00b7 '}
-                <span className="hr-welcome-blocked">{blockedJoinees} blocked</span>
+                <span>{plural(summary.upcoming, 'upcoming onboarding')}</span>
+                {/* The blocker state gets its own line and always states
+                    itself, including when there is nothing wrong. "No
+                    blockers" read affirmatively is worth more than the
+                    absence of a warning, which is indistinguishable from the
+                    line having failed to load.
+
+                    The dot is a second channel, never the only one: the words
+                    beside it already say which state this is, so nothing is
+                    carried by colour alone. */}
+                <span
+                  className={`hero-status${summary.blocked > 0 ? ' hero-status--warn' : ''}`}
+                >
+                  <span className="hero-status-dot" aria-hidden="true" />
+                  {summary.blocked > 0
+                    ? `${plural(summary.blocked, 'joinee')} blocked`
+                    : 'No blockers'}
+                </span>
+                {/* Last good numbers, but honest that they have stopped
+                    moving — a frozen figure with no mark is worse than one
+                    that admits it. */}
+                {summaryError && <span className="muted">Not updating — {summaryError}</span>}
               </>
             )}
-          </p>
-        </div>
-
-        <button type="button" className="hr-welcome-cta" onClick={() => setShowAddJoiner(true)}>
-          + Create New Joinee
-        </button>
-      </section>
+          </span>
+        }
+        action={
+          <button type="button" className="page-hero-cta" onClick={() => setShowAddJoiner(true)}>
+            + Create New Joinee
+          </button>
+        }
+      />
 
       {error && <p className="error-text">{error}</p>}
 
       <Reveal>
-        {/* One rectangle, two boxes. Each column owns its heading so the two
-            baselines line up, and the grid stretches them to equal height. */}
+        {/* Upcoming joinees on the left, the department split on the right.
+            Each column owns its heading so the two baselines line up, and the
+            grid stretches them to equal height. */}
         <div className="home-panels">
-          <div className="home-panel">
-            <div className="home-section-head">
-              <h2>At a glance</h2>
-            </div>
-            <div className="home-cards">
-              {HOME_CARDS.map((c) => (
-                <button
-                  type="button"
-                  key={c.key}
-                  className={`home-card home-card--${c.tone}${activeStatFilter === c.key ? ' is-active' : ''}`}
-                  aria-pressed={activeStatFilter === c.key}
-                  onClick={() => pickCard(c.key)}
-                >
-                  <span className={`home-card-icon ${c.tone}`} aria-hidden="true">{c.icon}</span>
-                  <span className="home-card-text">
-                    <span className="home-card-value">{c.value}</span>
-                    <span className="home-card-label">{c.label}</span>
-                    <span className="home-card-sub">{c.sub}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="home-panel">
             <div className="home-section-head">
               <h2>Upcoming joinees</h2>
@@ -358,7 +457,60 @@ export default function HrDashboard() {
             {pipelineRows.length === 0 ? (
               <p className="home-events-empty">No joinees are due to start right now.</p>
             ) : (
-              <EventsRail rows={pipelineRows} onPick={(id) => setProfileUserId(id)} />
+              <EventsRail rows={pipelineRows} slots={slots} onPick={(id) => setProfileUserId(id)} />
+            )}
+          </div>
+
+          <div className="home-panel dept-panel">
+            <div className="home-section-head">
+              <h2>Joinees by department</h2>
+            </div>
+            {/* Decorative only — empty alt and aria-hidden, so it is not
+                announced and adds nothing for anyone navigating by screen
+                reader. The chart below carries the actual information. */}
+            <img className="dept-panel-art" src={badgeLanyard} alt="" aria-hidden="true" />
+            {/* Counted from the same rows the cards and the roster use, so the
+                three can never disagree. */}
+            <DepartmentDonut rows={overviewRows} slots={slots} />
+          </div>
+        </div>
+      </Reveal>
+
+      <Reveal delay={0.06}>
+        {/* The four numbers, on one line under the two panels above. */}
+        <div className="home-panels home-panels--wide">
+          <div className="home-panel">
+            <div className="home-section-head">
+              <h2>At a glance</h2>
+            </div>
+            {/* The numbers are REPLACED, not decorated. A warning banner above
+                a row of zeros still reads as "this org has no joinees" at a
+                glance, which is the exact misreading this ticket is about. */}
+            {overviewError ? (
+              <LoadError
+                message={overviewError}
+                busy={overviewBusy}
+                onRetry={() => void loadOverview()}
+              />
+            ) : (
+            <div className="home-cards home-cards--row">
+              {HOME_CARDS.map((c) => (
+                <button
+                  type="button"
+                  key={c.key}
+                  className={`home-card home-card--${c.tone}${activeStatFilter === c.key ? ' is-active' : ''}`}
+                  aria-pressed={activeStatFilter === c.key}
+                  onClick={() => pickCard(c.key)}
+                >
+                  <span className={`home-card-icon ${c.tone}`} aria-hidden="true">{c.icon}</span>
+                  <span className="home-card-text">
+                    <span className="home-card-value">{c.value}</span>
+                    <span className="home-card-label">{c.label}</span>
+                    <span className="home-card-sub">{c.sub}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
             )}
           </div>
         </div>
@@ -366,13 +518,16 @@ export default function HrDashboard() {
 
       {/* The roster IS the cards' drill-down: picking one narrows this list
           and scrolls to it, instead of opening a second list above it. */}
-      <div ref={rosterRef}>
+      <div ref={rosterRef} className="home-roster-row">
         <HrOverview
           embedded
           reloadKey={rosterReload}
           cardFilter={rosterFilter}
           onClearCardFilter={() => setActiveStatFilter(null)}
         />
+        {/* Same data as /audit-log, six rows of it — HR shouldn't have to
+            open another page to see whether anything moved today. */}
+        <ActivityFeed />
       </div>
 
 
@@ -465,112 +620,153 @@ export default function HrDashboard() {
 }
 
 /**
- * The upcoming-joiners rail, on a slow loop.
+ * The upcoming joinees, as an endless coverflow.
  *
- * The list is rendered twice and the track is animated from 0 to -50%, so the
- * moment the first copy scrolls out the second is exactly where it began and
- * the wrap is invisible. Duration is derived from the number of entries rather
- * than fixed, so the speed stays the same however many there are — a fixed
- * duration would make a busy month race past.
+ * The card at the front is full size and fully lit; its neighbours sit
+ * further back, smaller and faded; anything beyond them is invisible. On a
+ * timer the whole row slides one place, so every joinee takes a turn at the
+ * front, and it never reaches an end — the offsets are computed modulo the
+ * list, so card 0 is one place after the last one.
  *
- * It only loops when there is more content than fits; four names that all fit
- * on screen have no reason to move. Hover and keyboard focus pause it, because
- * you cannot click a moving target, and `prefers-reduced-motion` stops it
- * entirely (handled in CSS) leaving a normal scrollable list.
+ * This is a transform carousel rather than the scroll container it replaced.
+ * A scroller could not do either half of the brief: it has real ends, so
+ * "infinite" meant a visible jump back, and scaling the middle card means
+ * styling by distance from the centre, which a scroll position does not give
+ * you. Here each card's offset from the front IS its style, so the two fall
+ * out of the same number — and the buttons just change that number, which is
+ * why neither of them is ever disabled.
+ *
+ * Hover and focus stop the timer (you cannot click a moving target) and
+ * `prefers-reduced-motion` stops it entirely, leaving a readable row.
  */
-function EventsRail({ rows, onPick }: { rows: any[]; onPick: (userId: string) => void }) {
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const trackRef = useRef<HTMLUListElement>(null);
-  const [looping, setLooping] = useState(false);
-  const [duration, setDuration] = useState(0);
+function EventsRail({
+  rows,
+  slots,
+  onPick,
+}: {
+  rows: any[];
+  slots: DeptSlots;
+  onPick: (userId: string) => void;
+}) {
+  const [at, setAt] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [calm, setCalm] = useState(false);
 
   useEffect(() => {
-    const viewport = viewportRef.current;
-    const track = trackRef.current;
-    if (!viewport || !track) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const sync = () => setCalm(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
-    /* CSS alone is not enough here. The reduced-motion block stops the
-       animation, but the clones are rendered by this component, so without
-       this check a reduced-motion reader would be handed a list with every
-       name in it twice. Read the preference and simply never loop. */
-    const calm = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (calm.matches) {
-      setLooping(false);
-      const onChange = () => setLooping(false);
-      calm.addEventListener('change', onChange);
-      return () => calm.removeEventListener('change', onChange);
-    }
-
-    const measure = () => {
-      /* One "copy" is the N entries plus one trailing gap — that trailing gap
-         is what the next copy starts after, and it is exactly the distance
-         translateY(-50%) covers. Which means the sum has to be read
-         differently depending on whether the clones are on the page yet:
-         before the first loop starts they are not, and halving the height
-         then would report a list half its real size. */
-      const gap = parseFloat(getComputedStyle(track).rowGap) || 0;
-      const cloned = track.children.length > rows.length;
-      const oneCopy = cloned ? track.scrollHeight / 2 : track.scrollHeight + gap;
-
-      /* Hysteresis: it takes a clear overflow to start looping and a clear
-         fit to stop. Comparing against a single threshold lets a list sitting
-         right on the boundary flip on, grow by its clone, flip off, and
-         oscillate forever. */
-      setLooping((was) => (was ? oneCopy > viewport.clientHeight + 4 : oneCopy > viewport.clientHeight + 12));
-      // ~26px a second: slow enough to read a name as it passes.
-      setDuration(oneCopy / 26);
-    };
-
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(viewport);
-    ro.observe(track);
-    // Re-run the whole effect if the preference is switched on mid-session.
-    const onChange = () => setLooping(false);
-    calm.addEventListener('change', onChange);
-    return () => {
-      ro.disconnect();
-      calm.removeEventListener('change', onChange);
-    };
+  // Stay in range if the filter shrinks the list under us.
+  useEffect(() => {
+    setAt((i) => (i < rows.length ? i : 0));
   }, [rows.length]);
 
-  const item = (o: any, cloned: boolean) => (
-    <li key={`${o.id}${cloned ? '-clone' : ''}`} aria-hidden={cloned || undefined}>
-      <button
-        type="button"
-        className="home-event"
-        tabIndex={cloned ? -1 : undefined}
-        onClick={() => onPick(o.user_id)}
-      >
-        <span className="home-event-date">
-          <strong>{formatDateShort(o.start_date)?.split(' ')[0]}</strong>
-          <small>{formatDateShort(o.start_date)?.split(' ')[1]}</small>
-        </span>
-        <span className="home-event-text">
-          <strong>{o.employee_name} joins</strong>
-          <small>{o.department_name}</small>
-        </span>
-      </button>
-    </li>
-  );
+  /* The timer. `at` is in the deps, so a button press also restarts the wait
+     instead of being overtaken a moment later. */
+  useEffect(() => {
+    if (calm || paused || rows.length < 2) return;
+    const id = setTimeout(() => setAt((i) => (i + 1) % rows.length), 3400);
+    return () => clearTimeout(id);
+  }, [at, calm, paused, rows.length]);
+
+  const n = rows.length;
+  const go = (delta: number) => setAt((i) => (i + delta + n) % n);
 
   return (
     <div
-      className={`home-events-viewport${looping ? ' is-looping' : ''}`}
-      ref={viewportRef}
+      className="home-rail"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
     >
-      <ul
-        className="home-events"
-        ref={trackRef}
-        style={looping ? { animationDuration: `${duration}s` } : undefined}
-      >
-        {rows.map((o) => item(o, false))}
-        {/* The second copy is what makes the wrap seamless. It is hidden from
-            assistive tech and skipped by tabbing so nothing is announced or
-            reachable twice. */}
-        {looping && rows.map((o) => item(o, true))}
-      </ul>
+      <div className="home-rail-stage">
+        {rows.map((o, i) => {
+          /* Shortest signed distance from the front, so the row wraps in
+             whichever direction is nearer and no card ever travels the long
+             way round. */
+          const raw = (i - at + n) % n;
+          const offset = raw > n / 2 ? raw - n : raw;
+          const depth = Math.abs(offset);
+          const isFront = offset === 0;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              className={`home-event home-rail-card ${deptLightClass(slots, o.department_id)}`}
+              data-depth={Math.min(depth, 3)}
+              style={{ ['--offset' as string]: offset }}
+              aria-hidden={!isFront || undefined}
+              tabIndex={isFront ? 0 : -1}
+              onClick={() => (isFront ? onPick(o.user_id) : setAt(i))}
+            >
+              <EventCardBody row={o} />
+            </button>
+          );
+        })}
+      </div>
+
+      {n > 1 && (
+        <div className="home-rail-nav">
+          <span className="home-rail-count">
+            {at + 1} / {n}
+          </span>
+          {/* Never disabled: the row wraps, so there is always a next and a
+              previous card. */}
+          <button
+            type="button"
+            className="home-rail-btn"
+            onClick={() => go(-1)}
+            aria-label="Previous joinee"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+              <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="home-rail-btn"
+            onClick={() => go(1)}
+            aria-label="Next joinee"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+              <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * The card face, on four anchors: the illustration fills the upper left, the
+ * department sits top right, the joining date bottom left under its own
+ * label, and the name bottom right. A grid rather than absolute corners, so
+ * nothing can overlap when a long name meets a long department.
+ */
+function EventCardBody({ row }: { row: any }) {
+  return (
+    <span className="home-event-text">
+      {/* Decoration, so it carries no alt text — the card already says who
+          this is and which team in words. Which illustration depends on the
+          department (lib/deptArt.ts). */}
+      <img className="home-event-art" src={deptArt(row.department_name)} alt="" aria-hidden="true" />
+      {row.department_name && <span className="home-event-dept">{row.department_name}</span>}
+      {/* One row, not two cells: the department label's column is a fixed
+          width, and the name was inheriting it and truncating. */}
+      <span className="home-event-foot">
+        <span className="home-event-when">
+          <small>Date of Joining</small>
+          <strong>{formatDate(row.start_date)}</strong>
+        </span>
+        <strong className="home-event-name">{row.employee_name}</strong>
+      </span>
+    </span>
   );
 }
 

@@ -5,11 +5,16 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { OnboardingTasksService } from './onboarding-tasks.service';
+import { BlockersService } from './blockers.service';
 import { AssignTaskDto } from './dto/assign-task.dto';
+import { CreateBlockerDto } from './dto/create-blocker.dto';
 
 @Controller('onboarding-tasks')
 export class OnboardingTasksController {
-  constructor(private readonly onboardingTasksService: OnboardingTasksService) {}
+  constructor(
+    private readonly onboardingTasksService: OnboardingTasksService,
+    private readonly blockersService: BlockersService,
+  ) {}
 
   // No @Roles() on the three below: which side of a task a caller may
   // act on is data-dependent (role must match this specific task's
@@ -33,6 +38,18 @@ export class OnboardingTasksController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.onboardingTasksService.completeAsEmployee(id, user);
+  }
+
+  // Also unroled, and for the same reason as the two above: HR may
+  // block anything, and a task owner may block the task they own.
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/block')
+  block(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateBlockerDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.blockersService.block(id, dto, user);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -10,6 +10,14 @@ import { createPortal } from 'react-dom';
  * document grid or a long subtask checklist, where the narrow width was what
  * made the content feel cramped.
  *
+ * 'drawer' is the odd one out: it slides in from the right edge at three
+ * quarters of the viewport and runs full height, for content that is a long
+ * list rather than a form. It is a size and nothing else — the portal, the
+ * Escape handler, the scroll lock, the backdrop click and the round close
+ * button are all the same machinery, so a drawer can never drift out of sync
+ * with how every other popup on the site behaves. The layout difference lives
+ * entirely in CSS, which keys off `.modal--drawer` on this element.
+ *
  * `busy` blocks dismissal. Without it, a backdrop click or Escape mid-upload
  * unmounts the child while its multipart request is still in flight, and the
  * user never finds out whether a 10 MB file landed.
@@ -40,7 +48,7 @@ export default function Modal({
   actions?: ReactNode;
   /** @deprecated prefer `size="wide"` — kept so existing call sites still work. */
   wide?: boolean;
-  size?: 'default' | 'wide' | 'xl';
+  size?: 'default' | 'wide' | 'xl' | 'drawer';
   busy?: boolean;
   subtitle?: ReactNode;
   icon?: ReactNode;

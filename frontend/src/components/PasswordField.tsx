@@ -40,9 +40,6 @@ export default function PasswordField({
 
   return (
     <div className="login-field">
-      <label className="login-label" htmlFor={id}>
-        {label}
-      </label>
       <div className={`login-input${invalid ? ' is-invalid' : ''}`}>
         <svg className="login-input__icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
           <rect x="3" y="8" width="12" height="8" rx="2" stroke="currentColor" strokeWidth="1.5" />
@@ -51,6 +48,10 @@ export default function PasswordField({
         </svg>
         <input
           id={id}
+          /* The visible label is gone, so the field needs an accessible
+             name of its own — a placeholder isn't one, and it vanishes
+             the moment anyone types. */
+          aria-label={label}
           type={visible ? 'text' : 'password'}
           value={value}
           onChange={(e) => onChange(e.target.value)}

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
+import { differenceInCalendarDays, parseISO } from 'date-fns';
+import PageHero from '../components/ui/PageHero';
 import { greeting, todayIso } from '../lib/format';
 import { ApiError } from '../api/client';
 import { fireConfetti } from '../lib/confetti';
@@ -10,7 +12,6 @@ import type { DashboardResponse } from '../types/onboarding';
 import Reveal from '../components/Reveal';
 import JourneyTrack from '../components/JourneyTrack';
 import AnimatedProgressBar from '../components/AnimatedProgressBar';
-import OceanBanner from '../components/OceanBanner';
 
 const PRE_CHECKPOINT_STATUSES = ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'];
 
@@ -53,6 +54,13 @@ function knowledgeIcon(title: string) {
 }
 
 /**
+ * PARKED: this page is no longer routed. The employee's Home is the task
+ * trail (EmployeeTasks) — see App.tsx. Its office-guide and new-to-Mac
+ * sections moved to EmployeeKnowledgeRail, which renders beside the trail;
+ * its notes, quick-access and rating sections are commented out below and
+ * come back by uncommenting. Kept rather than deleted so none of that has
+ * to be rewritten if it is wanted again.
+ *
  * The "Start Here" guided flow — everything a new employee needs on
  * one page: a greeting banner with live progress, the single most
  * urgent task surfaced up front ("do this first"), a step-by-step
@@ -61,8 +69,6 @@ function knowledgeIcon(title: string) {
  * opens it in a popup rather than acting on the row directly, so
  * there's always a moment to see the full detail before confirming.
  */
-let hasPlayedEntrance = false;
-
 export default function StartHere() {
   const authedFetch = useAuthedFetch();
   const { user } = useAuth();
@@ -73,11 +79,9 @@ export default function StartHere() {
   const [savingDiary, setSavingDiary] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [entrancePhase, setEntrancePhase] = useState<'greeting' | 'dashboard'>(hasPlayedEntrance ? 'dashboard' : 'greeting');
-  const [timeOfDay, setTimeOfDay] = useState<number | null>(null);
-  const [clockOpen, setClockOpen] = useState(false);
-  const [now, setNow] = useState(() => new Date());
-  const entranceTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [ratingComment, setRatingComment] = useState('');
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [ratingSaved, setRatingSaved] = useState(false);
   const hasCelebratedCompletionRef = useRef(false);
 
   async function loadAll() {
@@ -121,19 +125,6 @@ export default function StartHere() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (hasPlayedEntrance) return;
-    entranceTimer.current = setTimeout(() => {
-      setEntrancePhase('dashboard');
-      hasPlayedEntrance = true;
-    }, 1400);
-    return () => clearTimeout(entranceTimer.current);
-  }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(id);
-  }, []);
 
   // A one-time bigger celebration the moment this page sees the
   // onboarding reach 'completed' — whether that happened just now (the
@@ -171,65 +162,37 @@ export default function StartHere() {
   if (!dashboard) return null;
 
   const firstName = user?.full_name?.split(' ')[0] ?? 'there';
+  /* "Day 1" is the joining date itself, so +1 — and never below 1, because
+     an onboarding created ahead of its start date would otherwise greet the
+     joinee with "Day -3". */
+  const dayNumber = Math.max(
+    1,
+    differenceInCalendarDays(new Date(), parseISO(dashboard.onboarding.start_date)) + 1,
+  );
+  const docsDone = dashboard.steps.some(
+    (s) => s.system_key === 'document_upload' && s.status === 'completed',
+  );
 
   return (
     <div className="start-here">
-      {/* Entrance animation: greeting first, then dashboard slides in */}
-      <div className={`entrance-greeting${entrancePhase === 'dashboard' ? ' entrance-greeting--up' : ''}`}>
-        <h1 className="entrance-hello">{greeting()}, {firstName} 👋</h1>
-        <p className="entrance-sub">Let's pick up where you left off</p>
-      </div>
-
-      <div className={`entrance-body${entrancePhase === 'dashboard' ? ' entrance-body--visible' : ''}`}>
-      {/* Ocean banner with overlay */}
-      <div style={{ margin: '0 0 0', borderRadius: 20, overflow: 'hidden', position: 'relative', height: 220 }}>
-        <OceanBanner height={220} timeOfDay={timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24} />
-        <div style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'flex', flexDirection: 'column', padding: '20px 36px', pointerEvents: 'none' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginBottom: 'auto' }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.9)', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '3px 10px', letterSpacing: '0.5px' }}>
-              {user?.role === 'superadmin_hr' ? 'HR / SuperAdmin' : user?.role === 'task_owner' ? 'Task Owner' : 'Employee'}
-            </span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-            <h1 style={{ margin: '0 0 6px', fontSize: 34, fontWeight: 800, color: '#fff', textShadow: '0 2px 16px rgba(0,0,0,0.3)' }}>
-              {greeting()}, <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600 }}>{firstName}</span>
-            </h1>
-            <Link to="/tasks" style={{ pointerEvents: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '10px 24px', fontSize: 14, fontWeight: 700, color: '#fff', background: 'var(--gradient-accent)', border: 'none', borderRadius: 12, textDecoration: 'none', whiteSpace: 'nowrap', boxShadow: '0 2px 12px rgba(232,147,12,0.35)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s', flexShrink: 0, marginBottom: 6 }}>
-              {dashboard.steps.some(s => s.system_key === 'document_upload' && s.status === 'completed') ? 'My Tasks ✓' : 'Start Here →'}
-            </Link>
-          </div>
-        </div>
-        {/* Frosted glass time card */}
-        <div className="hr-hero-clock">
-          <div className="hr-time-card" onClick={() => setClockOpen(!clockOpen)}>
-            <span className="hr-time-card-icon">{(() => { const t = timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24; return t < 0.25 || t >= 0.83 ? '🌙' : t < 0.5 ? '☀️' : '🌤️'; })()}</span>
-            <span className="hr-time-card-value">
-              {(() => { const t = timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24; const h = Math.floor(t * 24) % 24; const m = Math.floor((t * 24 % 1) * 60); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; })()}
-            </span>
-            {clockOpen && (
-              <div className="hr-time-card-slider" onClick={e => e.stopPropagation()}>
-                <span>DAWN</span>
-                <input
-                  type="range" min="0" max="1000"
-                  value={Math.round((timeOfDay ?? (now.getHours() + now.getMinutes() / 60) / 24) * 1000)}
-                  onChange={e => setTimeOfDay(parseInt(e.target.value) / 1000)}
-                  aria-label="Time of day"
-                />
-                <span>NIGHT</span>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <p className="hr-lede" style={{ marginTop: '1.25rem' }}>
-        <span className="hr-lede-bullet" aria-hidden="true" />
-        <span className="hr-lede-text">
-          Welcome to AND Payments — your personalised onboarding journey
-          <span className="hr-lede-amp"> &amp; </span>
-          everything you need <span className="hr-lede-here">starts right here.</span>
-        </span>
-      </p>
+      <PageHero
+        title={
+          <>
+            {greeting()}, <em>{firstName}</em>
+          </>
+        }
+        summary={
+          <>
+            Day {dayNumber} {'\u00b7'} {dashboard.progress.requiredCompleted} of{' '}
+            {dashboard.progress.requiredTotal} steps done
+          </>
+        }
+        action={
+          <Link to="/tasks" className="page-hero-cta">
+            {docsDone ? 'My tasks' : 'Start here'}
+          </Link>
+        }
+      />
 
       <div style={{ marginTop: '1.25rem', marginBottom: '1.5rem', padding: '16px 20px', borderRadius: 16, background: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-sm)' }}>
         <p style={{ textAlign: 'center', fontSize: '0.95rem', margin: '0 0 10px', lineHeight: 1.6 }}>
@@ -313,6 +276,7 @@ export default function StartHere() {
       </Reveal>
       */}
 
+{/* Office guide — lives in EmployeeKnowledgeRail beside the trail now.
       {knowledge.length > 0 && (
         <Reveal>
           <section id="knowledge-section">
@@ -335,7 +299,9 @@ export default function StartHere() {
           </section>
         </Reveal>
       )}
+      */}
 
+{/* New to Mac — lives in EmployeeKnowledgeRail beside the trail now.
       <Reveal>
         <section>
           <h2>New to Mac? A few tips</h2>
@@ -356,7 +322,69 @@ export default function StartHere() {
           </div>
         </section>
       </Reveal>
+      */}
 
+{/* Rate your experience — commented out per request, not required for now.
+      <Reveal>
+        <section>
+          <h2>Rate your experience</h2>
+          <p className="muted">
+            {dashboard.onboarding.experience_rating
+              ? "Thanks for rating — change it any time it doesn't feel right anymore."
+              : 'How has onboarding felt so far? This goes to HR as a number only.'}
+          </p>
+          <div className="star-rating">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                className={`star-btn ${n <= (dashboard.onboarding.experience_rating ?? 0) ? 'filled' : ''}`}
+                disabled={submittingRating}
+                onClick={() => submitRating(n)}
+                aria-label={`Rate ${n} out of 5`}
+              >
+                ★
+              </button>
+            ))}
+            {ratingSaved && <span className="rating-saved">Saved</span>}
+          </div>
+          <textarea
+            className="rating-comment"
+            value={ratingComment}
+            onChange={(e) => setRatingComment(e.target.value)}
+            onBlur={() => {
+              if (dashboard.onboarding.experience_rating) submitRating(dashboard.onboarding.experience_rating);
+            }}
+            placeholder="Anything you'd add? (optional)"
+          />
+        </section>
+      </Reveal>
+      */}
+
+{/* Private notes — commented out per request, not required for now.
+      <Reveal>
+        <section id="notes-section">
+          <h2>Your private notes</h2>
+          <p className="muted">
+            Only you can see the note content — SuperAdmin can see that notes exist and read the text,
+            but never who wrote them.
+          </p>
+          <form onSubmit={addNote} className="note-form">
+            <textarea
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              placeholder="Write something only you can see…"
+            />
+            <button type="submit">Add note</button>
+          </form>
+          <ul className="notes-list">
+            {notes.map((n) => (
+              <li key={n.id}>{n.content}</li>
+            ))}
+          </ul>
+        </section>
+      </Reveal>
+      */}
 
       {/* PARKED-FEATURE: diary — the home page's diary section.
 
@@ -389,7 +417,6 @@ export default function StartHere() {
         </section>
       </Reveal>
       */}
-      </div>{/* end entrance-body */}
     </div>
   );
 }
