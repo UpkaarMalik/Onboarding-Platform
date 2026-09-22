@@ -6,7 +6,7 @@ import { slugifyNameForCompanyEmail } from '../auth/utils/credential-generator';
 /** Same structural-typing trick as TemplatesService/OnboardingsService —
  *  lets recordCompanyEmail() run either standalone or as part of a
  *  caller's own transaction (see OnboardingsService.provisionCompanyEmail). */
-interface Queryable {
+export interface Queryable {
   query<T extends QueryResultRow = QueryResultRow>(
     text: string,
     params?: unknown[],
