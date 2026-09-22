@@ -64,16 +64,60 @@ export function orderForTrail<T extends TrailTask>(tasks: T[]): T[] {
 }
 
 /**
- * Index of the one open task: the first in trail order that is neither
- * completed nor cancelled. -1 when the whole journey is settled.
+ * THE ONBOARDING FLOW, IN ONE PLACE.
+ *
+ * Three stages, the same for every department — the bands above are the
+ * ordering, these are the gate:
+ *
+ *   Stage 0  Upload your documents        — nothing else opens until HR has
+ *                                           APPROVED every document, which is
+ *                                           what completes this task (see
+ *                                           JoineeDocumentsService).
+ *   Stage 1  Read the docs                — both open together, and the
+ *            Company email & laptop         handover is HR's to close.
+ *   Stage 2  Everything else              — one at a time, in band order.
+ *
+ * Stage 1 is the only parallel one. The employee can read while IT sorts the
+ * hardware; neither waits on the other. Everywhere else the gate is
+ * sequential, because "step by step" is what the rest of the journey is.
+ *
+ * This is the ONLY definition of which tasks are open. The trail renders from
+ * it and the completion endpoints refuse from it, so the UI can never offer a
+ * step the API would reject, and the API can never be talked into a step the
+ * UI would not show.
+ */
+const BAND_STAGE = [0, 1, 1, 2, 2] as const;
+
+/** The stages where every unfinished task is open at once, not just the first. */
+const PARALLEL_STAGES = new Set<number>([1]);
+
+function stageOf(task: TrailTask): number {
+  return BAND_STAGE[trailBand(task)] ?? BAND_STAGE[BAND_STAGE.length - 1];
+}
+
+/**
+ * Indices of every task that is open right now.
+ *
+ * The earliest stage that still has unfinished work is the live one;
+ * everything in a later stage is locked behind it. Empty when the journey is
+ * over.
  *
  * Note what this does NOT do — it does not skip a task it considers awkward.
- * A 'blocked' task holds the gate, which is the point: the employee's next
+ * A 'blocked' task holds its stage, which is the point: the employee's next
  * step is the blocked one, and the trail should say so rather than quietly
- * handing them work from further down the list.
+ * handing them work from further down.
  */
-export function openIndex(ordered: TrailTask[]): number {
-  return ordered.findIndex((task) => !SETTLED.has(task.status));
+export function openIndices(ordered: TrailTask[]): Set<number> {
+  const live = ordered
+    .map((task, index) => ({ index, stage: stageOf(task), settled: SETTLED.has(task.status) }))
+    .filter((entry) => !entry.settled);
+  if (live.length === 0) return new Set();
+
+  const stage = Math.min(...live.map((entry) => entry.stage));
+  const inStage = live.filter((entry) => entry.stage === stage);
+  return new Set(
+    PARALLEL_STAGES.has(stage) ? inStage.map((e) => e.index) : [inStage[0].index],
+  );
 }
 
 /**
@@ -81,17 +125,32 @@ export function openIndex(ordered: TrailTask[]): number {
  *
  * A task that is already completed or cancelled keeps its own status wherever
  * it sits — including one completed out of order under the old rules, which is
- * history and not something to rewrite. Everything else is either THE open
- * task or locked behind it.
+ * history and not something to rewrite. Everything else is either open or
+ * locked behind whatever is.
  */
 export function applySequenceGate<T extends TrailTask>(ordered: T[]): T[] {
-  const open = openIndex(ordered);
+  const open = openIndices(ordered);
   return ordered.map((task, index) => {
     if (SETTLED.has(task.status)) return task;
-    if (index === open) {
+    if (open.has(index)) {
       // 'blocked' is a real state of the task itself and outranks the gate.
       return task.status === 'blocked' ? task : { ...task, status: 'pending' };
     }
     return { ...task, status: 'locked' };
   });
+}
+
+/**
+ * Is this specific task open? What the completion endpoints ask before they
+ * let anyone close anything, so the gate is a rule rather than a rendering
+ * choice. Takes every task on the onboarding because the answer depends on
+ * the whole set, not on the one being asked about.
+ */
+export function isTaskOpen<T extends TrailTask & { id: string }>(
+  allTasks: T[],
+  taskId: string,
+): boolean {
+  const ordered = orderForTrail(allTasks);
+  const open = openIndices(ordered);
+  return [...open].some((index) => ordered[index].id === taskId);
 }

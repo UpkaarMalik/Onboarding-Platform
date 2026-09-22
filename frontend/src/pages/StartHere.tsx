@@ -126,6 +126,34 @@ export default function StartHere() {
     }
   }
 
+  /**
+   * The trail refreshes itself.
+   *
+   * HR can block a task while the joinee is looking at the page, and the
+   * acceptance for this is that they see it without reloading. Nothing here
+   * polled before — the page loaded once and stayed as it was.
+   *
+   * ponytail: 30s, paused while the tab is hidden and re-checked on focus,
+   * reusing the loader the page already has. Same pattern and the same
+   * ceiling as the HR greeting's counts; SSE is the upgrade if the delay
+   * ever matters.
+   */
+  useEffect(() => {
+    const tick = () => {
+      if (document.hidden) return;
+      void loadAll();
+    };
+    const id = window.setInterval(tick, 30_000);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps

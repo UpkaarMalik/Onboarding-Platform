@@ -82,6 +82,19 @@ export function formatDateTime(value: string | Date | null | undefined): string 
   }
 }
 
+/** "d MMM" — a day within the current few weeks, like "15 Sep". No year:
+ *  it is used for blocker dates, which are always near today, and a year
+ *  there is noise that pushes the useful part off a narrow line. */
+export function formatDayMonth(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const d = value instanceof Date ? value : parseISO(String(value));
+    return format(d, 'd MMM');
+  } catch {
+    return null;
+  }
+}
+
 /** "MMM d" — short date like "Sep 2" */
 export function formatMonthDay(value: string | Date): string {
   return format(toLocalDate(value), 'MMM d');

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { dueLabel } from '../lib/format';
 import { MARK_BOOMERANG_PATH, MARK_RADIUS } from '../lib/andMark';
+import BlockerLine, { type TaskBlocker } from './BlockerLine';
 
 export interface RoadmapItem {
   id: string;
@@ -12,6 +13,7 @@ export interface RoadmapItem {
   system_key?: string | null;
   subtask_count?: number;
   subtask_completed_count?: number;
+  blocker?: TaskBlocker | null;
 }
 
 type VisualState = 'done' | 'active' | 'queued' | 'upcoming' | 'blocked';
@@ -780,6 +782,9 @@ function RoadmapCard({
 
       <h3 className="roadmap-card-title">{step.title}</h3>
       {step.description && <p className="roadmap-card-desc">{step.description}</p>}
+      {/* Above the meta row, not inside it: this is the reason the card is
+          the colour it is, and it should be read before the due date. */}
+      {step.blocker && <BlockerLine blocker={step.blocker} />}
 
       <div className="roadmap-card-meta">
         <span className={`roadmap-card-due${state !== 'done' && step.status !== 'locked' ? '' : ' is-quiet'}`}>

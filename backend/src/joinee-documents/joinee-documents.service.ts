@@ -272,6 +272,15 @@ export class JoineeDocumentsService {
         );
       }
 
+      // The approval half, which did not exist: uploading used to be what
+      // closed the gating task, so the approve branch had nothing to do.
+      // Now that 'submitted' counts as outstanding, HR approving the LAST
+      // document is the event that completes it — and completing it is what
+      // opens Read the docs and the laptop handover behind it.
+      if (dto.decision === 'approved' && upload.onboarding_task_id) {
+        await this.maybeCompleteDocumentTask(client, upload.onboarding_task_id, actor.id);
+      }
+
       await this.activityLog.log(
         {
           actorId: actor.id,
@@ -397,9 +406,14 @@ export class JoineeDocumentsService {
     actorId: string,
   ): Promise<boolean> {
     const { rows } = await client.query<{ outstanding: number }>(
+      // `<> 'approved'`, not "awaiting_upload or rejected". 'submitted' means
+      // the joinee has uploaded and HR has not looked yet — outstanding, not
+      // done. Counting it as done closed this task the moment the last file
+      // landed, which opened the rest of the onboarding before anyone had
+      // reviewed a single document.
       `SELECT COUNT(*)::int AS outstanding
        FROM joinee_document_requirements
-       WHERE onboarding_task_id = $1 AND status IN ('awaiting_upload', 'rejected')`,
+       WHERE onboarding_task_id = $1 AND status <> 'approved'`,
       [taskId],
     );
     if (Number(rows[0].outstanding) > 0) {

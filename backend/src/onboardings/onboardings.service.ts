@@ -10,7 +10,10 @@ import { DatabaseService } from '../database/database.service';
 import { UsersService } from '../users/users.service';
 import { TemplatesService } from '../templates/templates.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { AuthService } from '../auth/auth.service';
+import { CreateUserDto } from '../auth/dto/create-user.dto';
 import { CreateOnboardingDto } from './dto/create-onboarding.dto';
+import { CreateJoineeDto } from './dto/create-joinee.dto';
 import { ProvisionCompanyEmailDto } from './dto/provision-company-email.dto';
 import { CreateAdHocTaskDto } from './dto/create-ad-hoc-task.dto';
 import { RateExperienceDto } from './dto/rate-experience.dto';
@@ -110,6 +113,7 @@ export class OnboardingsService {
     private readonly templatesService: TemplatesService,
     private readonly activityLog: ActivityLogService,
     private readonly config: ConfigService,
+    private readonly auth: AuthService,
   ) {}
 
   /**
@@ -119,8 +123,15 @@ export class OnboardingsService {
    * template versioning is what makes that safe; a later template
    * edit publishes a new version and never touches these rows.
    */
-  async createOnboarding(dto: CreateOnboardingDto, actorId: string) {
-    const user = await this.usersService.findById(dto.userId);
+  async createOnboarding(
+    dto: CreateOnboardingDto,
+    actorId: string,
+    /* When supplied, everything below runs on the caller's transaction
+       instead of opening its own — that is what lets createJoinee roll the
+       user back too when a template is missing. */
+    outer?: PoolClient,
+  ) {
+    const user = await this.usersService.findById(dto.userId, outer ?? this.db);
     if (!user) {
       throw new NotFoundException('User not found');
     }
@@ -140,8 +151,11 @@ export class OnboardingsService {
 
     const startDate = new Date(dto.startDate);
 
-    try {
-      return await this.db.transaction(async (client) => {
+    /* One body, two ways in: on the caller's client when there is one, or
+       on a transaction of its own. Without this the work would have to be
+       written twice and the two copies would drift. */
+    const work = async (client: PoolClient) => {
+      {
         const { rows } = await client.query<OnboardingRow>(
           `INSERT INTO onboardings (
              user_id, department_id, template_id, template_version, start_date,
@@ -199,13 +213,68 @@ export class OnboardingsService {
         );
 
         return this.toOnboardingWithTasks(client, onboarding.id);
-      });
+      }
+    };
+
+    try {
+      /* A caller's transaction is NOT wrapped in another one: nested
+         BEGIN/COMMIT on the same client is not a nested transaction in
+         Postgres, it is one flat transaction with a spurious COMMIT in the
+         middle — which would defeat the whole point by committing the user
+         row before the onboarding was safe. */
+      return outer ? await work(outer) : await this.db.transaction(work);
     } catch (err: any) {
       if (err?.code === UNIQUE_VIOLATION) {
         throw new ConflictException('This user already has an onboarding');
       }
       throw err;
     }
+  }
+
+  /**
+   * Create the account and its onboarding as one all-or-nothing request.
+   *
+   * Two calls from the browser could not be made safe: if POST /onboardings
+   * failed after POST /auth/users had succeeded — a department with no
+   * active template returns 404 — the account already existed, its
+   * one-time password had already been shown and discarded, and nobody
+   * could ever sign in as that person. The row had to be found and deleted
+   * by hand.
+   *
+   * Everything here shares one client, so a failure at any point leaves the
+   * database exactly as it was. The credentials come back from the same
+   * response, which is also the only time the temporary password exists
+   * outside the hash.
+   */
+  async createJoinee(dto: CreateJoineeDto, actorId: string) {
+    return this.db.transaction(async (client) => {
+      /* Typed, not cast. `as CreateUserDto` compiled just as well and
+         would have gone on compiling if CreateUserDto ever grew a
+         required field this does not pass — which is the kind of thing
+         that fails at runtime, on the one request that must not. */
+      const newUser: CreateUserDto = {
+        fullName: dto.fullName,
+        phoneNumber: dto.phoneNumber,
+        personalEmail: dto.personalEmail,
+        role: 'employee',
+        departmentId: dto.departmentId,
+      };
+      const created = await this.auth.createUser(newUser, actorId, client);
+
+      const onboarding = await this.createOnboarding(
+        {
+          userId: created.user.id,
+          startDate: dto.startDate,
+          managerName: dto.managerName,
+          buddyName: dto.buddyName,
+          requiredDocumentTypeIds: dto.requiredDocumentTypeIds,
+        },
+        actorId,
+        client,
+      );
+
+      return { ...created, onboarding };
+    });
   }
 
   /**
@@ -1149,6 +1218,7 @@ export class OnboardingsService {
       system_key: string | null;
       priority: string;
       blocked_reason: string | null;
+      completion_mode: string;
       blocker: TaskBlocker | null;
       subtask_count: number;
       subtask_completed_count: number;
@@ -1162,6 +1232,7 @@ export class OnboardingsService {
       `SELECT
          ot.id, ot.title, ot.description, ot.status, ot.due_date::text AS due_date,
          ot.is_checkpoint, ot.system_key, ot.priority, ot.blocked_reason,
+         ot.completion_mode,
          ${OPEN_BLOCKER_JSON},
          (SELECT COUNT(*) FROM onboarding_subtasks s
           WHERE s.onboarding_task_id = ot.id)::int AS subtask_count,

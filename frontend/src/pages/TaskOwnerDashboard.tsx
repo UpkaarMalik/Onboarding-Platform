@@ -4,7 +4,9 @@ import { useAuth } from '../auth/AuthContext';
 import { ApiError, describeError } from '../api/client';
 import { greeting } from '../lib/format';
 import Modal from '../components/Modal';
+import BlockerLine from '../components/BlockerLine';
 import LoadError from '../components/LoadError';
+import ReasonDialog from '../components/tasks/ReasonDialog';
 import Reveal from '../components/Reveal';
 import AnimatedProgressBar from '../components/AnimatedProgressBar';
 
@@ -32,6 +34,10 @@ export default function TaskOwnerDashboard() {
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deptError, setDeptError] = useState<string | null>(null);
+  const [blockOpen, setBlockOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [blockError, setBlockError] = useState<string | null>(null);
 
   // Department employees
   const [deptOnboardings, setDeptOnboardings] = useState<any[]>([]);
@@ -67,6 +73,45 @@ export default function TaskOwnerDashboard() {
     }
   }
 
+  /* A task owner may block the task they own — the same rule the completion
+     endpoint applies, and for the same reason: whoever can close it is
+     whoever knows it is stuck. */
+  async function blockTask(taskId: string, reason: string, expectedAt?: string) {
+    setBlockBusy(true);
+    setBlockError(null);
+    try {
+      await authedFetch(`/onboarding-tasks/${taskId}/block`, {
+        method: 'POST',
+        body: { reason, ...(expectedAt ? { expectedAt } : {}) },
+      });
+      setBlockOpen(false);
+      setActiveTask(null);
+      void load();
+    } catch (err) {
+      setBlockError(err instanceof ApiError ? err.message : 'Could not block this task');
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
+  async function resolveBlocker(blockerId: string, note?: string) {
+    setBlockBusy(true);
+    setBlockError(null);
+    try {
+      await authedFetch(`/blockers/${blockerId}/resolve`, {
+        method: 'POST',
+        body: note ? { note } : {},
+      });
+      setResolveOpen(false);
+      setActiveTask(null);
+      void load();
+    } catch (err) {
+      setBlockError(err instanceof ApiError ? err.message : 'Could not resolve this blocker');
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
   async function loadDeptOnboardings() {
     try {
       const res = await authedFetch<any[]>('/onboarding-tasks/department-onboardings');
@@ -99,7 +144,10 @@ export default function TaskOwnerDashboard() {
       setActiveTask(null);
       await load();
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Something went wrong');
+      // Into the page's own error line, not a browser alert: an alert blocks
+      // the whole tab, cannot be styled, loses the modal's context and is
+      // suppressible — in which case the failure becomes silent.
+      setError(describeError(err));
     } finally {
       setCompleting(false);
     }
@@ -111,7 +159,7 @@ export default function TaskOwnerDashboard() {
       await authedFetch(`/onboarding-tasks/${id}/claim`, { method: 'POST' });
       await Promise.all([loadClaimable(), load()]);
     } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Something went wrong');
+      setError(describeError(err));
     } finally {
       setClaimingId(null);
     }
@@ -311,6 +359,19 @@ export default function TaskOwnerDashboard() {
               <button type="button" onClick={() => setActiveTask(null)}>
                 Close
               </button>
+              {/* Quiet, and to the left of the primary action: saying a task
+                  is stuck is not the thing this dialog is for, it is the
+                  thing you do when the thing it is for cannot happen. */}
+              {activeTask.status !== 'completed' &&
+                (activeTask.blocker ? (
+                  <button type="button" className="link-action" onClick={() => setResolveOpen(true)}>
+                    Resolve blocker
+                  </button>
+                ) : (
+                  <button type="button" className="link-action" onClick={() => setBlockOpen(true)}>
+                    Mark as blocked
+                  </button>
+                ))}
               {activeTask.status !== 'completed' && (
                 <button
                   className="btn-primary"
@@ -340,7 +401,53 @@ export default function TaskOwnerDashboard() {
             <span className="detail-label">Due date</span>
             <span className="detail-value">{activeTask.due_date}</span>
           </div>
+          {activeTask.blocker && (
+            <div className="detail-row">
+              <span className="detail-label">Blocked</span>
+              <span className="detail-value">
+                <BlockerLine blocker={activeTask.blocker} />
+              </span>
+            </div>
+          )}
         </Modal>
+      )}
+
+      {activeTask && blockOpen && (
+        <ReasonDialog
+          title="Mark as blocked"
+          subtitle={activeTask.title}
+          label="What is it waiting on?"
+          placeholder="Device allocation pending"
+          withDate
+          confirmLabel="Mark as blocked"
+          busy={blockBusy}
+          error={blockError}
+          onClose={() => {
+            setBlockOpen(false);
+            setBlockError(null);
+          }}
+          onSubmit={({ reason, expectedAt }) => void blockTask(activeTask.id, reason, expectedAt)}
+        />
+      )}
+
+      {activeTask?.blocker && resolveOpen && (
+        <ReasonDialog
+          title="Resolve blocker"
+          subtitle={`${activeTask.title} — ${activeTask.blocker.reason}`}
+          label="What changed?"
+          placeholder="Laptop arrived and was handed over"
+          required={false}
+          confirmLabel="Resolve"
+          busy={blockBusy}
+          error={blockError}
+          onClose={() => {
+            setResolveOpen(false);
+            setBlockError(null);
+          }}
+          onSubmit={({ reason }) =>
+            void resolveBlocker(activeTask.blocker.id, reason || undefined)
+          }
+        />
       )}
 
       {showAssignModal && (

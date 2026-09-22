@@ -1,9 +1,10 @@
-import { Controller, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { BlockersService } from './blockers.service';
+import { ResolveBlockerDto } from './dto/resolve-blocker.dto';
 
 /**
  * Resolving is addressed by BLOCKER id, not task id — a task can be
@@ -23,8 +24,9 @@ export class BlockersController {
   @Post(':id/resolve')
   resolve(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ResolveBlockerDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.blockersService.resolve(id, user);
+    return this.blockersService.resolve(id, user, dto);
   }
 }
