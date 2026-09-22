@@ -1,4 +1,65 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+/* ==================================================================
+   DESIGN TOKENS — the shared list. See frontend/DESIGN.md.
+   Everything below this block is legacy and being migrated page by
+   page; the --color-* / --space-* / --text-* set further down still
+   backs most of the app, so these names are deliberately distinct
+   rather than overriding it mid-migration. Sizes are --fs-* for that
+   reason: --text-xs and friends are already taken down there.
+   ================================================================== */
+:root {
+  /* --- Colour ------------------------------------------------- */
+  /* One amber. The codebase currently holds 20 near-identical
+     oranges (#e8930c, #df8417, #e87a24, …) — all of them become this. */
+  --accent: #e88f30;
+
+  /* Warm, not neutral: the surface is cream, so a true grey reads
+     faintly blue against it. 1 lightest → 6 darkest. */
+  --grey-1: #fbf9f4;
+  --grey-2: #f4efe6;
+  --grey-3: #ece3d3;
+  --grey-4: #b8ad9c;
+  --grey-5: #6f6558;
+  --grey-6: #1a1611;
+
+  --bg: var(--grey-1);
+  --surface: #ffffff;
+  --text: var(--grey-6);
+  --text-muted: var(--grey-5);
+  --border: var(--grey-3);
+  --danger: #c94a3c;
+  --success: #2f8f5b;
+
+  /* --- Spacing -------------------------------------------------- */
+  /* 4/8 based. There is no 12 on purpose — "13px here, 14px there"
+     is the problem this scale exists to remove. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 16px;
+  --s-4: 24px;
+  --s-5: 32px;
+  --s-6: 48px;
+  --s-7: 64px;
+  --s-8: 96px;
+
+  /* --- Type ----------------------------------------------------- */
+  --font-heading: 'Playfair Display', Georgia, serif;
+  --font-body: 'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --fs-xs: 12px;
+  --fs-sm: 14px;
+  --fs-md: 16px;
+  --fs-lg: 20px;
+  --fs-xl: 24px;
+  --fs-2xl: 32px;
+
+  /* --- Radius & shadow ------------------------------------------ */
+  --radius: 12px;
+  --radius-full: 999px;
+  --shadow: 0 6px 16px -4px rgba(26, 22, 17, 0.1), 0 2px 6px -2px rgba(26, 22, 17, 0.06);
+  --shadow-raised: 0 20px 40px -12px rgba(26, 22, 17, 0.18);
+}
 
 /* Ocean banner time slider thumb */
 input[type="range"]::-webkit-slider-thumb {
@@ -253,312 +314,1362 @@ button.danger:hover:not(:disabled) {
 }
 
 /* --- Auth --- */
-.auth-page {
+/* The sign-in screen doesn't wear the app shell, so it carries its own
+   palette here rather than bending the global tokens for one route.
+   Values come from the "Login — variant B" artboard. */
+.login-stage {
+  --lb-bg: #f3efe7;
+  --lb-ink: #141414;
+  --lb-muted: #3a3a3a;
+  --lb-accent: #e8a863;
+  --lb-accent-deep: #b8701a;
+  --lb-line: #cfc8b9;
+  --lb-sand: #f7dba0;
+  --lb-peach: #fadcb8;
+  /* One quote's turn on screen — must match QUOTE_MS in Login.tsx. */
+  --lb-quote: 5.6s;
+  /* One turn of the payment rail; every rail keyframe is a slice of it. */
+  --lb-rail: 6.6s;
+  /* One turn of the left/right conversation. The scribbles and comment
+     boxes on one side move through their half of this and hold still
+     through the other, so the two sides take turns rather than all
+     moving at once. */
+  --lb-phase: 13s;
+
   position: relative;
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* The bottom step absorbs the drop on .login-main, so the page still
+     fits a 900px viewport without a scrollbar. */
+  padding: 42px 24px 50px;
+  background: var(--lb-bg);
+  font-family: 'Archivo', system-ui, -apple-system, sans-serif;
+  color: var(--lb-ink);
   overflow: hidden;
-  background:
-    radial-gradient(600px 400px at 15% 15%, rgba(240, 166, 83, 0.16), transparent 60%),
-    radial-gradient(500px 380px at 85% 85%, rgba(240, 166, 83, 0.12), transparent 60%),
-    var(--color-bg);
 }
 
-.auth-page--split {
-  gap: 3rem;
-  padding: 3rem 1.5rem;
-}
-
-/* The network draws only particles/connections — no fill of its own —
-   so the gradient above stays exactly what's visible behind it. */
-.particle-network {
-  position: fixed;
+/* Ambient washes, behind everything. */
+.login-wash {
+  position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(760px 520px at 78% 30%, rgba(245, 185, 124, 0.42), transparent 66%),
+    radial-gradient(620px 460px at 16% 72%, rgba(247, 219, 160, 0.38), transparent 64%),
+    radial-gradient(520px 420px at 52% 6%, rgba(201, 208, 110, 0.2), transparent 68%);
+}
+.login-orb {
+  position: absolute;
+  border-radius: 50%;
   pointer-events: none;
 }
-.auth-illustration,
-.auth-panel {
-  position: relative;
-  z-index: 1;
+.login-orb--amber {
+  left: 54px;
+  top: 210px;
+  width: 280px;
+  height: 280px;
+  background: radial-gradient(circle, rgba(245, 185, 124, 0.35), transparent 68%);
+  filter: blur(6px);
+  animation: lbDrift 13.64s linear infinite;
+}
+.login-orb--olive {
+  right: 120px;
+  top: 120px;
+  width: 320px;
+  height: 320px;
+  /* Was an olive green, which read as a dirty shadow behind the
+     figure rather than as light. Warm, like the amber one. */
+  background: radial-gradient(circle, rgba(244, 199, 143, 0.3), transparent 66%);
+  filter: blur(8px);
+  animation: lbDriftB 16.12s linear infinite;
 }
 
-.auth-illustration {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  max-width: 560px;
-  flex: 1;
+/* --- Scattered line art ---------------------------------------------
+   A fixed 900px band centred vertically, so the composition holds its
+   proportions the way the artboard drew it; left-hand pieces anchor to
+   the left edge and right-hand pieces to the right, so the card in the
+   middle can stay centred at any width. Hidden entirely once the card
+   would start colliding with it. */
+.login-scatter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 900px;
+  margin-top: -414px;
+  pointer-events: none;
+  color: var(--lb-ink);
 }
-@media (min-width: 960px) {
-  .auth-illustration {
-    display: flex;
+@media (max-width: 1180px) {
+  .login-scatter {
+    display: none;
   }
 }
-.auth-illustration__svg {
+
+/* Clears the bottom of the card — the horizon has to run behind the
+   composition, not across the form. */
+.login-hr {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 732px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--lb-line) 12%, var(--lb-line) 88%, transparent);
+}
+/* The horizon can't drift without breaking the thing every other shape
+   stands on, so it gets a light running along it instead. */
+.login-hr::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(90deg, transparent, rgba(232, 168, 99, 0.95), transparent);
+  background-repeat: no-repeat;
+  background-size: 260px 100%;
+  animation: lbHrRun 9.92s linear infinite;
+}
+
+.login-doodle {
+  position: absolute;
+  /* The strokes are the one thing that still waits — they fade in at
+     1s, then their draw cycle picks up at 1.5s where this lands. */
+  animation: lbFadeUp 0.5s ease 1s both;
+}
+.login-doodle--squiggleL { left: 140px; top: 206px; }
+.login-doodle--scribbleL { left: 138px; top: 486px; }
+/* Up beside .login-note--up; the closing circle stays by the figure. */
+.login-doodle--scribbleR { right: 58px; top: 34px; }
+.login-doodle--loop { right: 62px; top: 150px; }
+.login-doodle--spark {
+  right: 26px;
+  top: 296px;
+  stroke: var(--lb-accent);
+  animation:
+    lbFadeUp 0.5s ease 1s both,
+    lbTick 1.86s linear 1.5s infinite;
+}
+
+/* Everything outside the scatter (the squiggle under "Sign in") keeps
+   its own continuous draw. */
+.login-draw {
+  animation: lbDrawLine 3.52s linear infinite;
+}
+/* Left half of the turn. */
+.login-doodle--squiggleL .login-draw,
+.login-doodle--scribbleL .login-draw,
+.login-tile .login-draw {
+  animation: lbDrawL var(--lb-phase) linear 1.5s infinite;
+}
+/* Right half. */
+.login-doodle--loop .login-draw,
+.login-doodle--scribbleR .login-draw {
+  animation: lbDrawR var(--lb-phase) linear 1.5s infinite;
+}
+
+.login-ring {
+  position: absolute;
+  border: 1.4px solid var(--lb-ink);
+  border-radius: 50%;
+}
+.login-ring--a { left: 338px; top: 232px; width: 10px; height: 10px; animation: lbFloatY 4.34s linear infinite; }
+.login-ring--b { left: 402px; top: 466px; width: 12px; height: 12px; animation: lbFloatYb 4.96s linear infinite; }
+.login-ring--c { right: 143px; top: 326px; width: 11px; height: 11px; animation: lbBobB 5.89s linear infinite; }
+.login-ring--d { right: 468px; top: 470px; width: 13px; height: 13px; animation: lbFloatY 4.03s linear infinite; }
+.login-dot {
+  position: absolute;
+  left: 98px;
+  top: 418px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lb-accent);
+  animation:
+    lbTick 3.1s linear infinite, lbBobD 8.06s linear infinite;
+}
+
+/* Frosted "note" rectangles with two ruled lines and a tick tail. */
+.login-note {
+  position: absolute;
+  width: 116px;
+  height: 70px;
+  border: 1.4px solid var(--lb-ink);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.42);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+/* Entrance, then straight into a perpetual drift — the second animation
+   is delayed by exactly the length of the first so it picks up where
+   the entrance lands. Both touch `transform`, and the later one in the
+   list wins once it is running, so they hand over rather than fight. */
+/* All three are the same box; only where they sit differs. */
+.login-note--left {
+  left: 178px;
+  top: 300px;
+  animation:
+    lbFadeUp 0.5s ease both, lbPhaseL var(--lb-phase) linear 1.5s infinite;
+}
+.login-note--right .login-note__line,
+.login-note--up .login-note__line {
+  animation-name: lbTypeR;
+}
+.login-note--right {
+  right: 300px;
+  top: 548px;
+  animation:
+    lbFadeUp 0.5s ease both, lbPhaseR var(--lb-phase) linear 1.5s infinite;
+}
+.login-note__line {
+  position: absolute;
+  left: 20px;
+  top: 25px;
+  height: 1.4px;
+  background: var(--lb-ink);
+  transform-origin: left center;
+  animation: lbTypeL var(--lb-phase) linear 1.5s infinite;
+}
+/* Same column as .login-note--right, stacked above the figure. */
+.login-note--up {
+  right: 300px;
+  top: 16px;
+  animation:
+    lbFadeUp 0.5s ease both, lbPhaseRb var(--lb-phase) linear 1.5s infinite;
+}
+.login-note__line--short {
+  top: 44px;
+}
+
+/* Dot-screened colour panels, the anchor weight at the bottom corners. */
+/* A dotted slab with a rooftop: a flat roof deck across most of the top
+   and a lift housing standing on it, offset left so it overhangs the
+   deck's edge. Both are plain — the dots stay on the body, where they
+   read as windows; roof structures don't have any. */
+/* Just the frame the three buildings stand in. */
+.login-panel {
+  position: absolute;
+  box-sizing: border-box;
+  /* Stands ON the horizon: .login-hr is at top 732 of the 900px scatter,
+     i.e. 168 up from its bottom, so both anchor to that number and move
+     together whatever the viewport does. */
+  bottom: 167px;
+}
+/* The façade.
+
+   Five windows as positioned, non-repeating background layers rather
+   than a repeating tile: the ground floor has a door where its middle
+   window would be, and a tile can't skip a cell. One SVG serves all
+   five — the taller centre window is the same artwork at a larger
+   background-size. */
+.login-bldg {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 120px;
+  height: 164px;
+  box-sizing: border-box;
+  border: 2.5px solid rgba(255, 255, 255, 0.92);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background-color: var(--lb-peach);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='38'%3E%3Crect x='2' y='0.5' width='20' height='33' fill='%233b2c1c' fill-opacity='.62'/%3E%3Cg fill='%23fff' fill-opacity='.9'%3E%3Crect x='11.6' y='0.5' width='0.9' height='33'/%3E%3Crect x='2' y='8.5' width='20' height='0.9'/%3E%3Crect x='2' y='16.5' width='20' height='0.9'/%3E%3Crect x='2' y='24.5' width='20' height='0.9'/%3E%3Crect x='0' y='34' width='24' height='2.4' rx='1'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='38'%3E%3Crect x='2' y='0.5' width='20' height='33' fill='%233b2c1c' fill-opacity='.62'/%3E%3Cg fill='%23fff' fill-opacity='.9'%3E%3Crect x='11.6' y='0.5' width='0.9' height='33'/%3E%3Crect x='2' y='8.5' width='20' height='0.9'/%3E%3Crect x='2' y='16.5' width='20' height='0.9'/%3E%3Crect x='2' y='24.5' width='20' height='0.9'/%3E%3Crect x='0' y='34' width='24' height='2.4' rx='1'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='38'%3E%3Crect x='2' y='0.5' width='20' height='33' fill='%233b2c1c' fill-opacity='.62'/%3E%3Cg fill='%23fff' fill-opacity='.9'%3E%3Crect x='11.6' y='0.5' width='0.9' height='33'/%3E%3Crect x='2' y='8.5' width='20' height='0.9'/%3E%3Crect x='2' y='16.5' width='20' height='0.9'/%3E%3Crect x='2' y='24.5' width='20' height='0.9'/%3E%3Crect x='0' y='34' width='24' height='2.4' rx='1'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='38'%3E%3Crect x='2' y='0.5' width='20' height='33' fill='%233b2c1c' fill-opacity='.62'/%3E%3Cg fill='%23fff' fill-opacity='.9'%3E%3Crect x='11.6' y='0.5' width='0.9' height='33'/%3E%3Crect x='2' y='8.5' width='20' height='0.9'/%3E%3Crect x='2' y='16.5' width='20' height='0.9'/%3E%3Crect x='2' y='24.5' width='20' height='0.9'/%3E%3Crect x='0' y='34' width='24' height='2.4' rx='1'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='38'%3E%3Crect x='2' y='0.5' width='20' height='33' fill='%233b2c1c' fill-opacity='.62'/%3E%3Cg fill='%23fff' fill-opacity='.9'%3E%3Crect x='11.6' y='0.5' width='0.9' height='33'/%3E%3Crect x='2' y='8.5' width='20' height='0.9'/%3E%3Crect x='2' y='16.5' width='20' height='0.9'/%3E%3Crect x='2' y='24.5' width='20' height='0.9'/%3E%3Crect x='0' y='34' width='24' height='2.4' rx='1'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 24px 38px, 30px 47px, 24px 38px, 24px 38px, 24px 38px;
+  background-position:
+    left 11px top 14px,
+    center top 8px,
+    right 11px top 14px,
+    left 11px top 98px,
+    right 11px top 98px;
+  box-shadow: 0 26px 50px -34px rgba(20, 20, 20, 0.4);
+}
+/* Cornice over the wall. Full width — the parapet paints over its
+   middle, which leaves a cap either side, as in the reference. */
+.login-bldg::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  right: -7px;
+  bottom: 100%;
+  height: 9px;
+  box-sizing: border-box;
+  border: 2.5px solid rgba(255, 255, 255, 0.92);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background-color: var(--lb-peach);
+}
+/* Plinth. */
+.login-bldg::after {
+  content: '';
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  bottom: 0;
+  height: 8px;
+  border-radius: 2px 2px 0 0;
+  background: rgba(255, 255, 255, 0.85);
+}
+/* The raised centre section. Overlaps the wall's cornice by 4px so that
+   cornice's top border doesn't rule a line across its base. */
+.login-bldg__top {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(100% + 5px);
+  width: 46px;
+  height: 26px;
+  box-sizing: border-box;
+  border: 2.5px solid rgba(255, 255, 255, 0.92);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background-color: var(--lb-peach);
+}
+.login-bldg__top::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  bottom: 100%;
+  height: 9px;
+  box-sizing: border-box;
+  border: 2.5px solid rgba(255, 255, 255, 0.92);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background-color: var(--lb-peach);
+}
+/* String course dividing the two storeys. */
+.login-bldg__band {
+  position: absolute;
+  left: -4px;
+  right: -4px;
+  top: 66px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.85);
+}
+/* The door, standing on the plinth where the ground floor's middle
+   window would otherwise be. */
+.login-bldg__door {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 8px;
+  width: 30px;
+  height: 54px;
+  box-sizing: border-box;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background:
+    linear-gradient(to right, transparent calc(50% - 0.5px), rgba(255, 255, 255, 0.85) calc(50% - 0.5px), rgba(255, 255, 255, 0.85) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    rgba(255, 255, 255, 0.5);
+}
+
+/* These are the heaviest shapes on the page, so they drift slowest. The
+   dot screen pans a single grid cell on its own cycle, which keeps the
+   panel alive even at the ends of the drift where it is barely moving. */
+.login-panel--peach {
+  right: 58px;
+  width: 120px;
+  height: 208px;
+  /* No fill of its own — it used to be the building, and leaving the
+     peach on showed as a slab behind the three blocks, filling the gaps
+     between them and the space above the shorter wings. */
+  animation:
+    lbFadeUp 0.5s ease both, lbBobD 8.68s linear infinite;
+}
+
+
+.login-tile {
+  position: absolute;
+  left: 352px;
+  /* Same horizon anchor as .login-panel. */
+  bottom: 167px;
+  width: 92px;
+  height: 92px;
+  border: 1.4px solid var(--lb-ink);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.66);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation:
+    lbFadeUp 0.5s ease both, lbTilt 7.44s linear infinite;
+}
+.login-tile svg {
+  width: 42px;
+  height: 52px;
+}
+
+.login-figure {
+  position: absolute;
+  right: 190px;
+  top: 102px;
+  width: 208px;
+  height: 300px;
+  /* The source PNG carries a stray opaque block in columns 0-9 (rows
+     380-449 of 360x520) with nothing between it and the figure, which
+     rendered as a white bar beside her. Clipping 11 source px off the
+     left drops it and touches nothing else. */
+  clip-path: inset(0 0 0 3.1%);
+  filter: drop-shadow(0 22px 28px rgba(20, 20, 20, 0.1));
+  animation: lbFloatSoft 3.02s linear infinite;
+}
+
+/* --- Header ----------------------------------------------------- */
+.login-head {
+  position: relative;
+  z-index: 3;
   width: 100%;
-  max-width: 480px;
+  /* Pulled up and out into the corner. .login-main takes the 16px back
+     as padding, so only the wordmark moves — the card stays put. */
+  margin: -16px 0 8px -8px;
+}
+.login-logo {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+.login-logo__mark {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
   overflow: visible;
 }
-.auth-illustration__caption {
-  margin-top: 1.5rem;
-  text-align: center;
-  max-width: 380px;
+.login-logo__word {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
-.auth-illustration__caption h2 {
-  font-family: 'Manrope', 'Outfit', sans-serif;
-  font-size: 1.4rem;
-  margin-bottom: 0.4rem;
+/* --- Payment rail ------------------------------------------------ */
+/* Lifted out of the column so it sits on the wordmark's line rather
+   than pushing the card down: the stage centres it, the top offset
+   lands the coin row level with "AndOnboard". */
+.login-rail {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  width: 330px;
+  height: 93px;
 }
-.auth-illustration__caption p {
-  color: var(--color-muted);
-  margin: 0;
+@media (max-width: 1120px) {
+  .login-rail {
+    display: none;
+  }
+}
+.login-rail text {
+  font-family: inherit;
+}
+/* In viewBox units: the rail renders at ~0.67 scale, so this lands at
+   about 11px on screen. */
+.login-rail__cap {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.login-rail__cap--send {
+  fill: var(--lb-muted);
+  animation: lbRailCapSend var(--lb-rail) linear infinite;
+}
+.login-rail__cap--ok {
+  fill: #2f8f5b;
+  animation: lbRailCapOk var(--lb-rail) linear infinite;
 }
 
-.marching-ants {
-  stroke-dasharray: 12 12;
-  animation: dash 20s linear infinite;
+.login-rail__wire {
+  stroke: var(--lb-ink);
+  stroke-width: 1.4;
+  stroke-dasharray: 3 5;
+  opacity: 0.35;
 }
-@keyframes dash {
-  to { stroke-dashoffset: -1000; }
+.login-rail__wire--in,
+.login-rail__wire--out {
+  stroke-dasharray: 118;
+  opacity: 0;
 }
-.float-bob {
-  animation: bob 4s ease-in-out infinite;
+.login-rail__wire--in {
+  stroke: var(--lb-accent-deep);
+  animation: lbRailWireIn var(--lb-rail) linear infinite;
 }
-@keyframes bob {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-15px); }
+.login-rail__wire--out {
+  stroke: #2f8f5b;
+  animation: lbRailWireOut var(--lb-rail) linear infinite;
 }
-.pulse-shimmer {
-  animation: pulse-shimmer 3s ease-in-out infinite;
-  /* fill-box, or `center` below means the centre of the SVG's viewBox rather
-     than of this group. That is the default for SVG (transform-box: view-box)
-     and it is why this read as dead: the badge sits at x=120 in a 600-wide
-     viewBox, so scaling about x=300 slid it 7px sideways while growing it
-     barely 2 — a drift, swallowed whole by the parent's 15px bob, rather than
-     a pulse. */
+
+.login-rail__halo {
+  fill: var(--lb-accent);
+  opacity: 0.16;
+}
+.login-rail__halo--ok {
+  fill: #2f8f5b;
+  opacity: 0;
   transform-box: fill-box;
   transform-origin: center;
+  animation: lbRailHalo var(--lb-rail) linear infinite;
 }
-@keyframes pulse-shimmer {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.85; transform: scale(1.05); }
+.login-rail__ring {
+  fill: none;
+  stroke: var(--lb-ink);
+  stroke-width: 1.4;
 }
-.slide-in-up {
-  animation: slideInUp 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards, bob 4s ease-in-out infinite 1.2s;
-  opacity: 0;
-  transform: translateY(20px);
+.login-rail__ring--target {
+  animation: lbRailRing var(--lb-rail) linear infinite;
 }
-@keyframes slideInUp {
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.auth-panel {
-  width: 100%;
-  max-width: 420px;
-  flex-shrink: 0;
-}
-.auth-brand {
-  text-align: center;
-  margin-bottom: 1.75rem;
-}
-.auth-brand h1 {
-  font-family: 'Manrope', 'Outfit', sans-serif;
-  font-size: 2rem;
-  background: var(--gradient-accent);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  margin-bottom: 0.35rem;
-}
-.auth-brand p {
-  color: var(--color-muted);
-  margin: 0;
-  font-size: 1rem;
-}
-
-.auth-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 2.25rem;
-  width: 100%;
-  animation: scaleIn 0.35s var(--ease);
-  transition: box-shadow 0.3s var(--ease);
-}
-.auth-card:hover {
-  box-shadow: 0 24px 48px -12px rgba(26, 22, 17, 0.2);
-}
-.auth-card h1 {
-  background: var(--gradient-accent);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.auth-tabs {
-  display: flex;
-  gap: 0.4rem;
-  margin-bottom: 1.25rem;
-}
-.auth-tabs button {
-  flex: 1;
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
-  padding: 0.55rem 0.5rem;
-}
-.auth-tabs button.active {
-  background: var(--gradient-dark);
-  border-color: transparent;
-  color: white;
-}
-
-.auth-underline-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--color-border);
-  margin-bottom: 1.5rem;
-}
-.auth-underline-tabs button {
-  flex: 1;
-  border: none;
-  border-radius: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  padding-bottom: 0.9rem;
-  font-size: 0.85rem;
-  color: var(--color-muted);
-  margin-bottom: -1px;
-}
-.auth-underline-tabs button:hover:not(:disabled) {
-  color: var(--color-accent);
-  transform: none;
-  box-shadow: none;
-}
-.auth-underline-tabs button.active {
-  color: var(--color-accent-dark);
+.login-rail__rupee {
+  font-size: 21px;
   font-weight: 700;
-  border-bottom-color: var(--color-accent);
+  fill: var(--lb-accent-deep);
+}
+.login-rail__coin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: lbRailSend var(--lb-rail) linear infinite;
 }
 
-.auth-step-hint {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 0.9rem;
+.login-rail__spark {
+  fill: var(--lb-accent-deep);
+  opacity: 0;
 }
-.auth-submit {
+.login-rail__spark--in {
+  animation: lbRailSparkIn var(--lb-rail) linear infinite;
+}
+.login-rail__spark--out {
+  fill: #2f8f5b;
+  animation: lbRailSparkOut var(--lb-rail) linear infinite;
+}
+
+.login-rail__device {
+  fill: rgba(255, 255, 255, 0.6);
+  stroke: var(--lb-ink);
+  stroke-width: 1.4;
+}
+.login-rail__screen {
+  fill: rgba(255, 255, 255, 0.82);
+  stroke: var(--lb-ink);
+  stroke-width: 0.9;
+  opacity: 0.9;
+}
+.login-rail__notch {
+  fill: var(--lb-ink);
+  opacity: 0.82;
+}
+.login-rail__side {
+  fill: var(--lb-ink);
+  opacity: 0.45;
+}
+/* Dummy rows either side of the settlement bar, so the screen reads as
+   a screen rather than as one floating line. */
+.login-rail__ui {
+  stroke: var(--lb-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.16;
+}
+.login-rail__home {
+  stroke: var(--lb-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.32;
+}
+.login-rail__box {
+  fill: rgba(255, 255, 255, 0.7);
+  stroke: var(--lb-ink);
+  stroke-width: 1.3;
+}
+.login-rail__check {
+  fill: none;
+  stroke: #2f8f5b;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 14;
+  animation: lbRailTick var(--lb-rail) linear infinite;
+}
+.login-rail__rule {
+  stroke: var(--lb-ink);
+  stroke-width: 5;
+  stroke-linecap: round;
+  opacity: 0.16;
+}
+/* The trail: writes itself over the faint base line, and the box at its
+   right-hand end ticks the moment it lands. */
+.login-rail__rule--draw {
+  stroke: var(--lb-accent-deep);
+  opacity: 0.85;
+  stroke-dasharray: 29;
+  stroke-dashoffset: 29;
+  animation: lbRailTrail var(--lb-rail) linear infinite;
+}
+.login-rail__form {
+  opacity: 0;
+  animation: lbRailForm var(--lb-rail) linear infinite;
+}
+.login-rail__hub {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: lbRailHub var(--lb-rail) linear infinite;
+}
+
+.login-rail__mark {
+  fill: none;
+  stroke: #2f8f5b;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 29;
+  animation: lbRailMark var(--lb-rail) linear infinite;
+}
+/* Sits under the animated tick so the target reads as "awaiting"
+   rather than as an empty ring for most of the cycle. */
+.login-rail__mark--idle {
+  stroke: var(--lb-ink);
+  opacity: 0.28;
+  stroke-dasharray: none;
+  animation: none;
+}
+
+/* Equal air above and below the description, so the three lines read as
+   one block rather than as a wordmark with a caption stuck under it. */
+.login-head__rule {
+  display: block;
+  width: 130px;
+  height: 1.4px;
+  margin: 12px 0 0;
+  background: var(--lb-ink);
+}
+.login-head__line {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  color: var(--lb-muted);
+}
+
+/* --- Card ------------------------------------------------------- */
+.login-main {
+  position: relative;
+  z-index: 2;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  /* Sits the card clear of the rail, which now runs along the wordmark's
+     line rather than in the column. The extra 16 offsets the negative
+     top margin on .login-head. */
+  padding-top: 52px;
+}
+/* Registered so it can be animated at all — a plain custom property
+   interpolates as a string and the gradient would jump, not turn.
+   It inherits, so one animation on the wrapper drives both the crisp
+   ring on the card and the blurred glow behind it, in step. */
+@property --lb-spin {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 0deg;
+}
+.login-cardwrap {
+  position: relative;
+  width: min(430px, 100%);
+  animation: lbCardSpin 4.6s linear infinite;
+}
+/* The glow. Lives on the wrapper because the card's backdrop-filter
+   makes a stacking context a z-index:-1 pseudo-element can't get
+   behind. Only the 15px band outside the card survives: the card is
+   frosted glass, so an unmasked blur shows straight through it and
+   washes out the form. Masking runs after filtering, so cutting the
+   middle out here also removes the blur's inward spread. */
+.login-cardwrap::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  box-sizing: border-box;
+  padding: 8px;
+  border-radius: 36px;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  background: conic-gradient(
+    from var(--lb-spin),
+    transparent 0deg,
+    var(--lb-sand) 26deg,
+    var(--lb-accent) 58deg,
+    var(--lb-accent-deep) 84deg,
+    var(--lb-accent) 110deg,
+    transparent 150deg,
+    transparent 360deg
+  );
+  filter: blur(6px);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 60px 44px 46px;
+  border-radius: 28px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.52));
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
+  backdrop-filter: blur(26px) saturate(150%);
+  box-shadow:
+    0 44px 96px -50px rgba(20, 20, 20, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  /* No delay, unlike the decoration. The scatter waits 1s by design;
+     the card doing the same left the form invisible for a full second
+     after load, which reads as the page being slow rather than as an
+     entrance. */
+  animation: lbFadeUp 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+/* Ring: a full-bleed conic gradient with its middle masked out, so only
+   a 1.6px band of it survives along the card's edge. */
+.login-card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: 29px;
+  padding: 1.1px;
+  background: conic-gradient(
+    from var(--lb-spin),
+    transparent 0deg,
+    rgba(255, 255, 255, 0.9) 22deg,
+    var(--lb-accent) 56deg,
+    var(--lb-accent-deep) 82deg,
+    var(--lb-accent) 108deg,
+    transparent 152deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+@keyframes lbCardSpin {
+  to { --lb-spin: 360deg; }
+}
+/* 50px of gutter is most of a phone's width once the field's icon and
+   eye button are taken out — the placeholder starts truncating. */
+@media (max-width: 520px) {
+  .login-card {
+    padding: 36px 24px 28px;
+  }
+}
+.login-title {
+  margin: 0;
+  text-align: center;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+.login-underline {
+  display: block;
+  margin: 8px auto 0;
+  stroke: var(--lb-accent);
+}
+.login-lede {
+  margin: 16px auto 28px;
+  max-width: 292px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--lb-muted);
+  text-wrap: pretty;
 }
 
-.input-icon-group {
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.login-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lb-muted);
+}
+.login-input {
   display: flex;
   align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  gap: 12px;
+  height: 54px;
+  padding: 0 18px;
+  border: 1px solid rgba(20, 20, 20, 0.12);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.62);
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
-.input-icon-group:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(232, 143, 48, 0.15);
+/* The marker at the right of the Joinee ID field. Always an 18px ring,
+   so the field's contents never reflow as the state changes — only
+   what's drawn inside the ring does. */
+.login-mark {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid rgba(20, 20, 20, 0.22);
+  border-radius: 50%;
+  color: transparent;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
 }
-.input-icon-group > .material-symbols-outlined {
-  padding-left: 0.75rem;
-  font-size: 20px;
-  color: var(--color-muted);
+.login-mark svg {
+  width: 13px;
+  height: 13px;
 }
-.input-icon-group:focus-within > .material-symbols-outlined {
-  color: var(--color-accent);
+.login-mark--checking {
+  border-color: var(--lb-accent-deep);
+  border-right-color: transparent;
+  animation: lbMarkSpin 0.7s linear infinite;
 }
-.input-icon-group input {
+.login-mark--found {
+  border-color: #2f8f5b;
+  background: rgba(47, 143, 91, 0.12);
+  color: #2f8f5b;
+}
+.login-mark--missing,
+.login-mark--unavailable {
+  border-color: #b8701a;
+  background: rgba(184, 112, 26, 0.12);
+  color: #b8701a;
+}
+@keyframes lbMarkSpin {
+  to { transform: rotate(360deg); }
+}
+/* Sits under the field, in the caution colour rather than --danger: an
+   unrecognised ID is something to check, not an error already made.
+   The row is always present and usually empty — see the note in
+   Login.tsx about why it isn't rendered conditionally. */
+.login-note-line {
+  margin: 6px 2px 0;
+  min-height: 17px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #9a5a14;
+}
+
+.login-input:focus-within {
+  border-color: var(--lb-ink);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 4px rgba(20, 20, 20, 0.06);
+}
+.login-input.is-invalid {
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 4px rgba(201, 74, 60, 0.12);
+}
+.login-input__icon {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  color: #9a9384;
+}
+.login-input:focus-within .login-input__icon {
+  color: var(--lb-ink);
+}
+.login-input input {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
-  padding: 0.6rem 0.75rem;
-  min-width: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 14.5px;
+  color: var(--lb-ink);
 }
-.input-icon-group input:focus {
+.login-input input::placeholder {
+  color: #9a9384;
+}
+.login-input input:focus {
   outline: none;
-  box-shadow: none;
+}
+.login-eye {
+  flex-shrink: 0;
+  display: flex;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: #9a9384;
+  cursor: pointer;
+}
+.login-eye svg {
+  width: 18px;
+  height: 18px;
+}
+.login-eye:hover {
+  color: var(--lb-accent-deep);
 }
 
-.auth-card form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+.login-step-hint {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--lb-muted);
 }
-.auth-card label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: var(--color-muted);
-}
-.auth-card input {
-  padding: 0.6rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 0.95rem;
+
+.login-submit {
+  position: relative;
+  overflow: hidden;
+  width: 250px;
+  max-width: 100%;
+  align-self: center;
+  height: 42px;
+  margin-top: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8c48c, #f0a65c);
+  color: var(--lb-ink);
   font-family: inherit;
-  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 20px 40px -22px rgba(210, 130, 50, 0.9);
+  transition: transform 0.16s, box-shadow 0.2s;
 }
-.auth-card input:focus {
-  outline: none;
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(232, 143, 48, 0.15);
+.login-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 26px 46px -22px rgba(210, 130, 50, 1);
 }
-.auth-card button[type='submit'] {
-  padding: 0.7rem;
-  border-radius: var(--radius-pill);
+.login-submit:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
-.password-field {
-  display: flex;
-  gap: 0.4rem;
+.login-submit__sheen {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: lbSweep 3.1s ease-in-out infinite;
 }
-.password-field input {
-  flex: 1;
+
+.login-alert {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
 }
-.phone-input-group {
+.login-alert--error {
+  background: rgba(201, 74, 60, 0.12);
+  border-color: rgba(201, 74, 60, 0.38);
+  color: var(--color-danger-ink);
+}
+.login-alert--ok {
+  background: rgba(47, 143, 91, 0.12);
+  border-color: rgba(47, 143, 91, 0.38);
+  color: var(--color-success-ink);
+}
+
+.login-footnote {
+  margin: 24px 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--lb-muted);
+}
+
+/* --- Quote ------------------------------------------------------
+   Same mechanism as before: a soft band inside a gradient clipped to
+   the glyphs, so the light crosses letters continuously instead of a
+   word at a time. On cream the crest is ink rather than white, and the
+   trough stays at 4.7:1 so the quote is readable at rest. */
+.login-quote {
+  position: relative;
+  z-index: 2;
+  /* Keyed on the author in Login.tsx, so this replays for each new
+     quote as well as on load — the quote arrives rather than being
+     swapped out underneath the reader. */
+  animation: lbFadeUp 0.45s ease both;
+  margin: 74px 0 0;
+  max-width: 460px;
+  text-align: center;
+}
+.login-quote::before {
+  content: '';
+  position: absolute;
+  inset: -14px -24px;
+  pointer-events: none;
+  background-image: radial-gradient(closest-side, rgba(232, 168, 99, 0.42), rgba(232, 168, 99, 0.14) 55%, transparent 78%);
+  background-repeat: no-repeat;
+  background-size: 130px 74px;
+  animation: lbQuoteRun var(--lb-quote) linear infinite;
+}
+.login-quote__text {
+  position: relative;
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.55;
+  color: transparent;
+  background-image: linear-gradient(
+    100deg,
+    #6e6a60 30%,
+    #141414 50%,
+    #6e6a60 70%
+  );
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: lbQuoteShine var(--lb-quote) linear infinite;
+}
+/* Without the clip the transparent fill would simply hide the quote. */
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .login-quote__text {
+    color: var(--lb-muted);
+    background-image: none;
+    animation: none;
+  }
+}
+.login-quote__mark {
+  color: var(--lb-accent-deep);
+}
+.login-quote__by {
+  font-style: italic;
   display: flex;
   align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  transition: border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+  justify-content: center;
+  gap: 9px;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  /* Faded back from the quote, which crests at near-black. No opacity
+     on top: that pushed it to 3.5:1, under the floor for 13px text.
+     The colour alone is the fade, and it holds 4.7:1 on cream. */
+  color: #6e6a60;
 }
-.phone-input-group:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(232, 143, 48, 0.15);
+.login-quote__rule {
+  width: 22px;
+  height: 1.4px;
+  background: var(--lb-accent);
 }
-.phone-prefix {
-  padding: 0.6rem 0 0.6rem 0.75rem;
-  font-size: 0.95rem;
-  color: var(--color-text);
-  white-space: nowrap;
+
+
+/* --- Keyframes --------------------------------------------------- */
+@keyframes lbFadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
 }
-.phone-divider {
-  padding: 0 0.5rem;
-  color: var(--color-border);
+@keyframes lbDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(28px, -34px, 0) scale(1.12); }
 }
-.phone-input-group input {
-  flex: 1;
-  border: none;
-  padding: 0.6rem 0.75rem 0.6rem 0;
-  min-width: 0;
+@keyframes lbDriftB {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.05); }
+  50% { transform: translate3d(-34px, 26px, 0) scale(0.92); }
 }
-.phone-input-group input:focus {
-  outline: none;
-  box-shadow: none;
+@keyframes lbFloatY {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(4px, -6px, 0); }
+  50% { transform: translate3d(0, -11px, 0); }
+  75% { transform: translate3d(-4px, -6px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
-.password-toggle {
-  padding: 0.4rem 0.7rem;
-  font-size: 0.8rem;
-  white-space: nowrap;
+@keyframes lbFloatYb {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-4px, 5px, 0); }
+  50% { transform: translate3d(0, 10px, 0); }
+  75% { transform: translate3d(4px, 5px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
 }
+@keyframes lbFloatSoft {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(3px, -5px, 0); }
+  50% { transform: translate3d(0, -9px, 0); }
+  75% { transform: translate3d(-3px, -5px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+/* Perpetual drifts. Amplitudes stay small and periods long and mutually
+   prime-ish, so nothing ever settles but nothing marches in step either. */
+/* Orbits, not bobs. A two-stop back-and-forth on ease-in-out is
+   motionless at both turning points, and with several of those running
+   the whole scene visibly stalls every few seconds. Going round a small
+   ellipse on a linear timing function means velocity never reaches
+   zero, so nothing is ever caught standing still. */
+@keyframes lbBobA {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25% { transform: translate3d(7px, -5px, 0) rotate(0.6deg); }
+  50% { transform: translate3d(2px, -11px, 0) rotate(0deg); }
+  75% { transform: translate3d(-6px, -5px, 0) rotate(-0.6deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+@keyframes lbBobB {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25% { transform: translate3d(-7px, 4px, 0) rotate(-0.5deg); }
+  50% { transform: translate3d(-2px, 10px, 0) rotate(0deg); }
+  75% { transform: translate3d(6px, 5px, 0) rotate(0.5deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+@keyframes lbBobC {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(5px, -4px, 0); }
+  50% { transform: translate3d(0, -9px, 0); }
+  75% { transform: translate3d(-5px, -4px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes lbBobD {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(6px, 3px, 0); }
+  50% { transform: translate3d(3px, 8px, 0); }
+  75% { transform: translate3d(-4px, 4px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes lbTilt {
+  0% { transform: translate3d(0, 0, 0) rotate(-0.9deg); }
+  25% { transform: translate3d(4px, -5px, 0) rotate(0deg); }
+  50% { transform: translate3d(0, -9px, 0) rotate(1.1deg); }
+  75% { transform: translate3d(-4px, -4px, 0) rotate(0deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(-0.9deg); }
+}
+/* Payment rail, one turn. 0-18% send · 12-30% money in · 31-34% the
+   settlement bar fills · 34-37% it ticks · 37-53% money out · 54-78%
+   approved · 78-100% rest. The bar fills in a sixth of the time the
+   incoming wire takes — settlement is the instant part, and reading it
+   as instant is the whole point of the rail. Both ends stay gated:
+   nothing fills before the money lands at 30%, and nothing moves right
+   before the tick is in at 37%. */
+@keyframes lbRailSend {
+  0%, 4% { transform: scale(1); }
+  10% { transform: scale(1.13); }
+  18%, 100% { transform: scale(1); }
+}
+@keyframes lbRailCapSend {
+  0%, 5% { fill: #8a8375; }
+  12%, 30% { fill: var(--lb-accent-deep); }
+  42%, 100% { fill: #8a8375; }
+}
+@keyframes lbRailWireIn {
+  0%, 12% { stroke-dashoffset: 112; opacity: 0; }
+  14% { opacity: 1; }
+  30% { stroke-dashoffset: 0; opacity: 1; }
+  40% { stroke-dashoffset: 0; opacity: 0; }
+  100% { stroke-dashoffset: 112; opacity: 0; }
+}
+@keyframes lbRailSparkIn {
+  0%, 12% { opacity: 0; transform: translateX(0); }
+  15% { opacity: 1; transform: translateX(5px); }
+  29% { opacity: 1; transform: translateX(107px); }
+  32%, 100% { opacity: 0; transform: translateX(112px); }
+}
+@keyframes lbRailHub {
+  0%, 29% { transform: scale(1); }
+  32% { transform: scale(1.035); }
+  39%, 100% { transform: scale(1); }
+}
+@keyframes lbRailWireOut {
+  0%, 37% { stroke-dashoffset: 110; opacity: 0; }
+  39% { opacity: 1; }
+  53% { stroke-dashoffset: 0; opacity: 1; }
+  69% { stroke-dashoffset: 0; opacity: 0; }
+  100% { stroke-dashoffset: 110; opacity: 0; }
+}
+@keyframes lbRailSparkOut {
+  0%, 37% { opacity: 0; transform: translateX(0); }
+  40% { opacity: 1; transform: translateX(5px); }
+  52% { opacity: 1; transform: translateX(105px); }
+  55%, 100% { opacity: 0; transform: translateX(110px); }
+}
+@keyframes lbRailRing {
+  0%, 52% { stroke: var(--lb-ink); }
+  59%, 94% { stroke: #2f8f5b; }
+  100% { stroke: var(--lb-ink); }
+}
+@keyframes lbRailMark {
+  0%, 52% { stroke-dashoffset: 29; }
+  61%, 96% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 29; }
+}
+@keyframes lbRailHalo {
+  0%, 52% { opacity: 0; transform: scale(0.8); }
+  61% { opacity: 0.2; transform: scale(1); }
+  94%, 100% { opacity: 0; transform: scale(1.16); }
+}
+@keyframes lbRailCapOk {
+  0%, 54% { opacity: 0; }
+  63%, 96% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* The settlement beat, deliberately the fastest thing on the rail. The
+   bar fills only from 30% — the moment the money lands — and the box ticks behind it; the cleared state holds to
+   99% so the turn doesn't end with the tick un-drawing itself. */
+/* The screen's contents arrive with the money at 30% and clear with the
+   turn, so the phone starts blank rather than pre-filled. */
+@keyframes lbRailForm {
+  0%, 27% { opacity: 0; }
+  31%, 96% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes lbRailTrail {
+  0%, 31% { stroke-dashoffset: 29; }
+  34%, 99% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 29; }
+}
+@keyframes lbRailTick {
+  0%, 34% { stroke-dashoffset: 14; }
+  37%, 99% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 14; }
+}
+/* Two halves of --lb-phase. A stroke holds fully drawn while it waits
+   its turn, erases, jumps to the pre-draw offset (invisible at both
+   ends, so the jump can't be seen) and redraws. */
+@keyframes lbDrawL {
+  0%, 3% { stroke-dashoffset: 0; }
+  24% { stroke-dashoffset: -220; }
+  24.01% { stroke-dashoffset: 220; }
+  46%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes lbDrawR {
+  0%, 53% { stroke-dashoffset: 0; }
+  74% { stroke-dashoffset: -220; }
+  74.01% { stroke-dashoffset: 220; }
+  96%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes lbPhaseL {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  12% { transform: translate3d(7px, -5px, 0) rotate(0.6deg); }
+  24% { transform: translate3d(2px, -11px, 0) rotate(0deg); }
+  36% { transform: translate3d(-6px, -5px, 0) rotate(-0.6deg); }
+  46%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+@keyframes lbPhaseR {
+  0%, 52% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  64% { transform: translate3d(-6px, -4px, 0) rotate(-0.5deg); }
+  76% { transform: translate3d(-2px, -10px, 0) rotate(0deg); }
+  88% { transform: translate3d(5px, -4px, 0) rotate(0.5deg); }
+  96%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+}
+/* The second right-hand box drifts down rather than up, so the two
+   don't move as one object. */
+@keyframes lbPhaseRb {
+  0%, 52% { transform: translate3d(0, 0, 0); }
+  66% { transform: translate3d(6px, 3px, 0); }
+  80% { transform: translate3d(3px, 9px, 0); }
+  92% { transform: translate3d(-4px, 4px, 0); }
+  96%, 100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes lbTypeL {
+  0% { transform: scaleX(0.34); }
+  23% { transform: scaleX(1); }
+  46%, 100% { transform: scaleX(0.34); }
+}
+@keyframes lbTypeR {
+  0%, 52% { transform: scaleX(0.34); }
+  74% { transform: scaleX(1); }
+  96%, 100% { transform: scaleX(0.34); }
+}
+@keyframes lbLineType {
+  0% { transform: scaleX(0.34); }
+  50% { transform: scaleX(1); }
+  100% { transform: scaleX(0.34); }
+}
+@keyframes lbDotPan {
+  from { background-position: 8px 10px; }
+  to { background-position: 34px 36px; }
+}
+@keyframes lbHrRun {
+  from { background-position: -260px 0; }
+  to { background-position: calc(100% + 260px) 0; }
+}
+/* Draws in and keeps going out the far side rather than holding at
+   full length — the hold was the single longest stall on the page. */
+@keyframes lbDrawLine {
+  from { stroke-dashoffset: 220; }
+  to { stroke-dashoffset: -220; }
+}
+@keyframes lbTick {
+  0% { opacity: 0.28; }
+  50% { opacity: 1; }
+  100% { opacity: 0.28; }
+}
+@keyframes lbSweep {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+@keyframes lbQuoteShine {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+@keyframes lbQuoteRun {
+  0% { background-position: 0% 50%; opacity: 0; }
+  10%, 88% { opacity: 1; }
+  100% { background-position: 100% 50%; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-card,
+  .login-note,
+  .login-panel,
+  .login-tile,
+  .login-figure,
+  .login-orb,
+  .login-draw,
+  .login-dot,
+  .login-ring,
+  .login-doodle,
+  .login-quote,
+  .login-submit__sheen,
+  .login-quote::before,
+  .login-quote__text,
+  .login-hr::after,
+  .login-note__line,
+  .login-rail__coin,
+  .login-rail__hub,
+  .login-rail__spark,
+  .login-rail__wire--in,
+  .login-rail__wire--out,
+  .login-rail__halo--ok,
+  .login-rail__ring--target,
+  .login-rail__mark,
+  .login-rail__check,
+  .login-rail__rule--draw,
+  .login-rail__form,
+  .login-rail__cap--send,
+  .login-rail__cap--ok {
+    animation: none;
+  }
+  .login-cardwrap { animation: none; }
+  .login-rail__spark { opacity: 0; }
+  .login-rail__ring--target { stroke: #2f8f5b; }
+  .login-rail__mark,
+  .login-rail__rule--draw,
+  .login-rail__check { stroke-dashoffset: 0; }
+  .login-rail__cap--ok,
+  .login-rail__form { opacity: 1; }
+  .login-hr::after { opacity: 0; }
+  /* The ruled line is mid-draw at rest, so give it its width back. */
+  .login-note__line { transform: scaleX(1); }
+  .login-draw { stroke-dashoffset: 0; }
+  .login-submit__sheen { display: none; }
+  .login-quote::before { opacity: 0; }
+  .login-quote__text {
+    color: var(--lb-muted);
+    background-image: none;
+  }
+}
+
 .field-hint {
   font-size: 0.76rem;
   color: var(--color-muted);
@@ -1754,52 +2865,6 @@ li:hover .checkbox-mark {
   letter-spacing: 0.04em;
 }
 
-/* --- Star rating --- */
-.star-rating {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-bottom: 0.75rem;
-}
-.star-btn {
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  font-size: 1.6rem;
-  line-height: 1;
-  padding: 0.1rem;
-  color: var(--color-border);
-  transition: transform 0.15s var(--ease), color 0.15s var(--ease);
-}
-.star-btn:hover:not(:disabled) {
-  transform: scale(1.2);
-  color: var(--color-accent);
-  border-color: transparent;
-  box-shadow: none;
-}
-.star-btn.filled {
-  color: var(--color-accent);
-}
-.rating-saved {
-  margin-left: 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--color-success);
-  animation: fadeInUp 0.2s var(--ease);
-}
-.rating-comment {
-  width: 100%;
-  min-height: 50px;
-  padding: 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-family: inherit;
-  resize: vertical;
-}
-.rating-comment:focus {
-  outline: none;
-  border-color: var(--color-accent);
-}
 
 /* --- Tables --- */
 .data-table {

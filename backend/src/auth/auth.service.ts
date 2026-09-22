@@ -1,5 +1,7 @@
 import {
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -25,6 +27,17 @@ import { TokenService } from './tokens/token.service';
 import { SessionsService, IssuedSession } from './sessions/sessions.service';
 
 const BCRYPT_ROUNDS = 12;
+
+/** Shape of a generated Joinee ID — `JN-<year>-<3+ digits>`, per the
+ *  generate_joinee_id() function in migration 0015. Anything else can
+ *  be rejected without touching the database. */
+const JOINEE_ID_PATTERN = /^JN-\d{4}-\d{3,}$/;
+
+/** The lookup behind the sign-in field's tick is unauthenticated, so it
+ *  is also an account-enumeration oracle. These caps keep it useful for
+ *  a person typing one ID and useless for a script walking the range. */
+const LOOKUP_WINDOW_MS = 60_000;
+const LOOKUP_MAX_PER_WINDOW = 20;
 
 /**
  * The return shape from a successful login. The three raw cookie
@@ -58,6 +71,52 @@ export class AuthService {
     private readonly activityLog: ActivityLogService,
     private readonly sessions: SessionsService,
   ) {}
+
+  /** Per-caller sliding window for joineeIdExists(). In memory, so it
+   *  resets on deploy and is per-instance — enough to blunt a casual
+   *  scrape, not a substitute for a gateway rate limit. */
+  private readonly lookupHits = new Map<string, number[]>();
+
+  /**
+   * Does this Joinee ID exist? Drives the tick / caution marker on the
+   * sign-in field.
+   *
+   * This deliberately answers a question about an account nobody has
+   * authenticated for, which is user enumeration by design. It is
+   * narrowed as far as it can be while still doing its job: the ID
+   * shape is validated before any query runs, the answer is a bare
+   * boolean, and callers are rate limited.
+   */
+  async joineeIdExists(joineeId: string, clientKey: string): Promise<{ exists: boolean }> {
+    const id = joineeId.trim().toUpperCase();
+    if (!JOINEE_ID_PATTERN.test(id)) {
+      // Malformed input is answered without a query, so a scraper can't
+      // use junk to burn through the database rather than the window.
+      return { exists: false };
+    }
+
+    const now = Date.now();
+    const hits = (this.lookupHits.get(clientKey) ?? []).filter(
+      (t) => now - t < LOOKUP_WINDOW_MS,
+    );
+    if (hits.length >= LOOKUP_MAX_PER_WINDOW) {
+      throw new HttpException(
+        'Too many lookups. Wait a moment and try again.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    hits.push(now);
+    this.lookupHits.set(clientKey, hits);
+    // Bounded: without this the map grows one entry per distinct IP for
+    // the life of the process.
+    if (this.lookupHits.size > 5000) {
+      for (const [key, times] of this.lookupHits) {
+        if (times.every((t) => now - t >= LOOKUP_WINDOW_MS)) this.lookupHits.delete(key);
+      }
+    }
+
+    return { exists: await this.usersService.existsByJoineeId(id) };
+  }
 
   async createUser(dto: CreateUserDto, actorId: string) {
     const tempPassword = generateTempPassword();

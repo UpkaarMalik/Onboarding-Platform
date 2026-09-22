@@ -19,7 +19,6 @@ import { OnboardingsService } from './onboardings.service';
 import { CreateOnboardingDto } from './dto/create-onboarding.dto';
 import { ProvisionCompanyEmailDto } from './dto/provision-company-email.dto';
 import { CreateAdHocTaskDto } from './dto/create-ad-hoc-task.dto';
-import { RateExperienceDto } from './dto/rate-experience.dto';
 import { UpdateAssignmentsDto } from './dto/update-assignments.dto';
 
 @Controller('onboardings')
@@ -96,26 +95,6 @@ export class OnboardingsController {
   @Get('me')
   getMine(@CurrentUser() user: AuthenticatedUser) {
     return this.onboardingsService.getMyDashboard(user);
-  }
-
-  // Upsert — rating your own onboarding experience a second time just
-  // overwrites the first. Scoped to the caller's own onboarding, same
-  // as getMine above.
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('employee')
-  @Post('me/rating')
-  rateMyExperience(@CurrentUser() user: AuthenticatedUser, @Body() dto: RateExperienceDto) {
-    return this.onboardingsService.rateExperience(user, dto);
-  }
-
-  // Company-wide average + count for the HR "first-week feedback"
-  // widget. Declared before ':id/tasks' below so 'ratings' is never
-  // captured as an :id.
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('superadmin_hr')
-  @Get('ratings/summary')
-  getRatingSummary() {
-    return this.onboardingsService.getRatingSummary();
   }
 
   // The task scheduler: HR adding a one-off task onto a specific

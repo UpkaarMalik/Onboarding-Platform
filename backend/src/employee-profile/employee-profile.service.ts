@@ -111,7 +111,7 @@ export class EmployeeProfileService {
     const { rows: onboardingRows } = await this.db.query(
       `SELECT
          o.id, o.status, o.start_date::text AS start_date, o.manager_name, o.buddy_name,
-         o.template_version, o.experience_rating, o.created_at,
+         o.template_version, o.created_at,
          t.name AS template_name
        FROM onboardings o
        JOIN onboarding_templates t ON t.id = o.template_id

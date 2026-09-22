@@ -7,7 +7,6 @@ import StartHere from './pages/StartHere';
 import EmployeeTasks from './pages/EmployeeTasks';
 import HrDashboard from './pages/HrDashboard';
 import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
-import AdminNotes from './pages/AdminNotes';
 import Documents from './pages/Documents';
 import Benefits from './pages/Benefits';
 import AuditLog from './pages/AuditLog';
@@ -58,7 +57,6 @@ export default function App() {
                     land somewhere sensible instead of on a 404. */}
                 <Route path="/hr" element={<HrDashboard />} />
                 <Route path="/hr/overview" element={<Navigate to="/hr" replace />} />
-                <Route path="/notes-admin" element={<AdminNotes />} />
               </Route>
 
               <Route path="/benefits" element={<Benefits />} />

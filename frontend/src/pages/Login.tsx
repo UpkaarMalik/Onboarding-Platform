@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import PasswordField from '../components/PasswordField';
-import ParticleNetwork from '../components/ParticleNetwork';
+import illustration from '../assets/login-illustration.png';
 
 interface AuthenticatedResult {
   status: 'authenticated';
@@ -37,8 +37,143 @@ type FieldName = 'joineeId' | 'password' | 'newPassword' | null;
  *  @Length(8, 100). Checked here too so the user is told before a round
  *  trip, and in the same place as every other message. */
 const MIN_PASSWORD_LENGTH = 8;
+
+/** Mirrors generate_joinee_id() in migration 0015 — `JN-<year>-<seq>`.
+ *  Checked here so a partly-typed ID never reaches the server and never
+ *  shows a caution the person hasn't earned yet. */
+const JOINEE_ID_PATTERN = /^JN-\d{4}-\d{3,}$/;
 // OTP-LOGIN-DISABLED
 // type OtpStep = { name: 'phone' } | { name: 'verify'; preAuthToken: string };
+
+const QUOTES = [
+  { text: 'Banking is necessary, banks are not.', author: 'Bill Gates' },
+  { text: 'The future of finance is digital.', author: 'Christine Lagarde' },
+  { text: 'Innovation is the calling card of the future.', author: 'Anna Eshoo' },
+  { text: 'Fintech is reshaping finance as we know it.', author: 'Sallie Krawcheck' },
+  { text: 'The best way to predict the future is to invent it.', author: 'Alan Kay' },
+];
+
+const QUOTE_MS = 5600;
+
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+/**
+ * The rotating quote. Unchanged in mechanism from the previous design —
+ * a soft band inside a gradient that is clipped to the glyphs, so the
+ * light crosses letters continuously rather than a word at a time. Only
+ * the palette changed: the crest is ink rather than white, because the
+ * band now travels over a cream background instead of a navy one.
+ */
+function LoginQuote() {
+  const still = prefersReducedMotion();
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    if (still) return;
+    const id = setInterval(() => setIdx((i) => (i + 1) % QUOTES.length), QUOTE_MS);
+    return () => clearInterval(id);
+  }, [still]);
+
+  const quote = QUOTES[idx];
+
+  // Keyed on the quote so React remounts rather than swapping the text
+  // in place — that restarts the CSS animation, giving every quote its
+  // own pass of the light.
+  return (
+    <figure className="login-quote" key={quote.author}>
+      <blockquote className="login-quote__text">
+        <span className="login-quote__mark">“</span>
+        {quote.text}
+        <span className="login-quote__mark">”</span>
+      </blockquote>
+      <figcaption className="login-quote__by">
+        <span className="login-quote__rule" />
+        <cite>{quote.author}</cite>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * The hand-drawn furniture around the card: squiggles, outlined circles,
+ * dotted panels and the seated figure. Decorative only, so it is hidden
+ * from assistive tech and dropped entirely once there is no room for it
+ * beside the card.
+ */
+function LoginScatter() {
+  return (
+    <div className="login-scatter" aria-hidden="true">
+      <span className="login-hr" />
+
+      <svg className="login-doodle login-doodle--squiggleL" width="252" height="70" viewBox="0 0 252 70" fill="none" strokeLinecap="round">
+        <path className="login-draw" d="M4 44c18-30 32-30 40-6s18 28 30 6 18-32 30-10 18 26 32 4 18-22 34-6 18 16 34 2" stroke="currentColor" strokeWidth="1.5" strokeDasharray="220" />
+      </svg>
+
+      <span className="login-ring login-ring--a" />
+      <span className="login-dot" />
+      <span className="login-ring login-ring--b" />
+
+      <div className="login-note login-note--left">
+        <span className="login-note__line" style={{ width: 90 }} />
+        <span className="login-note__line login-note__line--short" style={{ width: 62 }} />
+      </div>
+
+      {/* Fills the space the left-hand slab used to hold. Two strokes,
+          spaced clear of each other — three crowded into the same box. */}
+      <svg className="login-doodle login-doodle--scribbleL" width="196" height="92" viewBox="0 0 196 92" fill="none" strokeLinecap="round">
+        <path className="login-draw" d="M4 38c12-22 22-22 30-4s14 20 26 2 14-24 26-6 14 18 28 2 14-16 30-4 12 10 30 3" stroke="currentColor" strokeWidth="1.5" strokeDasharray="220" />
+      </svg>
+
+      <div className="login-tile">
+        <svg width="58" height="72" viewBox="0 0 58 72" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <path className="login-draw" d="M11 65C15 41 25 22 47 9" strokeDasharray="220" />
+          <path d="M35 7h13v13" />
+        </svg>
+      </div>
+
+      <div className="login-note login-note--right">
+        <span className="login-note__line" style={{ width: 68 }} />
+        <span className="login-note__line login-note__line--short" style={{ width: 46 }} />
+      </div>
+
+      <span className="login-ring login-ring--c" />
+      <span className="login-ring login-ring--d" />
+
+      <svg className="login-doodle login-doodle--spark" width="34" height="34" viewBox="0 0 34 34" fill="none" strokeWidth="1.6" strokeLinecap="round">
+        <path d="M17 3v9M17 22v9M3 17h9M22 17h9" />
+      </svg>
+
+      <div className="login-note login-note--up">
+        <span className="login-note__line" style={{ width: 58 }} />
+        <span className="login-note__line login-note__line--short" style={{ width: 38 }} />
+      </div>
+
+      <svg className="login-doodle login-doodle--loop" width="74" height="74" viewBox="0 0 74 74" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        {/* A line that winds inward into a spiral. */}
+        <path className="login-draw" d="M37 8c16 0 27 12 27 26S52 62 36 62 10 50 10 36s9-20 20-20 17 8 17 17-6 15-13 15-11-5-11-11 4-9 9-9" strokeDasharray="220" />
+      </svg>
+
+      <svg className="login-doodle login-doodle--scribbleR" width="104" height="44" viewBox="0 0 104 44" fill="none" strokeLinecap="round">
+        <path className="login-draw" d="M3 26c10-18 17-16 21-2s11 16 19 2 11-18 19-4 11 12 20 1" stroke="currentColor" strokeWidth="1.5" strokeDasharray="220" />
+      </svg>
+
+      <img className="login-figure" src={illustration} alt="" />
+      {/* One two-storey façade. The wall carries its windows as
+          positioned background layers; the raised parapet, the string
+          course between the storeys and the door are elements, because
+          they sit in front of the wall rather than on it. */}
+      <div className="login-panel login-panel--peach">
+        <span className="login-bldg">
+          <span className="login-bldg__top" />
+          <span className="login-bldg__band" />
+          <span className="login-bldg__door" />
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Joinee ID + password is the only login method.
@@ -61,7 +196,7 @@ export default function Login() {
   // OTP-LOGIN-DISABLED — was 'otp'. With the OTP tab gone this is the
   // only reachable mode, but the state is kept so restoring the tab is
   // a matter of uncommenting rather than rewiring.
-  const [mode, setMode] = useState<Mode>('password');
+  const [mode] = useState<Mode>('password');
   const [error, setError] = useState<string | null>(null);
   /** Which input the current error is about, so it can be marked invalid
    *  and pointed at. Null for errors that belong to the form as a whole
@@ -71,6 +206,12 @@ export default function Login() {
 
   const [passwordStep, setPasswordStep] = useState<PasswordStep>({ name: 'credentials' });
   const [joineeId, setJoineeId] = useState('');
+  /** Live check on the Joinee ID field. 'malformed' is decided here
+   *  without asking the server — a half-typed ID isn't a wrong ID, so
+   *  it shows nothing rather than a caution. */
+  const [idCheck, setIdCheck] = useState<
+    'idle' | 'typing' | 'checking' | 'found' | 'missing' | 'unavailable'
+  >('idle');
   const [password, setPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
@@ -83,15 +224,6 @@ export default function Login() {
   // Set after a successful first-time reset, to explain why the user is
   // looking at the sign-in form again instead of the home page.
   const [resetComplete, setResetComplete] = useState(false);
-
-  function switchMode(next: Mode) {
-    setMode(next);
-    setError(null);
-    setResetComplete(false);
-    setPasswordStep({ name: 'credentials' });
-    // OTP-LOGIN-DISABLED
-    // setOtpStep({ name: 'phone' });
-  }
 
   /** Clears whatever the last attempt complained about. Wired to every
    *  input's onChange: an error that outlives the thing it was about
@@ -134,64 +266,49 @@ export default function Login() {
 
   // --- OTP-LOGIN-DISABLED: mobile number + OTP -----------------------
   //
-  // async function submitPhone(e: FormEvent) {
-  //   e.preventDefault();
-  //   setError(null);
-  //   setBusy(true);
-  //   try {
-  //     const result = await apiFetch<{ preAuthToken: string }>('/auth/login/otp/request', {
-  //       method: 'POST',
-  //       body: { phoneNumber: `91${phoneNumber}` },
-  //     });
-  //     setOtpStep({ name: 'verify', preAuthToken: result.preAuthToken });
-  //   } catch (err) {
-  //     setError(err instanceof ApiError ? err.message : 'Something went wrong');
-  //   } finally {
-  //     setBusy(false);
-  //   }
-  // }
+  // async function submitPhone(e: FormEvent) { … }
+  // async function submitOtpVerify(e: FormEvent) { … }
+  // async function resendOtp() { … }
   //
-  // async function submitOtpVerify(e: FormEvent) {
-  //   e.preventDefault();
-  //   if (otpStep.name !== 'verify') return;
-  //   setError(null);
-  //   setBusy(true);
-  //   try {
-  //     const result = await apiFetch<PasswordLoginResult>('/auth/login/otp/verify', {
-  //       method: 'POST',
-  //       bearerToken: otpStep.preAuthToken,
-  //       body: { code },
-  //     });
-  //     if (result.status === 'authenticated') {
-  //       finishAuthenticated(result);
-  //       return;
-  //     }
-  //     // First login by OTP still has to set a real password before it
-  //     // gets a session. Verifying the code is what authorized the reset,
-  //     // so this hands over to the same reset form the password tab uses.
-  //     setMode('password');
-  //     setPasswordStep({ name: 'reset', preAuthToken: result.preAuthToken });
-  //   } catch (err) {
-  //     setError(err instanceof ApiError ? err.message : 'Something went wrong');
-  //   } finally {
-  //     setBusy(false);
-  //   }
-  // }
-  //
-  // async function resendOtp() {
-  //   if (otpStep.name !== 'verify') return;
-  //   setError(null);
-  //   setResent(false);
-  //   setBusy(true);
-  //   try {
-  //     await apiFetch('/auth/login/otp/resend', { method: 'POST', bearerToken: otpStep.preAuthToken });
-  //     setResent(true);
-  //   } catch (err) {
-  //     setError(err instanceof ApiError ? err.message : 'Something went wrong');
-  //   } finally {
-  //     setBusy(false);
-  //   }
-  // }
+  // The full bodies live in git history — see the commit that restyled
+  // this page. They called /auth/login/otp/{request,verify,resend} and
+  // handed a password_reset_required result to the reset step below.
+
+  // Debounced existence check behind the field's marker. 400ms is long
+  // enough that typing a 11-character ID makes one request rather than
+  // eleven, and short enough to feel immediate once you stop.
+  useEffect(() => {
+    const id = joineeId.trim().toUpperCase();
+    if (!id) {
+      setIdCheck('idle');
+      return;
+    }
+    if (!JOINEE_ID_PATTERN.test(id)) {
+      setIdCheck('typing');
+      return;
+    }
+    setIdCheck('checking');
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      apiFetch<{ exists: boolean }>(
+        `/auth/joinee-id/${encodeURIComponent(id)}/exists`,
+        { signal: controller.signal },
+      )
+        .then((res) => setIdCheck(res.exists ? 'found' : 'missing'))
+        .catch((err) => {
+          // An aborted request is this effect superseding itself, not a
+          // failure — leaving it as 'checking' lets the newer one land.
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          // Anything else (offline, rate limited, server down) must not
+          // masquerade as "this ID doesn't exist".
+          setIdCheck('unavailable');
+        });
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [joineeId]);
 
   // --- Joinee ID + password (the only live method) ---
 
@@ -260,220 +377,120 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-page auth-page--split">
-      <ParticleNetwork />
-      <div className="auth-illustration">
-        <svg className="auth-illustration__svg" viewBox="0 0 600 500" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="gradientPrimary" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#2a4b7c" />
-              <stop offset="50%" stopColor="#e88f30" />
-              <stop offset="100%" stopColor="#4caf50" />
-            </linearGradient>
-            <filter id="drop-shadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="#1a1611" floodOpacity="0.12" />
-            </filter>
-          </defs>
+    <div className="login-stage">
+      <div className="login-wash" aria-hidden="true" />
+      <span className="login-orb login-orb--amber" aria-hidden="true" />
+      <span className="login-orb login-orb--olive" aria-hidden="true" />
 
-          <path
-            className="marching-ants"
-            d="M 50 350 C 150 400, 200 150, 300 250 C 400 350, 450 100, 550 150"
-            fill="none"
-            stroke="url(#gradientPrimary)"
-            strokeLinecap="round"
-            strokeWidth="12"
-          />
-          <path
-            d="M 50 350 C 150 400, 200 150, 300 250 C 400 350, 450 100, 550 150"
-            fill="none"
-            opacity="0.3"
-            stroke="#1a1611"
-            strokeLinecap="round"
-            strokeWidth="16"
-          />
+      <LoginScatter />
 
-          <g className="float-bob" style={{ animationDelay: '0.2s' }}>
-            <rect fill="#ffffff" filter="url(#drop-shadow)" height="100" rx="6" stroke="#2a4b7c" strokeWidth="3" width="80" x="120" y="80" />
-            <rect fill="#e88f30" height="40" width="15" x="135" y="120" />
-            <rect fill="#4caf50" height="60" width="15" x="155" y="100" />
-            <rect fill="#2a4b7c" height="30" width="15" x="175" y="130" />
-            <path d="M 130 110 L 160 85 L 185 105" fill="none" stroke="#1a1611" strokeWidth="2" />
-          </g>
-
-          <g className="float-bob" style={{ animationDelay: '1.2s' }}>
-            <path d="M 60 280 C 80 270, 110 280, 130 290 L 150 310 L 100 330 Z" fill="#d99b78" stroke="#1a1611" strokeWidth="2" />
-            <path d="M 60 280 L 40 310 L 80 340" fill="#2a4b7c" stroke="#1a1611" strokeWidth="2" />
-            <g className="pulse-shimmer" style={{ animationDelay: '0.5s' }}>
-              <circle cx="120" cy="250" fill="#ffffff" filter="url(#drop-shadow)" r="30" stroke="#2a4b7c" strokeWidth="4" />
-              <circle cx="120" cy="250" fill="#2a4b7c" r="22" />
-              <text fill="#ffffff" fontFamily="Manrope" fontSize="26" fontWeight="700" textAnchor="middle" x="120" y="259">
-                ₹
-              </text>
-            </g>
-          </g>
-
-          <g className="float-bob" style={{ animationDelay: '0.8s' }}>
+      <header className="login-head">
+        <div className="login-logo">
+          {/* Brand mark traced from the AndOnboard boomerang. The disc
+              belongs to the mark, so it lives in the artwork rather than
+              being a CSS circle behind it — the boomerang deliberately
+              overhangs it on the left and lower right. */}
+          <svg className="login-logo__mark" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+            <circle cx="71.22" cy="52.39" r="47.2" fill="#10233c" />
             <path
-              d="M 250 180 L 290 160 L 330 180 V 230 C 330 270, 290 310, 290 310 C 290 310, 250 270, 250 230 V 180 Z"
-              fill="#2a4b7c"
-              filter="url(#drop-shadow)"
-              stroke="#1a1611"
-              strokeWidth="3"
+              d="M84.05 25.7 L87.01 25.62 L92.6 26.07 L95.22 26.55 L97.66 27.42 L100.53 29.28 L102.61 31.24 L104.45 33.47 L106.27 36.44 L108.02 39.93 L109.94 44.82 L111.23 49.01 L112.44 53.54 L113.99 60.87 L115.02 66.63 L116.96 80.25 L117.81 85.31 L117.77 85.89 L117.44 85.77 L108.66 77.16 L104.16 72.98 L99.19 68.63 L93.92 64.37 L87.19 59.71 L82.4 57.04 L79.45 54.46 L77.59 53.08 L75.67 51.97 L74.45 51.45 L70.61 50.93 L61.88 50.93 L56.3 51.28 L48.62 51.97 L38.49 53.14 L12.84 56.53 L3.94 57.56 L2.71 57.5 L1.49 57.15 L0.66 56.71 L0.1 55.99 L0 55.46 L0.1 54.77 L0.5 54.13 L0.97 53.72 L8.3 49.28 L13.88 46.25 L21.04 42.76 L26.8 40.2 L32.73 37.76 L39.72 35.16 L51.41 31.42 L55.77 30.22 L62.93 28.51 L70.08 27.11 L74.62 26.45 L79.16 25.97 Z M90.06 68.4 L90.5 68.63 L94.6 72.34 L99.46 77.11 L112.84 91.34 L113.72 91.73 L115.29 91.69 L116.68 91.24 L118.24 90.22 L118.41 90.2 L118.58 90.41 L119.52 96.48 L120 101.02 L120 106.43 L119.42 109.74 L119.01 110.77 L117.56 112.48 L116.16 113.53 L113.89 114.46 L111.62 114.8 L110.75 114.73 L109 114.3 L107.61 113.68 L106.56 112.89 L105.73 111.84 L103.88 106.95 L95.1 80.95 L91.98 72.92 L90.06 68.73 Z"
+              fill="#e19943"
             />
-            <path
-              d="M 265 190 L 290 175 L 315 190 V 225 C 315 250, 290 280, 290 280 C 290 280, 265 250, 265 225 V 190 Z"
-              fill="#e88f30"
-            />
-            <path d="M 278 235 l 8 8 l 16 -18" fill="none" stroke="#ffffff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          </g>
-
-          <g className="slide-in-up float-bob" style={{ animationDelay: '1.5s' }}>
-            <rect
-              fill="#ffffff"
-              filter="url(#drop-shadow)"
-              height="140"
-              rx="12"
-              stroke="#2a4b7c"
-              strokeWidth="3"
-              transform="rotate(-15 450 350)"
-              width="90"
-              x="420"
-              y="280"
-            />
-            <rect fill="#fff8ec" height="45" rx="4" transform="rotate(-15 450 350)" width="70" x="430" y="295" />
-            <g transform="rotate(-15 450 350)">
-              <rect fill="#ece3d3" height="8" rx="2" width="15" x="430" y="355" />
-              <rect fill="#ece3d3" height="8" rx="2" width="15" x="455" y="355" />
-              <rect fill="#ece3d3" height="8" rx="2" width="15" x="480" y="355" />
-              <rect fill="#ece3d3" height="8" rx="2" width="15" x="430" y="375" />
-              <rect fill="#ece3d3" height="8" rx="2" width="15" x="455" y="375" />
-              <rect fill="#ece3d3" height="8" rx="2" width="15" x="480" y="375" />
-            </g>
-            <rect fill="url(#gradientPrimary)" height="25" rx="4" transform="rotate(-30 430 260)" width="45" x="410" y="250" />
-          </g>
-        </svg>
-        <div className="auth-illustration__caption">
-          <h2>Secure &amp; Seamless</h2>
-          <p>Everything you need for day one — company access, documents and your team, in one place.</p>
+          </svg>
+          <span className="login-logo__word">AndOnboard</span>
         </div>
-      </div>
+        <p className="login-head__line">Onboarding for the AndPayments team</p>
+        <span className="login-head__rule" />
+      </header>
 
-      <div className="auth-panel">
-        <div className="auth-brand">
-          <h1>Welcome to ANDPayments</h1>
-          <p>Log in to manage your workspace</p>
-        </div>
+      {/* Payment rail: money in on the left, a checklist clears it in the
+          middle, the right end confirms. Drawn in the artboard's line-art
+          language rather than the navy/glass version it had on the old
+          dark panel. One shared CSS cycle drives every step, so it needs
+          no re-renders. The viewBox starts negative because the "Payment
+          sent" caption is centred under the coin at x=30 and is wider. */}
+      <svg className="login-rail" viewBox="-33 -26 490 138" fill="none" aria-hidden="true">
+        <path className="login-rail__wire" d="M58 36 H170" />
+        <path className="login-rail__wire login-rail__wire--in" d="M58 36 H170" />
+        <path className="login-rail__wire" d="M246 36 H356" />
+        <path className="login-rail__wire login-rail__wire--out" d="M246 36 H356" />
 
-        <div className="auth-card liquid-card">
-          {/* OTP-LOGIN-DISABLED — the whole tab bar goes with it: with one
-              login method there is nothing to switch between. Uncomment
-              to bring both tabs back.
+        <g className="login-rail__coin">
+          <circle cx="30" cy="36" r="25" className="login-rail__halo" />
+          <circle cx="30" cy="36" r="19" className="login-rail__ring" />
+          <text x="30" y="43" textAnchor="middle" className="login-rail__rupee">₹</text>
+        </g>
+        <text x="30" y="100" textAnchor="middle" className="login-rail__cap login-rail__cap--send">
+          Payment sent
+        </text>
 
-          <div className="auth-underline-tabs">
-            <button
-              type="button"
-              className={mode === 'otp' ? 'active' : ''}
-              disabled={busy}
-              onClick={() => switchMode('otp')}
-            >
-              Mobile &amp; OTP Login
-            </button>
-            <button
-              type="button"
-              className={mode === 'password' ? 'active' : ''}
-              disabled={busy}
-              onClick={() => switchMode('password')}
-            >
-              Joinee ID &amp; Password
-            </button>
-          </div>
-          */}
+        <circle className="login-rail__spark login-rail__spark--in" cx="58" cy="36" r="4" />
+
+        {/* A phone taking the payment: the settlement bar fills and the
+            box beside it ticks, and only once the money has landed. The
+            tick is the arrival clearing, not a step on its own clock. */}
+        <g className="login-rail__hub">
+          <rect x="172" y="-22" width="72" height="106" rx="14" className="login-rail__device" />
+          <rect x="177.5" y="-16.5" width="61" height="95" rx="9" className="login-rail__screen" />
+          <rect x="196" y="-22" width="24" height="6" rx="3" className="login-rail__notch" />
+          <rect x="243.6" y="4" width="2.2" height="16" rx="1.1" className="login-rail__side" />
+          <path d="M192 74 H224" className="login-rail__home" />
+          {/* The screen is blank until the money lands — the rows and the
+              box are the arriving payment being drawn up, so they can't
+              already be sitting there waiting for it. Group opacity, so
+              each child keeps its own. */}
+          <g className="login-rail__form">
+            <path d="M184 10 H208" className="login-rail__ui" />
+            <path d="M184 62 H226" className="login-rail__ui" />
+            <path d="M184 36 H213" className="login-rail__rule" />
+            <path d="M184 36 H213" className="login-rail__rule login-rail__rule--draw" />
+            <rect x="217" y="29" width="14" height="14" rx="3.5" className="login-rail__box" />
+            <path d="M220.2 36.4l3.3 3.3 4.6-6" className="login-rail__check" />
+          </g>
+        </g>
+        <circle className="login-rail__spark login-rail__spark--out" cx="246" cy="36" r="4" />
+
+        <g className="login-rail__tick">
+          <circle cx="384" cy="36" r="25" className="login-rail__halo login-rail__halo--ok" />
+          <circle cx="384" cy="36" r="19" className="login-rail__ring login-rail__ring--target" />
+          <path d="M374 36l7 7 13-14" className="login-rail__mark login-rail__mark--idle" />
+          <path d="M374 36l7 7 13-14" className="login-rail__mark" />
+        </g>
+        <text x="384" y="100" textAnchor="middle" className="login-rail__cap login-rail__cap--ok">
+          Payment approved
+        </text>
+      </svg>
+
+      <main className="login-main">
+        {/* The wrapper carries the glow; it can't live on the card
+            itself, whose backdrop-filter makes a stacking context that
+            a blurred pseudo-element can't escape behind. */}
+        <div className="login-cardwrap">
+        <div className="login-card">
+          <h1 className="login-title">Sign in</h1>
+          <svg className="login-underline" width="138" height="14" viewBox="0 0 138 14" fill="none" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+            <path className="login-draw" d="M4 9c22-6 44-7 66-3s44 5 64-2" strokeDasharray="220" />
+          </svg>
+          {/* The reset step brings its own line, and two competing
+              instructions read as a mistake. */}
+          {passwordStep.name === 'credentials' && (
+            <p className="login-lede">Enter your details to pick up where your onboarding left off.</p>
+          )}
 
           {/* role="alert" so the message is announced the moment it
               appears — a failed sign-in is exactly the case where the
               person may not be looking at this corner of the screen. */}
           {error && (
-            <p className="error-text" id="auth-error" role="alert">
+            <p className="login-alert login-alert--error" id="auth-error" role="alert">
               {error}
             </p>
           )}
 
           {resetComplete && (
-            <p className="success-text">
+            <p className="login-alert login-alert--ok">
               Password set. Sign in with your Joinee ID and your new password to continue.
             </p>
           )}
-
-          {/* OTP-LOGIN-DISABLED — both OTP forms below, phone entry then
-              code entry. Uncomment together with the handlers and state.
-
-          {mode === 'otp' && otpStep.name === 'phone' && (
-            <form onSubmit={submitPhone}>
-              <label htmlFor="mobile-number">Mobile Number</label>
-              <div className="input-icon-group phone-input-group">
-                <span className="material-symbols-outlined">call</span>
-                <span className="phone-prefix">+91</span>
-                <span className="phone-divider">|</span>
-                <input
-                  id="mobile-number"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  inputMode="numeric"
-                  pattern="[0-9]{10}"
-                  placeholder="Enter your registered mobile number"
-                  autoComplete="tel"
-                  maxLength={10}
-                  required
-                />
-              </div>
-              <button className="btn-primary auth-submit" disabled={busy} type="submit">
-                {busy ? 'Sending…' : 'GET OTP'}
-              </button>
-            </form>
-          )}
-
-          {mode === 'otp' && otpStep.name === 'verify' && (
-            <form onSubmit={submitOtpVerify}>
-              <p className="auth-step-hint">Enter the 6-digit code we texted to your registered mobile number.</p>
-              <label htmlFor="otp-code">Verification code</label>
-              <div className="input-icon-group">
-                <span className="material-symbols-outlined">shield_lock</span>
-                <input
-                  id="otp-code"
-                  value={code}
-                  // Strip anything that isn't a digit, at the source. `pattern`
-                  // and `inputMode` only steer the mobile keyboard and the
-                  // final submit check — they don't stop a paste of "12 34 56"
-                  // or a stray letter from ending up in the field. Trimming
-                  // here means the value shown to the user always matches what
-                  // will be sent, so a bad character can't get past the
-                  // keystroke that made it. 6 max because that is the length
-                  // the backend generates and expects.
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  placeholder="123456"
-                  required
-                  // Grabs focus the moment this input mounts. The verify step
-                  // is only rendered while `otpStep.name === 'verify'`, so the
-                  // input first appears the instant the phone-number form
-                  // hands off — the user just clicked "GET OTP" and is about
-                  // to type, so putting the cursor here saves them the extra
-                  // click that they'd otherwise have to make.
-                  autoFocus
-                />
-              </div>
-              <button className="btn-primary auth-submit" disabled={busy} type="submit">
-                {busy ? 'Verifying…' : 'Verify'}
-              </button>
-              <button type="button" disabled={busy} onClick={resendOtp}>
-                Resend code
-              </button>
-              {resent && <p className="field-hint">A new code was sent.</p>}
-            </form>
-          )}
-          */}
 
           {/* noValidate hands every check to submitPassword. The inputs keep
               `required` for semantics, but the browser's own bubble is
@@ -482,63 +499,137 @@ export default function Login() {
               password would report themselves two entirely different ways.
               One code path, one place on screen, one voice. */}
           {mode === 'password' && passwordStep.name === 'credentials' && (
-            <form onSubmit={submitPassword} noValidate>
-              <label htmlFor="joinee-id">Joinee ID</label>
-              <div className="input-icon-group">
-                <span className="material-symbols-outlined">badge</span>
-                <input
-                  id="joinee-id"
-                  value={joineeId}
-                  onChange={(e) => {
-                    setJoineeId(e.target.value);
-                    clearError();
-                  }}
-                  placeholder="JN-2026-001"
-                  autoComplete="username"
-                  aria-invalid={invalidField === 'joineeId' || undefined}
-                  aria-describedby={error ? 'auth-error' : undefined}
-                  required
-                />
+            <form className="login-form" onSubmit={submitPassword} noValidate>
+              <div className="login-field">
+                <label className="login-label" htmlFor="joinee-id">
+                  Joinee ID
+                </label>
+                <div className={`login-input${invalidField === 'joineeId' ? ' is-invalid' : ''}`}>
+                  <svg className="login-input__icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                    <circle cx="9" cy="6" r="3.5" stroke="currentColor" strokeWidth="1.5" />
+                    <path
+                      d="M2.5 16.5c0-3.5 2.9-6 6.5-6s6.5 2.5 6.5 6"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <input
+                    id="joinee-id"
+                    value={joineeId}
+                    onChange={(e) => {
+                      setJoineeId(e.target.value);
+                      clearError();
+                    }}
+                    placeholder="Enter your Joinee ID"
+                    autoComplete="username"
+                    aria-invalid={invalidField === 'joineeId' || undefined}
+                    aria-describedby={
+                      idCheck === 'missing' || idCheck === 'unavailable'
+                        ? 'joinee-id-note'
+                        : error
+                          ? 'auth-error'
+                          : undefined
+                    }
+                    required
+                  />
+                  {/* The marker: an empty ring while there's nothing to
+                      say, a tick once the ID is known, a caution when
+                      it isn't. */}
+                  <span
+                    className={`login-mark login-mark--${idCheck}`}
+                    aria-hidden="true"
+                  >
+                    {idCheck === 'found' && (
+                      <svg viewBox="0 0 18 18" fill="none">
+                        <path
+                          d="M4.5 9.4l3 3 6-7"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                    {(idCheck === 'missing' || idCheck === 'unavailable') && (
+                      <svg viewBox="0 0 18 18" fill="none">
+                        <path
+                          d="M9 5v4.6"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        />
+                        <circle cx="9" cy="13" r="1.1" fill="currentColor" />
+                      </svg>
+                    )}
+                  </span>
+                </div>
+                {/* Always in the flow, empty most of the time: rendering
+                    it conditionally grew the page past the viewport and
+                    shunted everything below the card down a line the
+                    moment the message appeared.
+                    role="status" not "alert" — this is a running
+                    commentary on what's being typed, and an assertive
+                    live region would interrupt the screen reader on
+                    every keystroke. */}
+                <p className="login-note-line" id="joinee-id-note" role="status">
+                  {idCheck === 'missing' && 'Not a registered Joinee ID — check it with your HR.'}
+                  {idCheck === 'unavailable' && "Couldn't check this ID just now — you can still sign in."}
+                </p>
               </div>
+
               <PasswordField
+                id="login-password"
                 label="Password"
                 value={password}
                 onChange={(v) => {
                   setPassword(v);
                   clearError();
                 }}
+                placeholder="Enter your password"
                 autoComplete="current-password"
                 invalid={invalidField === 'password'}
                 required
               />
-              <button className="btn-primary auth-submit" disabled={busy} type="submit">
-                {busy ? 'Signing in…' : 'Sign in'}
+
+              <button className="login-submit" disabled={busy} type="submit">
+                <span className="login-submit__sheen" aria-hidden="true" />
+                <span>{busy ? 'Signing in…' : 'Sign in'}</span>
               </button>
             </form>
           )}
 
           {mode === 'password' && passwordStep.name === 'reset' && (
-            <form onSubmit={submitPasswordReset} noValidate>
-              <p className="auth-step-hint">Choose a new password to continue.</p>
+            <form className="login-form" onSubmit={submitPasswordReset} noValidate>
+              <p className="login-step-hint">Choose a new password to continue.</p>
               <PasswordField
+                id="new-password"
                 label="New password"
                 value={newPassword}
                 onChange={(v) => {
                   setNewPassword(v);
                   clearError();
                 }}
+                placeholder="At least 8 characters"
                 autoComplete="new-password"
                 minLength={MIN_PASSWORD_LENGTH}
                 invalid={invalidField === 'newPassword'}
+                autoFocus
                 required
               />
-              <button className="btn-primary auth-submit" disabled={busy} type="submit">
-                {busy ? 'Saving…' : 'Set password'}
+              <button className="login-submit" disabled={busy} type="submit">
+                <span className="login-submit__sheen" aria-hidden="true" />
+                <span>{busy ? 'Saving…' : 'Set password'}</span>
               </button>
             </form>
           )}
+
+          <p className="login-footnote">New joinee? Contact your HR administrator for access.</p>
         </div>
-      </div>
+        </div>
+
+        <LoginQuote />
+      </main>
     </div>
   );
 }

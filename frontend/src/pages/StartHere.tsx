@@ -68,16 +68,11 @@ export default function StartHere() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [knowledge, setKnowledge] = useState<any[]>([]);
-  const [notes, setNotes] = useState<any[]>([]);
-  const [newNote, setNewNote] = useState('');
   const [diary, setDiary] = useState<any[]>([]);
   const [diaryDraft, setDiaryDraft] = useState('');
   const [savingDiary, setSavingDiary] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [ratingComment, setRatingComment] = useState('');
-  const [submittingRating, setSubmittingRating] = useState(false);
-  const [ratingSaved, setRatingSaved] = useState(false);
   const [entrancePhase, setEntrancePhase] = useState<'greeting' | 'dashboard'>(hasPlayedEntrance ? 'dashboard' : 'greeting');
   const [timeOfDay, setTimeOfDay] = useState<number | null>(null);
   const [clockOpen, setClockOpen] = useState(false);
@@ -91,7 +86,6 @@ export default function StartHere() {
     try {
       const dash = await authedFetch<DashboardResponse>('/onboardings/me');
       setDashboard(dash);
-      setRatingComment(dash.onboarding.experience_comment ?? '');
 
       // Pre-checkpoint: public + pre_email_auth articles, scoped to
       // this employee's department. Post-checkpoint, pre_email_auth
@@ -105,11 +99,8 @@ export default function StartHere() {
       const knowledgeRes = await authedFetch<{ data: any[] }>(knowledgePath);
       setKnowledge(knowledgeRes.data);
 
-      const notesRes = await authedFetch<{ data: any[] }>('/notes');
-      setNotes(notesRes.data);
-
       // PARKED-FEATURE: diary. This shares the try block with the
-      // dashboard, knowledge and notes loads, so leaving it in place
+      // dashboard and knowledge loads, so leaving it in place
       // against an unregistered /diary would 404 and take the whole home
       // page down with it — not just the diary section.
       //
@@ -158,18 +149,6 @@ export default function StartHere() {
     }
   }, [dashboard?.onboarding.status]);
 
-  async function addNote(e: FormEvent) {
-    e.preventDefault();
-    if (!newNote.trim()) return;
-    try {
-      await authedFetch('/notes', { method: 'POST', body: { content: newNote } });
-      setNewNote('');
-      await loadAll();
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Something went wrong');
-    }
-  }
-
   // PARKED-FEATURE: diary
   //
   // async function saveDiaryEntry(e: FormEvent) {
@@ -186,22 +165,6 @@ export default function StartHere() {
   //   }
   // }
 
-  async function submitRating(rating: number) {
-    setSubmittingRating(true);
-    setRatingSaved(false);
-    try {
-      await authedFetch('/onboardings/me/rating', {
-        method: 'POST',
-        body: { rating, comment: ratingComment.trim() || undefined },
-      });
-      setRatingSaved(true);
-      await loadAll();
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Something went wrong');
-    } finally {
-      setSubmittingRating(false);
-    }
-  }
 
   if (loading) return <p>Loading…</p>;
   if (error) return <p className="error-text">{error}</p>;
@@ -314,17 +277,6 @@ export default function StartHere() {
                 Knowledge Base
               </a>
             )}
-            <a
-              className="quick-access-tile"
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById('notes-section')?.scrollIntoView({ behavior: 'smooth' });
-              }}
-              href="#notes-section"
-            >
-              <span className="qa-icon">📝</span>
-              My Notes
-            </a>
             {/* PARKED-FEATURE: diary, community — quick-access tiles.
 
             <a
@@ -405,63 +357,6 @@ export default function StartHere() {
         </section>
       </Reveal>
 
-      <Reveal>
-        <section>
-          <h2>Rate your experience</h2>
-          <p className="muted">
-            {dashboard.onboarding.experience_rating
-              ? "Thanks for rating — change it any time it doesn't feel right anymore."
-              : 'How has onboarding felt so far? This goes to HR as a number only.'}
-          </p>
-          <div className="star-rating">
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                className={`star-btn ${n <= (dashboard.onboarding.experience_rating ?? 0) ? 'filled' : ''}`}
-                disabled={submittingRating}
-                onClick={() => submitRating(n)}
-                aria-label={`Rate ${n} out of 5`}
-              >
-                ★
-              </button>
-            ))}
-            {ratingSaved && <span className="rating-saved">Saved</span>}
-          </div>
-          <textarea
-            className="rating-comment"
-            value={ratingComment}
-            onChange={(e) => setRatingComment(e.target.value)}
-            onBlur={() => {
-              if (dashboard.onboarding.experience_rating) submitRating(dashboard.onboarding.experience_rating);
-            }}
-            placeholder="Anything you'd add? (optional)"
-          />
-        </section>
-      </Reveal>
-
-      <Reveal>
-        <section id="notes-section">
-          <h2>Your private notes</h2>
-          <p className="muted">
-            Only you can see the note content — SuperAdmin can see that notes exist and read the text,
-            but never who wrote them.
-          </p>
-          <form onSubmit={addNote} className="note-form">
-            <textarea
-              value={newNote}
-              onChange={(e) => setNewNote(e.target.value)}
-              placeholder="Write something only you can see…"
-            />
-            <button type="submit">Add note</button>
-          </form>
-          <ul className="notes-list">
-            {notes.map((n) => (
-              <li key={n.id}>{n.content}</li>
-            ))}
-          </ul>
-        </section>
-      </Reveal>
 
       {/* PARKED-FEATURE: diary — the home page's diary section.
 
