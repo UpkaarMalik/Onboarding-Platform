@@ -5,6 +5,7 @@ import { diskStorage } from 'multer';
 import { randomUUID } from 'crypto';
 import { extname } from 'path';
 import { mkdirSync } from 'fs';
+import { ActivityLogModule } from '../activity-log/activity-log.module';
 import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { DocumentsController } from './documents.controller';
@@ -12,6 +13,7 @@ import { DocumentsService } from './documents.service';
 
 @Module({
   imports: [
+    ActivityLogModule,
     AuthModule,
     UsersModule,
     MulterModule.registerAsync({

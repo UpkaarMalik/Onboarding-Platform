@@ -124,11 +124,18 @@ export class JoineeDocumentsService {
         id: string;
         user_id: string;
         onboarding_task_id: string | null;
+        document_label: string;
       }>(
-        `SELECT id, user_id, onboarding_task_id
-         FROM joinee_document_requirements
-         WHERE id = $1
-         FOR UPDATE`,
+        // The type's label comes along so the log entry can name the
+        // document — "Aadhaar Card uploaded" rather than the useless
+        // "a document was uploaded". FOR UPDATE OF r so the lock still
+        // applies only to the requirement; document_types is reference
+        // data and locking it would serialise unrelated uploads.
+        `SELECT r.id, r.user_id, r.onboarding_task_id, dt.label AS document_label
+         FROM joinee_document_requirements r
+         JOIN document_types dt ON dt.id = r.document_type_id
+         WHERE r.id = $1
+         FOR UPDATE OF r`,
         [requirementId],
       );
       const requirement = reqRows[0];
@@ -142,12 +149,22 @@ export class JoineeDocumentsService {
         throw new NotFoundException('Document requirement not found');
       }
 
-      await client.query(
+      // RETURNING, not a bare UPDATE: the row this upload replaces is
+      // what tells us whether the joinee is re-uploading after HR
+      // rejected the last attempt. Without it every upload logs
+      // identically and the audit trail can't answer "did they fix the
+      // rejected document, and when?".
+      const { rows: supersededRows } = await client.query<{
+        id: string;
+        review_status: string | null;
+      }>(
         `UPDATE joinee_document_uploads
          SET superseded_at = now()
-         WHERE requirement_id = $1 AND superseded_at IS NULL`,
+         WHERE requirement_id = $1 AND superseded_at IS NULL
+         RETURNING id, review_status`,
         [requirementId],
       );
+      const replaced = supersededRows[0] ?? null;
 
       const { rows: uploadRows } = await client.query<{ id: string }>(
         `INSERT INTO joinee_document_uploads (
@@ -181,12 +198,21 @@ export class JoineeDocumentsService {
       await this.activityLog.log(
         {
           actorId: actor.id,
-          action: 'joinee_document.uploaded',
+          action:
+            replaced?.review_status === 'rejected'
+              ? 'joinee_document.reuploaded_after_rejection'
+              : 'joinee_document.uploaded',
           entityType: 'joinee_document_requirement',
           entityId: requirementId,
-          // Filename only — never the file's contents, and nothing
-          // derived from a sensitive document's data.
-          metadata: { uploadId: uploadRows[0].id, taskCompleted },
+          // Nothing derived from the file's contents, and not even the
+          // filename — the audit trail records that a document moved,
+          // not what was in it.
+          metadata: {
+            document: requirement.document_label,
+            uploadId: uploadRows[0].id,
+            replacedUploadId: replaced?.id ?? null,
+            taskCompleted,
+          },
         },
         client,
       );
@@ -201,6 +227,8 @@ export class JoineeDocumentsService {
       const { rows } = await client.query<{
         requirement_id: string;
         onboarding_task_id: string | null;
+        document_label: string;
+        original_filename: string;
       }>(
         `UPDATE joinee_document_uploads AS u
             SET review_status = $2,
@@ -208,9 +236,11 @@ export class JoineeDocumentsService {
                 reviewed_at   = now(),
                 review_note   = $4
            FROM joinee_document_requirements r
+           JOIN document_types dt ON dt.id = r.document_type_id
           WHERE u.id = $1 AND u.superseded_at IS NULL
             AND r.id = u.requirement_id
-        RETURNING u.requirement_id, r.onboarding_task_id`,
+        RETURNING u.requirement_id, r.onboarding_task_id,
+                  dt.label AS document_label, u.original_filename`,
         [uploadId, dto.decision, actor.id, dto.note ?? null],
       );
       const upload = rows[0];
@@ -248,6 +278,14 @@ export class JoineeDocumentsService {
           action: `joinee_document.${dto.decision}`,
           entityType: 'joinee_document_upload',
           entityId: uploadId,
+          // The rejection note is HR's message to the joinee about their
+          // own document, so it belongs in the trail; the file itself
+          // and anything read out of it still never do.
+          metadata: {
+            document: upload.document_label,
+            filename: upload.original_filename,
+            reason: dto.note ?? null,
+          },
         },
         client,
       );
@@ -269,7 +307,7 @@ export class JoineeDocumentsService {
     taskId: string,
     actorId: string,
   ): Promise<void> {
-    const { rows } = await client.query<{ id: string }>(
+    const { rows } = await client.query<{ id: string; title: string }>(
       `UPDATE onboarding_tasks
           SET status                 = 'pending',
               completed_at           = NULL,
@@ -278,7 +316,7 @@ export class JoineeDocumentsService {
         WHERE id = $1
           AND status = 'completed'
           AND system_key = 'document_upload'
-        RETURNING id`,
+        RETURNING id, title`,
       [taskId],
     );
     if (!rows[0]) return;
@@ -288,6 +326,7 @@ export class JoineeDocumentsService {
         action: 'onboarding_task.reopened_by_document_rejection',
         entityType: 'onboarding_task',
         entityId: taskId,
+        metadata: { title: rows[0].title },
       },
       client,
     );

@@ -1,11 +1,19 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError, openFileInline } from '../api/client';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
-import { avatarClass } from '../lib/deptColor';
+import { avatarClass, deptLightClass, deptSlots, type DeptSlots } from '../lib/deptColor';
+import {
+  compareRows,
+  SORT_OPTIONS,
+  STATUS_OPTIONS,
+  withParam,
+  type RosterSort,
+} from '../lib/rosterQuery';
 import { format } from 'date-fns';
 import {
   formatDate,
@@ -126,12 +134,24 @@ export default function HrOverview({
   onClearCardFilter?: () => void;
 } = {}) {
   const authedFetch = useAuthedFetch();
+  /* Search, department, status and sort are driven by the nav's search
+     control through the query string — see lib/rosterQuery.ts. The roster
+     owns the rows; the nav owns the controls. */
+  const [params, setParams] = useSearchParams();
+  const search = params.get('q') ?? '';
+  const department = params.get('dept') ?? '';
+  const statusFilter = params.get('status') ?? '';
+  const sort = (params.get('sort') ?? '') as RosterSort;
+  /* The same three filters also sit in the nav. Both write the query string
+     through withParam, so changing one moves the other — they are two views
+     of one piece of state, not two copies of it. */
+  const setParam = (key: string, value: string) =>
+    setParams(withParam(params, key, value), { replace: true });
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  // One slot map for the page, so every row's avatar and badge agree.
+  const slotMap = useMemo(() => deptSlots(departments), [departments]);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState('');
-  const [department, setDepartment] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -221,7 +241,7 @@ export default function HrOverview({
         result = rows.filter((r) => r.status === 'completed');
     }
 
-    return result.filter((r) => {
+    const matched = result.filter((r) => {
       if (department && r.department_name !== department) return false;
       if (statusFilter && onboardingStatusTone(r.status) !== statusFilter) return false;
       if (!q) return true;
@@ -232,7 +252,11 @@ export default function HrOverview({
         (r.department_name ?? '').toLowerCase().includes(q)
       );
     });
-  }, [rows, search, department, statusFilter, activeStatFilter, cardFilter]);
+
+    // Sorting a copy: `matched` is either `rows` itself or a fresh array, and
+    // sorting in place would scramble the source list on the no-filter path.
+    return sort ? [...matched].sort((a, b) => compareRows(sort, a, b)) : matched;
+  }, [rows, search, department, statusFilter, sort, activeStatFilter, cardFilter]);
 
   /** Flip one joinee's sign-in access. The row is updated in place on success
    *  rather than refetching the whole list, so the page doesn't jump. */
@@ -273,7 +297,7 @@ export default function HrOverview({
   );
   useEffect(() => {
     setPage(1);
-  }, [search, department, statusFilter, activeStatFilter, cardFilter]);
+  }, [search, department, statusFilter, sort, activeStatFilter, cardFilter]);
 
   return (
     <div className={embedded ? 'overview overview--embedded' : 'overview'}>
@@ -374,28 +398,12 @@ export default function HrOverview({
               </div>
             )}
 
+            {/* The search box lives in the nav; these filters are here as well
+                as there, reading and writing the same query params. */}
             <div className="roster-toolbar-row">
-              <label className="search-field search-field--apple">
-                <SearchIcon />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name, ID, or department"
-                  aria-label="Search joinees"
-                />
-                {search && (
-                  <button type="button" className="search-clear" onClick={() => setSearch('')} aria-label="Clear search">
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                      <circle cx="8" cy="8" r="8" fill="currentColor" />
-                      <path d="M5.4 5.4l5.2 5.2M10.6 5.4l-5.2 5.2" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" />
-                    </svg>
-                  </button>
-                )}
-              </label>
-
               <CustomSelect
                 value={department}
-                onChange={setDepartment}
+                onChange={(v) => setParam('dept', v)}
                 placeholder="All Departments"
                 options={[
                   { value: '', label: 'All Departments' },
@@ -404,16 +412,33 @@ export default function HrOverview({
               />
               <CustomSelect
                 value={statusFilter}
-                onChange={setStatusFilter}
+                onChange={(v) => setParam('status', v)}
                 placeholder="All Statuses"
-                options={[
-                  { value: '', label: 'All Statuses' },
-                  { value: 'pending', label: 'Pending' },
-                  { value: 'progress', label: 'In progress' },
-                  { value: 'done', label: 'Completed' },
-                ]}
+                options={STATUS_OPTIONS}
+              />
+              <CustomSelect
+                value={sort}
+                onChange={(v) => setParam('sort', v)}
+                placeholder="Default order"
+                options={SORT_OPTIONS}
               />
 
+              {/* What the nav's field is currently matching on, so the
+                  narrowed list explains itself on this page too. */}
+              {search && (
+                <button
+                  type="button"
+                  className="roster-filter-chip"
+                  onClick={() => setParam('q', '')}
+                  aria-label={`Clear the search for ${search}`}
+                >
+                  <span className="roster-filter-chip-dot" aria-hidden="true" />
+                  “{search}”
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              )}
               {cardFilter && (
                 /* Built to match the two selects beside it — same height,
                    radius, weight and border — so it reads as a third filter
@@ -434,7 +459,21 @@ export default function HrOverview({
             </div>
           </div>
 
-          <div className="roster">
+          {/* The card holds its height whatever the filters leave behind, so
+              searching down to one match does not collapse the panel and
+              shove everything below it up the page. Reserved space is a full
+              page of rows, or fewer when the roster itself is smaller than a
+              page — a company with three joinees should not stare at five
+              rows of nothing. `rows` here is the UNFILTERED list on purpose:
+              that is what makes the height stop moving while you type. */}
+          <div
+            className="roster"
+            style={
+              {
+                '--roster-reserved-rows': Math.min(ROSTER_PAGE_SIZE, Math.max(rows.length, 1)),
+              } as React.CSSProperties
+            }
+          >
             {/* Each label is nudged to sit over the INK of its column, not the
                 edge of its grid cell: the name starts past the avatar, and the
                 pills carry their own padding. Aligning the boxes is not the
@@ -470,6 +509,7 @@ export default function HrOverview({
                   row={r}
                   index={i}
                   busy={togglingId === r.user_id}
+                  slots={slotMap}
                   onView={() => setProfileUserId(r.user_id)}
                   onToggleEnabled={() =>
                     r.user_status === 'disabled'
@@ -616,12 +656,14 @@ function RosterRow({
   row,
   index,
   busy,
+  slots,
   onView,
   onToggleEnabled,
 }: {
   row: OverviewRow;
   index: number;
   busy: boolean;
+  slots: DeptSlots;
   onView: () => void;
   onToggleEnabled: () => void;
 }) {
@@ -635,8 +677,7 @@ function RosterRow({
   const initials = parts.length >= 2
     ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
     : (name[0] ?? '?').toUpperCase();
-  // Department, not row index: the tint should survive a sort or a filter.
-  const deptTint = avatarClass(row.department_id);
+
 
   return (
     /* The row is the control: it carries role/tabIndex/aria-label, and the
@@ -657,7 +698,7 @@ function RosterRow({
       }}
     >
       <span className="roster-joinee">
-        <span className={`roster-avatar ${deptTint}`} aria-hidden="true">
+        <span className={`roster-avatar ${avatarClass(slots, row.department_id)}`} aria-hidden="true">
           {initials}
         </span>
         <span className="roster-joinee-text">
@@ -675,7 +716,9 @@ function RosterRow({
       </span>
 
       <span>
-        <span className="dept-pill">{row.department_name}</span>
+        <span className={`dept-pill dept-pill--dept ${deptLightClass(slots, row.department_id)}`}>
+          {row.department_name}
+        </span>
       </span>
 
       <span className="roster-date">{formatDate(row.start_date)}</span>
@@ -698,30 +741,15 @@ function RosterRow({
       </span>
 
       <span className="roster-actions">
-        <button
-          type="button"
-          className="row-icon-btn"
-          title={`Open ${row.employee_name}'s profile`}
-          aria-label={`Open ${row.employee_name}'s profile`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onView();
-          }}
-        >
-          <ProfileIcon />
-        </button>
-
-        {/* A switch reports STATE, so its label is the state too — on reads
-            "Enabled", off reads "Disabled". The previous version paired a green
-            switch in the on position with the word "Disable" (the action), so
-            the two halves of one control pointed opposite ways and it looked
-            inverted. What clicking will do belongs in the tooltip, not on the
-            face of a switch. */}
+        {/* Just the switch. The profile icon duplicated the row itself —
+            the whole row is already the button that opens the profile — and
+            the Enabled/Disabled caption repeated what the switch position
+            shows. What clicking will do lives in the tooltip. */}
         <button
           type="button"
           role="switch"
           aria-checked={!disabled}
-          className={`row-switch${disabled ? ' is-off' : ''}`}
+          className={`row-switch${disabled ? ' is-off' : ''}${busy ? ' is-busy' : ''}`}
           disabled={busy}
           title={
             disabled
@@ -736,9 +764,6 @@ function RosterRow({
         >
           <span className="row-switch-track" aria-hidden="true">
             <span className="row-switch-knob" />
-          </span>
-          <span className="row-switch-label">
-            {busy ? 'Saving…' : disabled ? 'Disabled' : 'Enabled'}
           </span>
         </button>
       </span>
@@ -1282,15 +1307,6 @@ function PlusIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
       <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function ProfileIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <circle cx="8" cy="5.5" r="2.75" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M2.5 14c0-2.9 2.46-4.6 5.5-4.6s5.5 1.7 5.5 4.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

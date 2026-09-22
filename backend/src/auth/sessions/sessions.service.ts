@@ -1,7 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../../database/database.service';
-import { ActivityLogService } from '../../activity-log/activity-log.service';
 import {
   generateCsrfToken,
   generateRefreshToken,
@@ -42,6 +41,9 @@ const DEFAULT_ABSOLUTE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7d
  *  a client sending garbage and we don't want it in the DB. */
 const USER_AGENT_MAX_LEN = 500;
 
+/** A live session with the owning account's status alongside it. */
+export type LiveSessionRow = UserSessionRow & { user_status: string };
+
 /**
  * The DB source of truth for who is signed in. Every login writes a
  * row; every refresh rotates the row in place; logout marks the row
@@ -49,6 +51,21 @@ const USER_AGENT_MAX_LEN = 500;
  * revoked, past idle_expires_at, past absolute_expires_at, or hash
  * mismatch) is rejected — that is what turns "stolen JWT still works"
  * into "session ends the moment we say it does".
+ */
+/**
+ * Deliberately does NOT write to the activity log. Login, refresh and
+ * logout are session plumbing, not changes to anyone's onboarding, and
+ * at one row per refresh they drowned every real event on the audit
+ * page — 98 of the first few hundred rows were sessions. Nothing is
+ * lost by their absence: `user_sessions` already records every session
+ * with its created_at, revoked_at and revoke_reason, so "when did they
+ * sign in, and when was this session killed" is still answerable, just
+ * from the table that owns it.
+ *
+ * The security-relevant events around sessions are logged by the
+ * services that cause them — AuthService logs
+ * `user.password_reset_completed` for the reset that calls
+ * revokeAllForUser(), and EmployeeProfileService logs `user.disabled`.
  */
 @Injectable()
 export class SessionsService {
@@ -58,7 +75,6 @@ export class SessionsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly config: ConfigService,
-    private readonly activityLog: ActivityLogService,
   ) {
     this.idleTtlMs =
       Number(this.config.get<string>('SESSION_IDLE_TTL_MS')) || DEFAULT_IDLE_TTL_MS;
@@ -104,14 +120,6 @@ export class SessionsService {
     );
     const session = rows[0];
 
-    await this.activityLog.log({
-      actorId: userId,
-      action: 'session.created',
-      entityType: 'user_session',
-      entityId: session.id,
-      metadata: { userAgent: session.user_agent },
-    });
-
     return {
       sessionId: session.id,
       refreshToken,
@@ -143,27 +151,31 @@ export class SessionsService {
     const nextIdle = new Date(now.getTime() + this.idleTtlMs);
 
     const { rows } = await this.db.query<UserSessionRow>(
-      `UPDATE user_sessions
+      // The account check is not redundant with revokeAllForUser. Blocking
+      // revokes the sessions that EXIST at that moment; this is what stops a
+      // session created after the block — or one some future code path opens
+      // without checking — from rotating itself alive forever. JwtStrategy
+      // refuses the resulting access token either way, so nothing was
+      // reachable, but a disabled account should not hold a renewing session
+      // at all.
+      `UPDATE user_sessions s
           SET refresh_token_hash = $2,
               csrf_token_hash    = $3,
               last_used_at       = now(),
               idle_expires_at    = $4
-        WHERE refresh_token_hash = $1
-          AND revoked_at IS NULL
-          AND idle_expires_at     > now()
-          AND absolute_expires_at > now()
-        RETURNING *`,
+        FROM users u
+        WHERE u.id = s.user_id
+          AND u.deleted_at IS NULL
+          AND u.status <> 'disabled'
+          AND s.refresh_token_hash = $1
+          AND s.revoked_at IS NULL
+          AND s.idle_expires_at     > now()
+          AND s.absolute_expires_at > now()
+        RETURNING s.*`,
       [presentedHash, hashToken(newRefreshToken), hashToken(newCsrfToken), nextIdle],
     );
     const session = rows[0];
     if (!session) return null;
-
-    await this.activityLog.log({
-      actorId: session.user_id,
-      action: 'session.refreshed',
-      entityType: 'user_session',
-      entityId: session.id,
-    });
 
     return {
       sessionId: session.id,
@@ -175,18 +187,32 @@ export class SessionsService {
   }
 
   /**
-   * Called from JwtStrategy on every access-token verify, to check
-   * that the session behind the token is still live. Access tokens
-   * are 15 min so this is at most every 15 min per user on a busy
-   * session — cheap. The alternative (JWT-only, no lookup) is what
-   * left the app unable to log anyone out until natural expiry.
+   * Called from JwtStrategy on every access-token verify, to check that
+   * the session behind the token is still live. Access tokens are 15 min
+   * so this is at most every 15 min per user on a busy session — cheap.
+   * The alternative (JWT-only, no lookup) is what left the app unable to
+   * log anyone out until natural expiry.
+   *
+   * Returns the session row plus the owning account's status.
+   *
+   * The join is what makes "HR blocked this person" take effect on their
+   * very next request instead of whenever their access token happened to
+   * expire. It is one query rather than a second round trip per request:
+   * every authenticated request already reads this row, and reading one
+   * more column off a join costs nothing next to a second statement.
+   *
+   * A soft-deleted user has no live session at all — the join drops the
+   * row, so the caller sees the same "no session" it sees for a revoked
+   * one, which is the right answer for an account that is gone.
    */
-  async findLiveSessionById(sessionId: string): Promise<UserSessionRow | null> {
-    const { rows } = await this.db.query<UserSessionRow>(
-      `SELECT * FROM user_sessions
-        WHERE id = $1
-          AND revoked_at IS NULL
-          AND absolute_expires_at > now()`,
+  async findLiveSessionById(sessionId: string): Promise<LiveSessionRow | null> {
+    const { rows } = await this.db.query<LiveSessionRow>(
+      `SELECT s.*, u.status AS user_status
+         FROM user_sessions s
+         JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+        WHERE s.id = $1
+          AND s.revoked_at IS NULL
+          AND s.absolute_expires_at > now()`,
       [sessionId],
     );
     return rows[0] ?? null;
@@ -216,13 +242,6 @@ export class SessionsService {
     );
     const session = rows[0];
     if (!session) return; // idempotent — a second logout on the same session is a no-op
-    await this.activityLog.log({
-      actorId: actorId ?? session.user_id,
-      action: 'session.revoked',
-      entityType: 'user_session',
-      entityId: session.id,
-      metadata: { reason },
-    });
   }
 
   async revokeAllForUser(
@@ -242,15 +261,6 @@ export class SessionsService {
           AND revoked_at IS NULL`,
       [userId, reason],
     );
-    if (rowCount && rowCount > 0) {
-      await this.activityLog.log({
-        actorId: actorId ?? userId,
-        action: 'session.revoked_all',
-        entityType: 'user',
-        entityId: userId,
-        metadata: { reason, count: rowCount },
-      });
-    }
     return rowCount ?? 0;
   }
 }

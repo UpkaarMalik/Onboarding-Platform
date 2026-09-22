@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ActivityLogService } from '../activity-log/activity-log.service';
 import { DatabaseService } from '../database/database.service';
 import { UsersService } from '../users/users.service';
 
@@ -31,6 +32,7 @@ export class DocumentsService {
     private readonly db: DatabaseService,
     private readonly usersService: UsersService,
     private readonly config: ConfigService,
+    private readonly activityLog: ActivityLogService,
   ) {}
 
   async createDocument(
@@ -45,6 +47,17 @@ export class DocumentsService {
        RETURNING id, title, file_url, department_id, uploaded_by, created_at`,
       [title, storedFilename, departmentId, actorId],
     );
+
+    // Title only — never the stored filename, which is the on-disk
+    // path to the file itself.
+    await this.activityLog.log({
+      actorId,
+      action: 'document.uploaded',
+      entityType: 'document',
+      entityId: rows[0].id,
+      metadata: { title, departmentId },
+    });
+
     return rows[0];
   }
 

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { apiFetch } from '../api/client';
+import { ApiError, apiFetch, redirectToLoginOnce } from '../api/client';
 
 export interface CurrentUser {
   id: string;
@@ -63,6 +63,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setAuthenticatedUser = useCallback((user: CurrentUser) => {
     setState({ user, bootstrapping: false });
   }, []);
+
+  /**
+   * Session heartbeat.
+   *
+   * Everything else in this app only discovers a dead session when the user
+   * asks it for something — so a joinee HR has just blocked sits on a page
+   * that looks perfectly normal until they click, which is exactly what it
+   * should not do. This asks on their behalf.
+   *
+   * /auth/me is the cheapest authenticated endpoint there is, and it is one
+   * of the paths apiFetch deliberately does NOT auto-redirect on (a 401 there
+   * is normal on a fresh visit — it is how this very provider bootstraps), so
+   * the 401 is handled here instead.
+   *
+   * Paused while the tab is hidden and re-checked the moment it comes back or
+   * regains focus: someone returning to a tab they left an hour ago gets the
+   * answer immediately rather than after up to another interval.
+   *
+   * ponytail: 30s polling, no new endpoint and no new dependency. The ceiling
+   * is that a blocked user can keep LOOKING at a stale page for up to half a
+   * minute — they cannot do anything, every request of theirs is already 401.
+   * If that half minute ever matters, this is the one place to swap for SSE.
+   */
+  useEffect(() => {
+    if (!state.user) return;
+    let stopped = false;
+
+    const check = async () => {
+      if (stopped || document.hidden) return;
+      try {
+        await apiFetch('/auth/me');
+      } catch (err) {
+        // Only a 401 means "this session is over". A network blip or a 500
+        // must not throw the user out of a page they are entitled to.
+        if (err instanceof ApiError && err.statusCode === 401) {
+          stopped = true;
+          redirectToLoginOnce();
+        }
+      }
+    };
+
+    const id = window.setInterval(check, 30_000);
+    document.addEventListener('visibilitychange', check);
+    window.addEventListener('focus', check);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', check);
+      window.removeEventListener('focus', check);
+    };
+  }, [state.user]);
 
   const logout = useCallback(async () => {
     try {

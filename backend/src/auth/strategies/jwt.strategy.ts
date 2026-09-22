@@ -24,11 +24,18 @@ export interface AuthenticatedUser {
  * than a full-page navigation — those still work either way).
  *
  * validate() then checks the token's `sid` maps to an un-revoked,
- * within-absolute-expiry `user_sessions` row. That per-request DB read
- * is the whole reason "logout" can now actually terminate a live
- * request-chain: before this, the JWT signature was the only check and
- * a JWT signed at login stayed valid until natural expiry no matter
- * what happened in between.
+ * within-absolute-expiry `user_sessions` row, AND that the account
+ * behind it is not disabled. That per-request DB read is the whole
+ * reason "logout" can now actually terminate a live request-chain:
+ * before this, the JWT signature was the only check and a JWT signed at
+ * login stayed valid until natural expiry no matter what happened in
+ * between.
+ *
+ * The status check is belt and braces next to the session revocation
+ * EmployeeProfileService performs when HR blocks someone: revoking is
+ * what ends the sessions that exist, and this is what stops a token
+ * issued in the same instant — or a session created by some future code
+ * path that forgets to check — from outliving the block.
  */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt-access') {
@@ -56,6 +63,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt-access') {
     const session = await this.sessions.findLiveSessionById(payload.sid);
     if (!session) {
       throw new UnauthorizedException('Session is no longer active');
+    }
+    if (session.user_status === 'disabled') {
+      throw new UnauthorizedException('This account has been blocked');
     }
     return {
       id: payload.sub,

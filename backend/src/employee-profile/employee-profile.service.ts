@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { SessionsService } from '../auth/sessions/sessions.service';
 
 /**
  * Read-only aggregation behind HR's "click a joinee, see everything"
@@ -22,6 +23,7 @@ export class EmployeeProfileService {
   constructor(
     private readonly db: DatabaseService,
     private readonly activityLog: ActivityLogService,
+    private readonly sessions: SessionsService,
   ) {}
 
   /**
@@ -77,6 +79,19 @@ export class EmployeeProfileService {
       userId,
       next,
     ]);
+
+    /* Blocking sign-in has to END the sessions they already have, not
+       just stop new ones. Without this the block dialog's promise — "any
+       session they have stops working on its next request" — was false
+       for up to the access token's 15 minute life. JwtStrategy also
+       refuses a disabled account per request, so the two together close
+       the window from both ends.
+
+       Re-enabling deliberately does NOT restore sessions: they are
+       revoked rows, and the person signs in again. */
+    if (next === 'disabled') {
+      await this.sessions.revokeAllForUser(userId, 'account_disabled', actorId);
+    }
 
     await this.activityLog.log({
       actorId,

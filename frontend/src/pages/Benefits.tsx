@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
+import { describeError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import Reveal from '../components/Reveal';
+import LoadError from '../components/LoadError';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -267,6 +269,8 @@ export default function Benefits() {
   const [items, setItems] = useState<Entitlement[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const [openCat, setOpenCat] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<Entitlement | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -297,8 +301,11 @@ export default function Benefits() {
     try {
       const data = await authedFetch<{ data: Entitlement[] }>('/entitlements?limit=50');
       setItems(data.data);
-    } catch {
-      /* silent — page shows empty state */
+      setLoadError(null);
+    } catch (err) {
+      // Was silent, which rendered the empty state — a sentence about the
+      // company having no benefits — whenever the request merely failed.
+      setLoadError(describeError(err));
     } finally {
       setLoading(false);
     }
@@ -308,8 +315,18 @@ export default function Benefits() {
     try {
       const data = await authedFetch<Department[]>('/departments');
       setDepartments(data);
-    } catch { /* ignore */ }
+    } catch (err) {
+      // HR-only, and only fills a filter — a failure hides no benefit, so
+      // it shares the same line rather than replacing the list.
+      setLoadError(describeError(err));
+    }
   }, [authedFetch]);
+
+  const retryLoad = useCallback(async () => {
+    setRetrying(true);
+    await loadEntitlements();
+    setRetrying(false);
+  }, [loadEntitlements]);
 
   useEffect(() => {
     void loadEntitlements();
@@ -529,7 +546,15 @@ export default function Benefits() {
         </div>
       </Reveal>
 
-      {items.length === 0 && !loading && (
+      {/* Order matters: an error must win over the empty state, or a failed
+          fetch still tells the reader the company offers no benefits. */}
+      {loadError && !loading && (
+        <div style={{ padding: '24px 0' }}>
+          <LoadError message={loadError} busy={retrying} onRetry={() => void retryLoad()} />
+        </div>
+      )}
+
+      {items.length === 0 && !loading && !loadError && (
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#999' }}>
           <p style={{ fontSize: 16 }}>No entitlements available yet.</p>
           {isHR && <p style={{ fontSize: 13 }}>Use "+ Add Entitlement" to create one.</p>}
