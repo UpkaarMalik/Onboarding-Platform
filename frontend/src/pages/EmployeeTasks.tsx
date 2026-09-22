@@ -8,6 +8,7 @@ import TaskRoadmap, { type RoadmapItem } from '../components/TaskRoadmap';
 import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
 import DocumentChecklist from '../components/tasks/DocumentChecklist';
 import { fireConfetti } from '../lib/confetti';
+import EmployeeKnowledgeRail from '../components/EmployeeKnowledgeRail';
 import { dueLabel, formatDate } from '../lib/format';
 import type { DashboardResponse, TaskRow } from '../types/onboarding';
 
@@ -304,18 +305,24 @@ export default function EmployeeTasks() {
         )}
       </header>
 
-      {roadmapSteps.length === 0 ? (
-        <p className="muted">No steps on your onboarding yet — check back shortly.</p>
-      ) : (
-        <section className="tasks-trail">
-          <TaskRoadmap
-            steps={roadmapSteps}
-            currentId={currentStepId}
-            onSelect={openStep}
-            onVoyage={onVoyage}
-          />
-        </section>
-      )}
+      {/* Reference on the left, work on the right. The rail is sticky so an
+          article stays put while the trail scrolls past it. */}
+      <div className="employee-home-split">
+        <EmployeeKnowledgeRail onboardingStatus={dashboard?.onboarding.status ?? ''} />
+
+        {roadmapSteps.length === 0 ? (
+          <p className="muted">No steps on your onboarding yet — check back shortly.</p>
+        ) : (
+          <section className="tasks-trail">
+            <TaskRoadmap
+              steps={roadmapSteps}
+              currentId={currentStepId}
+              onSelect={openStep}
+              onVoyage={onVoyage}
+            />
+          </section>
+        )}
+      </div>
 
       {activeTask && (
         <Modal

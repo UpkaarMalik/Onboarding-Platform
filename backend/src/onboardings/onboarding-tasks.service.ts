@@ -239,6 +239,7 @@ export class OnboardingTasksService {
       action: 'onboarding_task.claimed',
       entityType: 'onboarding_task',
       entityId: taskId,
+      metadata: { title: rows[0].title },
     });
 
     return rows[0];
@@ -517,7 +518,7 @@ export class OnboardingTasksService {
           action: 'onboarding_subtask.completed',
           entityType: 'onboarding_subtask',
           entityId: subtaskId,
-          metadata: { taskId: subtask.onboarding_task_id, parentCompleted },
+          metadata: { step: rows[0].title, taskId: subtask.onboarding_task_id, parentCompleted },
         },
         client,
       );
@@ -559,6 +560,7 @@ export class OnboardingTasksService {
           entityType: 'onboarding_subtask',
           entityId: subtaskId,
           metadata: {
+            step: rows[0].title,
             taskId: subtask.onboarding_task_id,
             parentTaskStatus: subtask.task_status,
           },
@@ -605,12 +607,18 @@ export class OnboardingTasksService {
     }
 
     await this.activityLog.log(
-      { actorId, action, entityType: 'onboarding_task', entityId: taskId },
+      {
+        actorId,
+        action,
+        entityType: 'onboarding_task',
+        entityId: taskId,
+        metadata: { title: rows[0].title },
+      },
       queryable,
     );
 
     if (rows[0].is_required) {
-      await this.maybeCompleteOnboarding(queryable, rows[0].onboarding_id);
+      await this.maybeCompleteOnboarding(queryable, rows[0].onboarding_id, actorId);
     }
     return true;
   }
@@ -674,18 +682,42 @@ export class OnboardingTasksService {
    * completed/cancelled, and safe to call unconditionally — from
    * multiple concurrent completions — without a transaction of its own.
    */
-  private async maybeCompleteOnboarding(queryable: Queryable, onboardingId: string) {
-    const { rows } = await queryable.query<{ remaining: string }>(
-      `SELECT COUNT(*)::int AS remaining FROM onboarding_tasks
-       WHERE onboarding_id = $1 AND is_required = true AND status <> 'completed'`,
+  private async maybeCompleteOnboarding(
+    queryable: Queryable,
+    onboardingId: string,
+    actorId: string,
+  ) {
+    const { rows } = await queryable.query<{ remaining: number; total: number }>(
+      `SELECT COUNT(*) FILTER (WHERE status <> 'completed')::int AS remaining,
+              COUNT(*)::int AS total
+         FROM onboarding_tasks
+        WHERE onboarding_id = $1 AND is_required = true`,
       [onboardingId],
     );
-    if (Number(rows[0].remaining) === 0) {
-      await queryable.query(
-        `UPDATE onboardings SET status = 'completed' WHERE id = $1 AND status = 'active'`,
-        [onboardingId],
-      );
-    }
+    if (rows[0].remaining !== 0) return;
+
+    // RETURNING, and log only on a row: the UPDATE is a no-op for an
+    // onboarding that isn't 'active' (already completed, or still
+    // pre-checkpoint), and every later task completion would otherwise
+    // log "finished onboarding" again.
+    const { rows: flipped } = await queryable.query<{ id: string }>(
+      `UPDATE onboardings SET status = 'completed'
+        WHERE id = $1 AND status = 'active'
+        RETURNING id`,
+      [onboardingId],
+    );
+    if (!flipped[0]) return;
+
+    await this.activityLog.log(
+      {
+        actorId,
+        action: 'onboarding.completed',
+        entityType: 'onboarding',
+        entityId: onboardingId,
+        metadata: { taskCount: rows[0].total },
+      },
+      queryable,
+    );
   }
 
   private async getActionableTaskOrThrow(taskId: string): Promise<OnboardingTaskRow> {
@@ -774,9 +806,10 @@ export class OnboardingTasksService {
       action,
       entityType: 'onboarding_task',
       entityId: taskId,
+      metadata: { title: rows[0].title },
     });
 
-    await this.applyCompletionSideEffects(queryable, rows[0]);
+    await this.applyCompletionSideEffects(queryable, rows[0], actorId);
 
     return rows[0];
   }
@@ -797,6 +830,7 @@ export class OnboardingTasksService {
   private async applyCompletionSideEffects(
     queryable: Queryable,
     task: OnboardingTaskRow,
+    actorId: string,
   ): Promise<void> {
     if (task.status !== 'completed') return;
 
@@ -805,7 +839,7 @@ export class OnboardingTasksService {
       await this.activateOnboarding(queryable, task.onboarding_id);
     }
     if (task.is_required) {
-      await this.maybeCompleteOnboarding(queryable, task.onboarding_id);
+      await this.maybeCompleteOnboarding(queryable, task.onboarding_id, actorId);
     }
   }
 
@@ -857,12 +891,12 @@ export class OnboardingTasksService {
           action,
           entityType: 'onboarding_task',
           entityId: taskId,
-          metadata: { completedThisConfirmation: task.status === 'completed' },
+          metadata: { title: task.title, completedThisConfirmation: task.status === 'completed' },
         },
         client,
       );
 
-      await this.applyCompletionSideEffects(client, task);
+      await this.applyCompletionSideEffects(client, task, actorId);
 
       return task;
     });
