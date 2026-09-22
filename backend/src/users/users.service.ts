@@ -92,6 +92,17 @@ export class UsersService {
     return rows[0];
   }
 
+  /** Existence only — deliberately not SELECT *, so a lookup that the
+   *  login screen makes before anyone has authenticated never pulls a
+   *  password hash or contact details into memory. */
+  async existsByJoineeId(joineeId: string): Promise<boolean> {
+    const { rowCount } = await this.db.query(
+      `SELECT 1 FROM users WHERE joinee_id = $1 AND deleted_at IS NULL`,
+      [joineeId],
+    );
+    return (rowCount ?? 0) > 0;
+  }
+
   async findByJoineeId(joineeId: string): Promise<UserRow | null> {
     const { rows } = await this.db.query<UserRow>(
       `SELECT * FROM users WHERE joinee_id = $1 AND deleted_at IS NULL`,

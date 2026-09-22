@@ -76,6 +76,18 @@ export class AuthController {
     return this.authService.getCredentialsSummary(id, actor.id);
   }
 
+  /**
+   * Does this Joinee ID exist? Unauthenticated, because the sign-in
+   * field it marks up is shown before anyone has signed in. See
+   * AuthService.joineeIdExists for the enumeration trade-off and the
+   * rate limit that bounds it.
+   */
+  @Get('joinee-id/:joineeId/exists')
+  checkJoineeId(@Param('joineeId') joineeId: string, @Req() req: Request) {
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    return this.authService.joineeIdExists(joineeId, ip);
+  }
+
   // ============================================================
   // Method 1 — Joinee ID + password.
   // ============================================================

@@ -10,7 +10,6 @@ import { AuthModule } from './auth/auth.module';
 import { OnboardingsModule } from './onboardings/onboardings.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { EntitlementsModule } from './entitlements/entitlements.module';
-import { NotesModule } from './notes/notes.module';
 import { ActivityLogModule } from './activity-log/activity-log.module';
 // PARKED-FEATURE: community
 // import { CommunityModule } from './community/community.module';
@@ -40,7 +39,6 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter';
     OnboardingsModule,
     KnowledgeModule,
     EntitlementsModule,
-    NotesModule,
     DocumentsModule,
     JoineeDocumentsModule,
     EmployeeProfileModule,

@@ -16,7 +16,6 @@ import { CreateOnboardingDto } from './dto/create-onboarding.dto';
 import { CreateJoineeDto } from './dto/create-joinee.dto';
 import { ProvisionCompanyEmailDto } from './dto/provision-company-email.dto';
 import { CreateAdHocTaskDto } from './dto/create-ad-hoc-task.dto';
-import { RateExperienceDto } from './dto/rate-experience.dto';
 import { UpdateAssignmentsDto } from './dto/update-assignments.dto';
 import { computeDueDate } from './utils/due-date.util';
 import { isOverdueSql } from './utils/overdue.util';
@@ -716,43 +715,6 @@ export class OnboardingsService {
   }
 
   /**
-   * An employee rating their own onboarding experience — upsert, not
-   * insert-only, so changing your mind just overwrites the previous
-   * rating rather than accumulating a history nobody asked for.
-   * Scoped by the caller's own onboarding, same pattern as
-   * getMyDashboard: never accepts an onboarding id from the client.
-   */
-  async rateExperience(actor: AuthenticatedUser, dto: RateExperienceDto) {
-    const onboarding = await this.findByUserId(actor.id);
-    if (!onboarding) {
-      throw new NotFoundException('No onboarding found for this account');
-    }
-    const { rows } = await this.db.query<OnboardingRow>(
-      `UPDATE onboardings
-       SET experience_rating = $2, experience_comment = $3, experience_rated_at = now()
-       WHERE id = $1
-       RETURNING *`,
-      [onboarding.id, dto.rating, dto.comment ?? null],
-    );
-    return rows[0];
-  }
-
-  /** HR's "first-week feedback" widget — company-wide average and
-   *  count, computed live from every onboarding that has a rating
-   *  set, never a stored aggregate that could drift. */
-  async getRatingSummary() {
-    const { rows } = await this.db.query<{ average: string | null; count: string }>(
-      `SELECT AVG(experience_rating)::numeric(10,2) AS average, COUNT(*)::int AS count
-       FROM onboardings
-       WHERE experience_rating IS NOT NULL`,
-    );
-    return {
-      average: rows[0].average ? Number(rows[0].average) : null,
-      count: Number(rows[0].count),
-    };
-  }
-
-  /**
    * Step 32: SuperAdmin/HR dashboard, now with an allow-listed filter
    * and sort surface instead of the two ad-hoc equality params this
    * had through Step 28. `query` is the FULL, raw query object —
@@ -889,11 +851,7 @@ export class OnboardingsService {
             WHERE ot.onboarding_id = o.id
               AND ot.is_required = true
               AND ot.status = 'completed'
-          )::int AS required_task_completed_count,
-
-          o.experience_rating,
-          o.experience_comment,
-          o.experience_rated_at
+          )::int AS required_task_completed_count
 
         FROM onboardings o
 

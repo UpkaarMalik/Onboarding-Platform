@@ -90,8 +90,6 @@ export interface DashboardResponse {
     id: string;
     status: string;
     start_date: string;
-    experience_rating: number | null;
-    experience_comment: string | null;
   };
   today: TaskRow[];
   upcoming: TaskRow[];

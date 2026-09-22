@@ -50,6 +50,9 @@ interface RequestOptions {
    *  infinite loop when /auth/refresh is what returned 401. Do not
    *  pass this from application code. */
   _isRetryAfterRefresh?: boolean;
+  /** Cancels the request. Used by as-you-type lookups, where every
+   *  keystroke supersedes the request before it. */
+  signal?: AbortSignal;
 }
 
 const CSRF_COOKIE = 'csrf_token';
@@ -210,6 +213,7 @@ async function rawFetch(path: string, options: RequestOptions): Promise<Response
     // default is 'same-origin' which excludes cross-origin requests
     // like localhost:5173 → localhost:3000.
     credentials: 'include',
+    signal: options.signal,
   });
 }
 

@@ -11,7 +11,6 @@ import Login from './pages/Login';
 import EmployeeTasks from './pages/EmployeeTasks';
 import HrDashboard from './pages/HrDashboard';
 import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
-import AdminNotes from './pages/AdminNotes';
 import Documents from './pages/Documents';
 import Benefits from './pages/Benefits';
 import AuditLog from './pages/AuditLog';
@@ -63,7 +62,6 @@ export default function App() {
                     land somewhere sensible instead of on a 404. */}
                 <Route path="/hr" element={<HrDashboard />} />
                 <Route path="/hr/overview" element={<Navigate to="/hr" replace />} />
-                <Route path="/notes-admin" element={<AdminNotes />} />
                 {/* The audit trail is HR-only end to end: GET
                     /activity-logs is @Roles('superadmin_hr'), so an
                     employee who typed this URL used to load a page that

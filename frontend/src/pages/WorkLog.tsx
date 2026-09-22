@@ -16,12 +16,6 @@ interface DiaryEntry {
   content: string;
 }
 
-interface PrivateNote {
-  id: string;
-  content: string;
-  created_at?: string;
-}
-
 interface SectionDrafts {
   workedOn: string;
   gotStuck: string;
@@ -55,11 +49,6 @@ function wordCount(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
   return trimmed.split(/\s+/).length;
-}
-
-function notePreview(content: string, maxLen = 60): string {
-  if (content.length <= maxLen) return content;
-  return content.slice(0, maxLen).trimEnd() + '...';
 }
 
 /* ------------------------------------------------------------------ */
@@ -227,7 +216,6 @@ export default function WorkLog() {
 
   /* --- Data state --- */
   const [diary, setDiary] = useState<DiaryEntry[]>([]);
-  const [notes, setNotes] = useState<PrivateNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -244,13 +232,6 @@ export default function WorkLog() {
 
   /* --- Display mode --- */
   const [mode, setMode] = useState<'pen' | 'normal'>('pen');
-
-  /* --- Notes sidebar --- */
-  const [noteSearch, setNoteSearch] = useState('');
-  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
-  const [showNewNote, setShowNewNote] = useState(false);
-  const [newNoteContent, setNewNoteContent] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
 
   /* --- Load Google Fonts (Patrick Hand, Caveat, Inter) --- */
   useEffect(() => {
@@ -302,12 +283,8 @@ export default function WorkLog() {
     setLoading(true);
     setError(null);
     try {
-      const [diaryRes, notesRes] = await Promise.all([
-        authedFetch<DiaryEntry[]>('/diary'),
-        authedFetch<{ data: PrivateNote[] }>('/notes'),
-      ]);
+      const diaryRes = await authedFetch<DiaryEntry[]>('/diary');
       setDiary(diaryRes);
-      setNotes(notesRes.data);
 
       const entry = diaryRes.find((d) => d.entry_date === selectedDate);
       setSections(parseSections(entry?.content ?? ''));
@@ -348,24 +325,6 @@ export default function WorkLog() {
     }
   }
 
-  /* --- Save new note --- */
-  async function saveNewNote(e: FormEvent) {
-    e.preventDefault();
-    if (!newNoteContent.trim() || savingNote) return;
-    setSavingNote(true);
-    try {
-      await authedFetch('/notes', { method: 'POST', body: { content: newNoteContent } });
-      setNewNoteContent('');
-      setShowNewNote(false);
-      const notesRes = await authedFetch<{ data: PrivateNote[] }>('/notes');
-      setNotes(notesRes.data);
-    } catch (err) {
-      alert(err instanceof ApiError ? err.message : 'Could not save note');
-    } finally {
-      setSavingNote(false);
-    }
-  }
-
   /* --- Export to clipboard --- */
   function handleExport() {
     const content = serializeSections(sections);
@@ -376,11 +335,6 @@ export default function WorkLog() {
       () => alert('Could not copy to clipboard'),
     );
   }
-
-  /* --- Filtered notes --- */
-  const filteredNotes = noteSearch.trim()
-    ? notes.filter((n) => n.content.toLowerCase().includes(noteSearch.toLowerCase()))
-    : notes;
 
   /* --- Update a single section --- */
   function updateSection(key: keyof SectionDrafts, value: string) {
@@ -437,141 +391,6 @@ export default function WorkLog() {
           display: flex;
           gap: 0;
           min-height: calc(100vh - 80px);
-        }
-
-        /* ---- Sidebar: Private Notes ---- */
-        .diary-sidebar {
-          width: 300px;
-          min-width: 300px;
-          background: #1e2a3a;
-          border-right: 1px solid rgba(255,255,255,0.06);
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-        .diary-sidebar-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 20px 18px 12px;
-          border-bottom: 1px solid rgba(255,255,255,0.08);
-        }
-        .diary-sidebar-title {
-          color: #e8e4dd;
-          font-size: 15px;
-          font-weight: 600;
-          margin: 0;
-          letter-spacing: 0.02em;
-        }
-        .diary-new-note-btn {
-          background: rgba(255,255,255,0.08);
-          border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 8px;
-          color: var(--color-accent, #e88f30);
-          font-size: 13px;
-          font-weight: 600;
-          padding: 5px 14px;
-          cursor: pointer;
-          transition: background 0.15s;
-        }
-        .diary-new-note-btn:hover {
-          background: rgba(255,255,255,0.14);
-        }
-        .diary-search-wrap {
-          padding: 12px 18px 8px;
-        }
-        .diary-search-input {
-          display: block;
-          width: 100%;
-          box-sizing: border-box;
-          padding: 8px 14px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 8px;
-          color: #ccc;
-          font-size: 13px;
-          outline: none;
-          font-family: inherit;
-        }
-        .diary-search-input:focus {
-          border-color: rgba(232,143,48,0.4);
-        }
-        .diary-notes-list {
-          flex: 1;
-          overflow-y: auto;
-          padding: 4px 0;
-        }
-        .diary-note-item {
-          padding: 12px 18px;
-          cursor: pointer;
-          border-left: 3px solid transparent;
-          transition: background 0.15s, border-color 0.15s;
-        }
-        .diary-note-item:hover {
-          background: rgba(255,255,255,0.04);
-        }
-        .diary-note-item.active {
-          background: rgba(232,143,48,0.12);
-          border-left-color: var(--color-accent, #e88f30);
-        }
-        .diary-note-text {
-          color: #b0ab9f;
-          font-size: 13px;
-          line-height: 1.45;
-          margin: 0;
-          white-space: pre-wrap;
-          word-break: break-word;
-        }
-        .diary-note-date {
-          color: #6b6762;
-          font-size: 11px;
-          margin-top: 4px;
-        }
-        .diary-note-editor {
-          border-top: 1px solid rgba(255,255,255,0.08);
-          padding: 14px 18px;
-          background: rgba(255,255,255,0.02);
-        }
-        .diary-note-textarea {
-          display: block;
-          width: 100%;
-          box-sizing: border-box;
-          min-height: 80px;
-          padding: 10px 12px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 8px;
-          color: #ddd;
-          font-size: 13px;
-          line-height: 1.5;
-          resize: vertical;
-          outline: none;
-          font-family: inherit;
-        }
-        .diary-note-save-btn {
-          margin-top: 8px;
-          width: 100%;
-          padding: 8px 0;
-          background: var(--color-accent, #e88f30);
-          color: #fff;
-          border: none;
-          border-radius: 8px;
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: opacity 0.15s;
-          font-family: inherit;
-        }
-        .diary-note-save-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-        .diary-empty-notes {
-          color: #5a5650;
-          font-size: 13px;
-          text-align: center;
-          padding: 32px 18px;
-          line-height: 1.5;
         }
 
         /* ---- Main Area ---- */
@@ -941,82 +760,7 @@ export default function WorkLog() {
       `}</style>
 
       <div className="diary-wrapper">
-        {/* ---- Left sidebar: Private Notes ---- */}
-        <Reveal>
-          <aside className="diary-sidebar">
-            <div className="diary-sidebar-header">
-              <h3 className="diary-sidebar-title">Private Notes</h3>
-              <button
-                className="diary-new-note-btn"
-                onClick={() => setShowNewNote(!showNewNote)}
-              >
-                + New
-              </button>
-            </div>
-
-            <div className="diary-search-wrap">
-              <input
-                className="diary-search-input"
-                type="text"
-                placeholder="Search notes..."
-                value={noteSearch}
-                onChange={(e) => setNoteSearch(e.target.value)}
-              />
-            </div>
-
-            <div className="diary-notes-list">
-              {filteredNotes.length === 0 && (
-                <p className="diary-empty-notes">
-                  {noteSearch
-                    ? 'No notes match your search.'
-                    : 'No notes yet. Click "+ New" to start.'}
-                </p>
-              )}
-              {filteredNotes.map((note) => (
-                <div
-                  key={note.id}
-                  className={`diary-note-item ${activeNoteId === note.id ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveNoteId(activeNoteId === note.id ? null : note.id)
-                  }
-                >
-                  <p className="diary-note-text">
-                    {activeNoteId === note.id
-                      ? note.content
-                      : notePreview(note.content)}
-                  </p>
-                  {note.created_at && (
-                    <div className="diary-note-date">
-                      {formatMonthDay(note.created_at)}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* New note editor */}
-            {showNewNote && (
-              <form className="diary-note-editor" onSubmit={saveNewNote}>
-                <textarea
-                  className="diary-note-textarea"
-                  value={newNoteContent}
-                  onChange={(e) => setNewNoteContent(e.target.value)}
-                  placeholder="Write a private note..."
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  className="diary-note-save-btn"
-                  disabled={savingNote || !newNoteContent.trim()}
-                >
-                  {savingNote ? 'Saving...' : 'Save Note'}
-                </button>
-              </form>
-            )}
-          </aside>
-        </Reveal>
-
-        {/* ---- Right: Diary Notebook ---- */}
+        {/* ---- Diary Notebook ---- */}
         <div className="diary-main-area">
           <Reveal delay={0.1}>
             <div className="diary-container">

@@ -132,10 +132,6 @@ export default function HrDashboard() {
   const [overviewBusy, setOverviewBusy] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [attention, setAttention] = useState<any[]>([]);
-  const [ratingSummary, setRatingSummary] = useState<{ average: number | null; count: number }>({
-    average: null,
-    count: 0,
-  });
 
   const [activeStatFilter, setActiveStatFilter] = useState<string | null>(null);
   const [upcomingDeptFilter, setUpcomingDeptFilter] = useState('');
@@ -175,10 +171,9 @@ export default function HrDashboard() {
   async function loadOverview() {
     setOverviewBusy(true);
     try {
-      const [all, stuck, rating] = await Promise.all([
+      const [all, stuck] = await Promise.all([
         authedFetch<{ data: any[]; total: number }>('/onboardings?limit=100'),
         authedFetch<{ data: any[]; total: number }>('/onboardings/stuck?limit=50'),
-        authedFetch<{ average: number | null; count: number }>('/onboardings/ratings/summary'),
       ]);
       setOverviewRows(all.data);
       // `total` is the count the query found, not the length of the page it
@@ -188,7 +183,6 @@ export default function HrDashboard() {
       setTotalJoiners(all.total);
       setStuckTotal(stuck.total);
       setAttention(stuck.data);
-      setRatingSummary(rating);
       setOverviewError(null);
     } catch (err) {
       // Not swallowed. An empty catch here rendered a dashboard of zeros
@@ -302,8 +296,6 @@ export default function HrDashboard() {
   const pipelineRows = overviewRows
     .filter((o) => o.status !== 'completed' && o.status !== 'cancelled' && o.start_date >= today)
     .filter((o) => !upcomingDeptFilter || o.department_id === upcomingDeptFilter);
-
-  const ratedRows = overviewRows.filter((o) => o.experience_rating != null);
 
   const HOME_CARDS = [
     {
@@ -549,44 +541,6 @@ export default function HrDashboard() {
         <ActivityFeed />
       </div>
 
-      <Reveal>
-        <section>
-          <h2>Feedback &amp; ratings</h2>
-          {ratedRows.length === 0 ? (
-            <p className="muted">No one has submitted feedback yet.</p>
-          ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Employee</th>
-                  <th>Department</th>
-                  <th>Rating</th>
-                  <th>Comment</th>
-                  <th>Rated on</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ratedRows.map((o) => (
-                  <tr key={o.id} onClick={() => setProfileUserId(o.user_id)} style={{ cursor: 'pointer' }}>
-                    <td>{o.employee_name}</td>
-                    <td>{o.department_name}</td>
-                    <td>
-                      <span style={{ fontWeight: 700, color: '#e8930c' }}>
-                        {'★'.repeat(Math.round(o.experience_rating))}{'☆'.repeat(5 - Math.round(o.experience_rating))}
-                      </span>
-                      <span style={{ marginLeft: 6, fontSize: 13, color: 'var(--color-muted)' }}>{o.experience_rating}/5</span>
-                    </td>
-                    <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {o.experience_comment || <span className="muted">—</span>}
-                    </td>
-                    <td>{formatDate(o.experience_rated_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      </Reveal>
 
       {selectedOnboarding && (
         <OnboardingDetailModal
