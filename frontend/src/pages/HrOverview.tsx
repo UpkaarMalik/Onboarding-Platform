@@ -1,7 +1,11 @@
 import type React from 'react';
+import { CustomSelect } from '../components/CustomSelect';
+import PersonSelect, { useEligiblePeople } from '../components/PersonSelect';
+import DatePickerField from '../components/ui/DatePickerField';
 import EmployeeProfileModal from '../components/EmployeeProfileModal';
 import CopyButton from '../components/CopyButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
@@ -16,7 +20,7 @@ import {
   withParam,
   type RosterSort,
 } from '../lib/rosterQuery';
-import { format } from 'date-fns';
+import { addYears, format, isAfter, isBefore, parseISO, startOfDay } from 'date-fns';
 import {
   formatDate,
   onboardingStatusLabel,
@@ -816,10 +820,19 @@ export function CreateJoineeWizard({
   const [personalEmail, setPersonalEmail] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [startDate, setStartDate] = useState('');
-  const [managerName, setManagerName] = useState('');
-  const [buddyName, setBuddyName] = useState('');
+  // User ids, picked from people who have completed their own onboarding.
+  const [managerId, setManagerId] = useState('');
+  const [buddyId, setBuddyId] = useState('');
+  const people = useEligiblePeople();
+  const personName = (id: string) => people?.find((p) => p.id === id)?.full_name;
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [phoneError, setPhoneError] = useState(false);
+  /** Fields the user has left once. An error shown while someone is
+   *  still typing their email is noise; the same error on blur is help. */
+  const [touched, setTouched] = useState<Set<Step1Field>>(new Set());
+  /** Flipped by Continue, so a click reveals everything still missing
+   *  rather than leaving a disabled button with no explanation. */
+  const [submitted, setSubmitted] = useState(false);
+  const touch = (f: Step1Field) => setTouched((t) => (t.has(f) ? t : new Set(t).add(f)));
 
   // Step 2 fields
   const [docTypes, setDocTypes] = useState<DocumentType[]>([]);
@@ -853,8 +866,80 @@ export function CreateJoineeWizard({
     });
   }
 
-  function canProceedStep1() {
-    return fullName.trim() && personalEmail.trim() && departmentId && startDate && phoneNumber.length === 10;
+  /**
+   * Every rule for step 1 in one place, recomputed from the fields
+   * rather than stored, so a message can never survive the thing it was
+   * about. `null` means the field is fine.
+   *
+   * Deliberately not the same list as the server's: this is the fast,
+   * local half. CreateJoineeDto still validates everything again, and
+   * step 3 surfaces whatever it says — a joining date this accepts can
+   * still be refused there if the department has no active template.
+   */
+  const step1Errors: Record<Step1Field, string | null> = {
+    fullName:
+      fullName.trim().length === 0
+        ? 'Enter their full name'
+        : fullName.trim().length < 2
+          ? 'That looks too short to be a name'
+          : // A pasted run of bare combining marks passes the filter
+            // and the length check without being a word.
+            !/\p{L}/u.test(fullName)
+            ? 'A name needs at least one letter'
+            : null,
+    personalEmail:
+      personalEmail.trim().length === 0
+        ? 'Enter a personal email address'
+        : !EMAIL_PATTERN.test(personalEmail.trim())
+          ? 'That is not a valid email address'
+          : null,
+    phoneNumber:
+      phoneNumber.length === 0
+        ? 'Enter their mobile number'
+        : phoneNumber.length < 10
+          ? `${10 - phoneNumber.length} digit${10 - phoneNumber.length === 1 ? '' : 's'} still to go`
+          : !/^[6-9]/.test(phoneNumber)
+            ? 'Indian mobile numbers start with 6, 7, 8 or 9'
+            : null,
+    departmentId: departmentId ? null : 'Pick a department',
+    startDate: !startDate
+      ? 'Pick their joining date'
+      : Number.isNaN(parseISO(startDate).getTime())
+        ? 'That is not a valid date'
+        : // parseISO, not Date.parse: the latter reads a bare
+          // 'yyyy-MM-dd' as UTC MIDNIGHT, while startOfDay(new Date())
+          // is LOCAL midnight. West of Greenwich local midnight falls
+          // after UTC midnight, so today's own date lands on the wrong
+          // side of the comparison and a perfectly valid joining date is
+          // refused. parseISO keeps both sides local, which is the only
+          // way the two are comparable.
+          isBefore(parseISO(startDate), startOfDay(new Date()))
+          ? 'Joining date cannot be in the past'
+          : isAfter(parseISO(startDate), addYears(new Date(), 1))
+            ? 'That is more than a year away — check the date'
+            : null,
+  };
+
+  /** Show a field's error once the user has left it, or once they have
+   *  tried to continue. */
+  const errorFor = (f: Step1Field) =>
+    submitted || touched.has(f) ? step1Errors[f] : null;
+
+  /**
+   * Continue is never disabled. A greyed-out button that will not say
+   * what is wrong was the original complaint about this form, so the
+   * click is what surfaces the errors and moves focus to the first one.
+   */
+  function goToStep2() {
+    const firstBad = STEP1_ORDER.find((f) => step1Errors[f]);
+    if (firstBad) {
+      setSubmitted(true);
+      // Covers both a plain <input> and CustomSelect's trigger button.
+      const cell = document.getElementById(`joinee-field-${firstBad}`);
+      (cell?.querySelector('input, button') as HTMLElement | null)?.focus();
+      return;
+    }
+    setStep(2);
   }
 
   async function submit() {
@@ -879,8 +964,8 @@ export function CreateJoineeWizard({
           startDate,
           // Both optional — HR often doesn't know the buddy on day one,
           // and can fill either in later from the joinee's profile.
-          managerName: managerName || undefined,
-          buddyName: buddyName || undefined,
+          managerUserId: managerId || undefined,
+          buddyUserId: buddyId || undefined,
           requiredDocumentTypeIds: selectedDocs.size ? [...selectedDocs] : undefined,
         },
       });
@@ -903,24 +988,36 @@ export function CreateJoineeWizard({
   const deptName = departments.find((d) => d.id === departmentId)?.name ?? '—';
 
 
-  return (
+  /* Portalled into <body>, exactly like the shared Modal component and
+     for exactly the reason its docstring gives. .hr-dashboard carries
+     `isolation: isolate`, which makes it a stacking context, so a
+     backdrop rendered inside it had its z-index:50 scored against its
+     siblings rather than against the page — and .topnav (z-index 40, in
+     the root context) painted straight over the top of the dialog,
+     hiding the eyebrow and the title behind the nav capsule. A portal
+     puts the dialog out of reach of that rule permanently.
+
+     The inline max-height is gone with it: .modal already caps itself at
+     min(86vh, 100vh - 3rem), and the override was fighting that. */
+  return createPortal(
     <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal modal--xl" style={{ maxHeight: 'calc(100vh - 4rem)' }}>
+      <div className="modal modal--xl">
         {/* Header */}
         <div className="modal-head" style={{ borderBottom: '2px solid var(--color-amber-line)', padding: '1rem 1.5rem 0.7rem' }}>
           <div className="modal-head-text">
+            {/* "Admin · Onboarding" said nothing: HR only ever opens
+                admin onboarding screens, so it categorised the dialog
+                against a set of one. The slot now carries where you are
+                in the wizard, which is the one thing that changes. */}
             <span className="overview-eyebrow" style={{ marginTop: 0, marginBottom: 6 }}>
               <span className="overview-eyebrow-dot" />
-              Admin · Onboarding
+              {STEP_COPY[step - 1].eyebrow}
             </span>
             <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 800 }}>
               Create New <span style={{ fontFamily: "'Playfair Display', serif", fontStyle: 'italic', fontWeight: 600, color: 'var(--color-accent)' }}>Joinee</span>
             </h2>
-            {/* No promise of an email: nothing here sends one. The
-                credentials are shown once, on the next screen, for HR to
-                pass on themselves. */}
             <p style={{ margin: '3px 0 0', fontSize: 12.5, color: 'var(--color-muted)' }}>
-              Fill in the details below. You'll get their login credentials to pass on once this is done.
+              {STEP_COPY[step - 1].sub}
             </p>
           </div>
           <button className="modal-close" onClick={onClose}>
@@ -942,110 +1039,226 @@ export function CreateJoineeWizard({
           {error && <p className="error-text">{error}</p>}
 
           {step === 1 && (
-            <div style={{ background: 'var(--color-surface-alt)', border: '1px solid var(--color-border)', borderRadius: 16, padding: '22px 24px 20px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px' }}>
-                <label style={labelStyle}>
-                  Full Name *
-                  <input value={fullName} onChange={(e) => setFullName(e.target.value.replace(/[0-9]/g, ''))} placeholder="e.g. Arjun Kapoor" required style={inputStyle} />
-                </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <label style={labelStyle}>
-                    Personal Email *
-                    <input type="email" value={personalEmail} onChange={(e) => setPersonalEmail(e.target.value)} placeholder="e.g. arjun@gmail.com" required style={inputStyle} />
-                  </label>
-                  <span className="field-hint" style={{ fontSize: 12, color: 'var(--color-muted)' }}>Their own address, for reaching them before day one</span>
-                </div>
-                <label style={labelStyle}>
-                  Mobile Number *
-                  <div className="phone-input-group" style={phoneError ? { borderColor: '#ef4444', boxShadow: '0 0 0 3px rgba(239,68,68,0.12)' } : undefined}>
-                    <span className="phone-prefix">+91</span>
-                    <span className="phone-divider">|</span>
+            /* Two sections rather than one seven-cell grid. Seven fields
+               in two columns leaves a hole, and the hole used to sit
+               under Buddy with nothing to balance it. Four identity
+               fields pair off exactly; the three placement dropdowns fill
+               a three-column row and read as a set, which they are. */
+            <div className="joinee-form">
+              <section className="joinee-form__section">
+                <p className="joinee-form__legend">Personal Details</p>
+                <div className="joinee-grid">
+                  <Field
+                    name="fullName"
+                    label="Full Name"
+                    required
+                    /* Says what the field will accept, so a character
+                       vanishing as it is typed reads as a rule rather
+                       than as the box being broken. */
+                    hint="Letters and spaces only"
+                    error={errorFor('fullName')}
+                  >
                     <input
-                      value={phoneNumber.length > 5 ? phoneNumber.slice(0, 5) + ' ' + phoneNumber.slice(5) : phoneNumber}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/\D/g, '').slice(0, 10);
-                        setPhoneNumber(raw);
-                        if (phoneError && raw.length === 10) setPhoneError(false);
-                      }}
-                      onBlur={() => { if (phoneNumber.length > 0 && phoneNumber.length < 10) setPhoneError(true); }}
-                      onFocus={() => setPhoneError(false)}
-                      inputMode="numeric"
-                      placeholder="98765 43210"
-                      maxLength={11}
+                      className="joinee-input"
+                      value={fullName}
+                      onChange={(e) => setFullName(cleanFullName(e.target.value))}
+                      onBlur={() => touch('fullName')}
+                      placeholder="e.g. Arjun Kapoor"
+                      maxLength={80}
+                      autoComplete="off"
                     />
-                  </div>
-                  {phoneError && <span style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>Please enter 10 digits</span>}
-                </label>
-                <div style={labelStyle}>
-                  Department *
-                  <CustomSelect
-                    value={departmentId}
-                    onChange={setDepartmentId}
-                    placeholder="Select a department"
-                    options={departments.map((d) => ({ value: d.id, label: d.name }))}
-                    style={inputStyle}
-                  />
+                  </Field>
+
+                  <Field
+                    name="personalEmail"
+                    label="Personal Email"
+                    required
+                    hint="Their own address, for reaching them before day one"
+                    error={errorFor('personalEmail')}
+                  >
+                    <input
+                      className="joinee-input"
+                      type="email"
+                      value={personalEmail}
+                      onChange={(e) => setPersonalEmail(e.target.value)}
+                      onBlur={() => touch('personalEmail')}
+                      placeholder="e.g. arjun@gmail.com"
+                      autoComplete="off"
+                    />
+                  </Field>
+
+                  <Field
+                    name="phoneNumber"
+                    label="Mobile Number"
+                    required
+                    error={errorFor('phoneNumber')}
+                  >
+                    <div className="phone-input-group">
+                      <span className="phone-prefix">+91</span>
+                      <span className="phone-divider" aria-hidden="true">|</span>
+                      <input
+                        value={phoneNumber.length > 5 ? phoneNumber.slice(0, 5) + ' ' + phoneNumber.slice(5) : phoneNumber}
+                        onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                        onBlur={() => touch('phoneNumber')}
+                        inputMode="numeric"
+                        placeholder="98765 43210"
+                        maxLength={11}
+                        aria-label="Mobile number, without the +91"
+                      />
+                    </div>
+                  </Field>
+
+                  {/* plain, like the dropdowns: the control is a button,
+                      and a <label> around it forwards a click on the
+                      caption into opening the calendar. */}
+                  <Field
+                    plain
+                    name="startDate"
+                    label="Date of Joining"
+                    required
+                    hint="Today or later"
+                    error={errorFor('startDate')}
+                  >
+                    <DatePickerField
+                      value={startDate}
+                      onChange={setStartDate}
+                      /* Past days are greyed out rather than absent, and
+                         step1Errors re-checks the same bound — the picker
+                         is the convenience, not the guarantee. */
+                      min={startOfDay(new Date())}
+                      placeholder="Select a date"
+                      invalid={Boolean(errorFor('startDate'))}
+                      onClose={() => touch('startDate')}
+                    />
+                  </Field>
                 </div>
-                <label style={labelStyle}>
-                  Date of Joining *
-                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required style={inputStyle} />
-                </label>
-                <label style={labelStyle}>
-                  <span>Manager Name <span style={{ fontSize: 11, color: 'var(--color-muted)', fontWeight: 400, fontStyle: 'italic' }}>(Optional)</span></span>
-                  <input value={managerName} onChange={(e) => setManagerName(e.target.value)} placeholder="Select manager" style={inputStyle} />
-                </label>
-                <label style={labelStyle}>
-                  <span>Buddy Name <span style={{ fontSize: 11, color: 'var(--color-muted)', fontWeight: 400, fontStyle: 'italic' }}>(Optional)</span></span>
-                  <input value={buddyName} onChange={(e) => setBuddyName(e.target.value)} placeholder="Select buddy" style={inputStyle} />
-                </label>
-              </div>
+              </section>
+
+              <section className="joinee-form__section">
+                <p className="joinee-form__legend">Job Details</p>
+                <div className="joinee-grid joinee-grid--three">
+                  <Field plain
+                    name="departmentId"
+                    label="Department"
+                    required
+                    error={errorFor('departmentId')}
+                  >
+                    <CustomSelect
+                      value={departmentId}
+                      onChange={(v) => { setDepartmentId(v); touch('departmentId'); }}
+                      placeholder="Select a department"
+                      options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                    />
+                  </Field>
+
+                  <Field plain name="managerId" label="Manager" optional>
+                    <PersonSelect value={managerId} onChange={setManagerId} people={people} exclude={buddyId} placeholder="Select manager" />
+                  </Field>
+
+                  <Field plain name="buddyId" label="Buddy" optional>
+                    <PersonSelect value={buddyId} onChange={setBuddyId} people={people} exclude={managerId} placeholder="Select buddy" />
+                  </Field>
+                </div>
+              </section>
             </div>
           )}
 
           {step === 2 && (
-            <div>
-              <p style={{ margin: '0 0 16px', color: 'var(--color-muted)', fontSize: 14 }}>Select which documents the joinee needs to upload:</p>
-              <div className="doc-picker__grid">
-                {docTypes.map((type) => (
-                  <label key={type.id} className={`doc-picker__item${selectedDocs.has(type.id) ? ' is-selected' : ''}`}>
-                    <input type="checkbox" checked={selectedDocs.has(type.id)} onChange={() => toggleDoc(type.id)} />
-                    {type.label}
-                  </label>
-                ))}
-              </div>
-              <p style={{ margin: '12px 0 0', fontSize: 13, color: 'var(--color-accent-dark)', fontWeight: 600 }}>
-                {selectedDocs.size} document{selectedDocs.size === 1 ? '' : 's'} selected
-              </p>
+            <div className="joinee-form">
+              <section className="joinee-form__section">
+                <div className="joinee-form__head">
+                  <p className="joinee-form__legend">
+                    Required Documents · {selectedDocs.size} selected
+                  </p>
+                  <div>
+                    {/* Twelve checkboxes is enough that clearing them one
+                        at a time to start again is a chore. */}
+                    <button
+                      type="button"
+                      className="joinee-form__action"
+                      onClick={() => setSelectedDocs(new Set(docTypes.map((t) => t.id)))}
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      className="joinee-form__action"
+                      onClick={() => setSelectedDocs(new Set())}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div className="doc-picker__grid">
+                  {docTypes.map((type) => (
+                    <label key={type.id} className={`doc-picker__item${selectedDocs.has(type.id) ? ' is-selected' : ''}`}>
+                      <input type="checkbox" checked={selectedDocs.has(type.id)} onChange={() => toggleDoc(type.id)} />
+                      {type.label}
+                    </label>
+                  ))}
+                </div>
+                {/* Selecting nothing is allowed — it creates no document
+                    task at all — but it is unusual enough to say out loud
+                    rather than let it pass as an empty screen. */}
+                <span className={`joinee-field__note ${selectedDocs.size === 0 ? 'field-error' : 'field-hint'}`}>
+                  {selectedDocs.size === 0
+                    ? 'No documents selected — the joinee will not be asked to upload anything.'
+                    : 'The joinee uploads these from their Documents page; HR reviews each one.'}
+                </span>
+              </section>
             </div>
           )}
 
           {step === 3 && (
-            <div>
-              <p style={{ margin: '0 0 16px', fontSize: 12, fontWeight: 700, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Joinee details</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 20px', marginBottom: 20 }}>
-                <ConfirmField label="Full Name" value={fullName} />
-                <ConfirmField label="Personal Email" value={personalEmail} />
-                {/* Shown with the same +91 the request sends, so what HR
-                    confirms is what gets stored. */}
-                <ConfirmField label="Mobile Number" value={phoneNumber ? `+91 ${phoneNumber}` : '—'} />
-                <ConfirmField label="Department" value={deptName} />
-                {/* formatDate, not the raw yyyy-mm-dd the date input holds —
-                    every other date in the app reads "28 Sep 2026". */}
-                <ConfirmField label="Joining Date" value={formatDate(startDate) ?? startDate} />
-                <ConfirmField label="Manager" value={managerName || 'Not assigned'} />
-                <ConfirmField label="Buddy" value={buddyName || 'Not assigned'} />
-              </div>
+            /* Same three panels, same headings, same two/three column
+               rhythm as the steps they summarise — the confirm screen is
+               the form with the boxes locked, not a different layout.
+               Each panel edits back to the step it came from, so a wrong
+               value costs one click instead of two Backs. */
+            <div className="joinee-form">
+              <section className="joinee-form__section">
+                <div className="joinee-form__head">
+                  <p className="joinee-form__legend">Personal Details</p>
+                  <button type="button" className="joinee-form__action" onClick={() => setStep(1)}>Edit</button>
+                </div>
+                <div className="joinee-confirm">
+                  <ConfirmField label="Full Name" value={fullName} />
+                  <ConfirmField label="Personal Email" value={personalEmail} />
+                  {/* Shown with the same +91 the request sends, so what HR
+                      confirms is what gets stored. */}
+                  <ConfirmField label="Mobile Number" value={phoneNumber ? `+91 ${phoneNumber}` : ''} />
+                  {/* formatDate, not the raw yyyy-mm-dd the date input holds —
+                      every other date in the app reads "28 Sep 2026". */}
+                  <ConfirmField label="Joining Date" value={formatDate(startDate) ?? startDate} />
+                </div>
+              </section>
 
-              <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Required documents ({selectedDocs.size})
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 }}>
-                {docTypes.filter((t) => selectedDocs.has(t.id)).map((t) => (
-                  <span key={t.id} className="dept-pill">{t.label}</span>
-                ))}
-                {selectedDocs.size === 0 && <span className="muted">None selected</span>}
-              </div>
+              <section className="joinee-form__section">
+                <div className="joinee-form__head">
+                  <p className="joinee-form__legend">Job Details</p>
+                  <button type="button" className="joinee-form__action" onClick={() => setStep(1)}>Edit</button>
+                </div>
+                <div className="joinee-confirm joinee-confirm--three">
+                  <ConfirmField label="Department" value={deptName} />
+                  <ConfirmField label="Manager" value={personName(managerId) ?? ''} empty="Not assigned" />
+                  <ConfirmField label="Buddy" value={personName(buddyId) ?? ''} empty="Not assigned" />
+                </div>
+              </section>
 
+              <section className="joinee-form__section">
+                <div className="joinee-form__head">
+                  <p className="joinee-form__legend">
+                    Required Documents · {selectedDocs.size} selected
+                  </p>
+                  <button type="button" className="joinee-form__action" onClick={() => setStep(2)}>Edit</button>
+                </div>
+                <div className="joinee-docs__pills">
+                  {docTypes.filter((t) => selectedDocs.has(t.id)).map((t) => (
+                    <span key={t.id} className="dept-pill">{t.label}</span>
+                  ))}
+                  {selectedDocs.size === 0 && <span className="muted">None selected</span>}
+                </div>
+              </section>
             </div>
           )}
         </div>
@@ -1061,8 +1274,7 @@ export function CreateJoineeWizard({
             <button
               type="button"
               className="btn-solid"
-              disabled={step === 1 && !canProceedStep1()}
-              onClick={() => setStep((s) => s + 1)}
+              onClick={() => (step === 1 ? goToStep2() : setStep((s) => s + 1))}
             >
               Continue →
             </button>
@@ -1078,21 +1290,139 @@ export function CreateJoineeWizard({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
-const labelStyle: React.CSSProperties = {
-  display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, fontWeight: 600,
-};
+/**
+ * What a person's name may contain: letters and spaces, nothing else.
+ *
+ * Applied as it is typed, because users.full_name is what the joinee's
+ * own screens, the roster, the activity log and their company email all
+ * read from, and there is no screen in the app that can correct it
+ * afterwards.
+ *
+ * Hyphens, apostrophes and full stops were allowed here until it was
+ * decided they should not be — Anne-Marie, D'Souza and M.S. Dhoni will
+ * have to be entered without their punctuation. That is a deliberate
+ * choice, not an oversight, so please do not quietly widen this back.
+ *
+ * \p{L} rather than A–Z, and \p{M} alongside it, so "letters" means
+ * letters in any alphabet: an ASCII-only rule would delete the matras
+ * out of a name written in Devanagari and leave a mangled word behind.
+ *
+ * Runs of spaces collapse and a leading space is dropped, so a pasted
+ * value cannot arrive pre-broken. A single trailing space survives —
+ * removing it would make typing the space between two names impossible.
+ */
+export function cleanFullName(raw: string): string {
+  return raw
+    .replace(/[^\p{L}\p{M}\s]/gu, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^\s+/, '');
+}
 
-const inputStyle: React.CSSProperties = {
-  padding: '10px 14px',
-  border: '1px solid var(--color-border)',
-  borderRadius: 10,
-  fontSize: 14,
-  fontFamily: 'inherit',
-};
+/**
+ * Header copy, one entry per step.
+ *
+ * It used to be fixed: an "Admin · Onboarding" tag and "Fill in the
+ * details below" — both still true on step 3, where there is nothing
+ * left to fill in. A header that does not change is a header nobody
+ * reads twice, so each step now says what it wants and step 3 says what
+ * pressing the button will actually do.
+ *
+ * The credentials line is deliberately precise. Nothing in this flow
+ * sends an email — the temporary password is rendered once, on the
+ * screen after this one, and is never retrievable again. HR has to know
+ * that before they create the account, not after they have closed the
+ * dialog.
+ */
+const STEP_COPY = [
+  {
+    eyebrow: 'Step 1 of 3 · Details',
+    sub: "Who they are and where they'll sit. Fields marked * are needed to create the account.",
+  },
+  {
+    eyebrow: 'Step 2 of 3 · Documents',
+    sub: 'Choose what they need to upload. These appear on their Documents page on day one.',
+  },
+  {
+    eyebrow: 'Step 3 of 3 · Confirm',
+    sub: "Check it over. Creating them returns a Joinee ID and a one-time password — shown once, for you to pass on. No email is sent.",
+  },
+];
+
+/** The step-1 fields that can be wrong. Manager and buddy are absent on
+ *  purpose — both are optional, so neither has a failure state. */
+type Step1Field = 'fullName' | 'personalEmail' | 'phoneNumber' | 'startDate' | 'departmentId';
+
+/** Reading order, so "focus the first problem" lands on the first
+ *  problem the eye would reach and not on whichever key the object
+ *  literal happened to list first. */
+const STEP1_ORDER: Step1Field[] = [
+  'fullName',
+  'personalEmail',
+  'phoneNumber',
+  'startDate',
+  'departmentId',
+];
+
+/** Something@something.tld. Deliberately loose — the only address that
+ *  truly validates is one that receives mail, and a stricter pattern
+ *  here would reject real addresses for no gain. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * One cell of the step-1 grid: caption, control, and a line underneath
+ * for a hint or an error.
+ *
+ * The note is always rendered, even empty (see .joinee-field__note).
+ * Before, only Personal Email carried a hint, and the extra line made
+ * its cell taller than Full Name beside it — which pushed the entire
+ * right-hand column half a row down and was most of why the form looked
+ * unaligned.
+ *
+ * `plain` renders a <div> instead of a <label>: a <label> wrapped around
+ * CustomSelect forwards a click on the caption to the trigger button and
+ * opens the menu when nobody asked. For the real inputs the <label>
+ * stays, which is also what associates the error text with the control
+ * for a screen reader — the note lives inside the label.
+ */
+function Field({
+  name,
+  label,
+  required,
+  optional,
+  hint,
+  error,
+  plain,
+  children,
+}: {
+  name: string;
+  label: string;
+  required?: boolean;
+  optional?: boolean;
+  hint?: string;
+  error?: string | null;
+  plain?: boolean;
+  children: React.ReactNode;
+}) {
+  const Tag = plain ? 'div' : 'label';
+  return (
+    <Tag className={`joinee-field${error ? ' has-error' : ''}`} id={`joinee-field-${name}`}>
+      <span className="joinee-field__label">
+        {label}
+        {required && ' *'}
+        {optional && <span className="joinee-field__optional">(Optional)</span>}
+      </span>
+      {children}
+      <span className={`joinee-field__note ${error ? 'field-error' : 'field-hint'}`}>
+        {error ?? hint ?? ''}
+      </span>
+    </Tag>
+  );
+}
 
 function StepDot({ num, label, active, done }: { num: number; label: string; active: boolean; done: boolean }) {
   return (
@@ -1114,11 +1444,15 @@ function StepDot({ num, label, active, done }: { num: number; label: string; act
   );
 }
 
-function ConfirmField({ label, value }: { label: string; value: string }) {
+/** One locked field on the confirm step. `empty` is the wording for a
+ *  blank optional value — "Not assigned" says something, an em dash on
+ *  its own leaves the reader guessing whether it failed to load. */
+function ConfirmField({ label, value, empty = '—' }: { label: string; value: string; empty?: string }) {
+  const blank = !value;
   return (
-    <div style={{ background: 'var(--color-surface-alt)', border: '1px solid var(--color-border)', borderRadius: 10, padding: '10px 14px' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>{value || '—'}</div>
+    <div className="joinee-confirm__cell">
+      <div className="joinee-confirm__label">{label}</div>
+      <div className={`joinee-confirm__value${blank ? ' is-empty' : ''}`}>{blank ? empty : value}</div>
     </div>
   );
 }
@@ -1146,64 +1480,5 @@ function SearchIcon() {
   );
 }
 
-export function CustomSelect({
-  value,
-  onChange,
-  options,
-  placeholder,
-  style,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-  style?: React.CSSProperties;
-}) {
-  const [open, setOpen] = useState(false);
-  const [dropUp, setDropUp] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const selected = options.find((o) => o.value === value);
-
-  useEffect(() => {
-    if (!open) return;
-    function close(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
-
-  function handleToggle() {
-    if (!open && ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setDropUp(spaceBelow < 240);
-    }
-    setOpen(!open);
-  }
-
-  return (
-    <div className={`custom-select${open ? ' is-open' : ''}${dropUp ? ' drop-up' : ''}`} ref={ref} style={style}>
-      <button type="button" className="custom-select__trigger" onClick={handleToggle}>
-        <span className={selected ? '' : 'custom-select__placeholder'}>
-          {selected ? selected.label : placeholder ?? 'Select…'}
-        </span>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 4.5l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      </button>
-      {open && (
-        <ul className="custom-select__menu">
-          {options.map((opt) => (
-            <li
-              key={opt.value}
-              className={`custom-select__option${opt.value === value ? ' is-active' : ''}`}
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-            >
-              {opt.label}
-              {opt.value === value && <span className="custom-select__check">✓</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
+// Moved to components/; re-exported so existing imports keep working.
+export { CustomSelect };

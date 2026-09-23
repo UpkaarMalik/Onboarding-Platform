@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
@@ -10,6 +11,7 @@ import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
 import DocumentChecklist from '../components/tasks/DocumentChecklist';
 import { fireConfetti } from '../lib/confetti';
 import EmployeeKnowledgeRail from '../components/EmployeeKnowledgeRail';
+import { SERVER_PUSH_EVENT } from '../components/NotificationBell';
 import { dueLabel, formatDate } from '../lib/format';
 import type { DashboardResponse, TaskRow } from '../types/onboarding';
 
@@ -47,6 +49,7 @@ const HERO_UNCONDENSE_AT = 12;
 export default function EmployeeTasks() {
   const authedFetch = useAuthedFetch();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +97,82 @@ export default function EmployeeTasks() {
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
+
+  /**
+   * Re-read the trail when the server tells this browser something
+   * happened — which, for this page, is nearly always somebody else:
+   * HR or a task owner blocking a step, resolving a blocker, approving a
+   * document, or closing the handover.
+   *
+   * The page's own actions already call loadAll() directly. What it had
+   * no answer for was a change made in a different browser: the bell lit
+   * up and the trail behind it kept showing the old state until the
+   * person reloaded, so a blocked task still looked open and clicking it
+   * failed for no visible reason.
+   */
+  useEffect(() => {
+    const reload = () => void loadAll();
+    window.addEventListener(SERVER_PUSH_EVENT, reload);
+    return () => window.removeEventListener(SERVER_PUSH_EVENT, reload);
+  }, [loadAll]);
+
+  /**
+   * Opens a task's popup and, when it is not one of the currently
+   * actionable ones, builds that popup from the roadmap row instead of
+   * guessing at fields the actionable buckets would have carried.
+   *
+   * Hoisted above this component's early returns, and a useCallback, so
+   * the deep-link effect below can depend on it. Anything that reopens
+   * this popup has to go through here — a second construction of the
+   * same object is a second chance for the two to disagree about what a
+   * completed or locked step looks like.
+   */
+  const openStep = useCallback(
+    (id: string) => {
+      if (!dashboard) return;
+      const rich = [...dashboard.overdue, ...dashboard.today, ...dashboard.upcoming].find(
+        (t) => t.id === id,
+      );
+      if (rich) {
+        setActiveTask(rich);
+        return;
+      }
+      const step = dashboard.steps.find((s) => s.id === id);
+      if (!step) return;
+      setActiveTask({
+        id: step.id,
+        title: step.title,
+        description: step.description ?? null,
+        status: step.status,
+        due_date: step.due_date,
+        is_checkpoint: step.is_checkpoint,
+        system_key: step.system_key ?? null,
+        subtask_count: step.subtask_count ?? 0,
+        subtask_completed_count: step.subtask_completed_count ?? 0,
+      });
+    },
+    [dashboard],
+  );
+
+  /**
+   * Deep link from a notification: /start-here?task=<id> opens that task.
+   *
+   * Waits for `dashboard`, because the id means nothing until the trail
+   * has loaded — the effect re-runs when it arrives. The param is then
+   * dropped with replace, so a refresh or a Back does not reopen a popup
+   * the person has already closed, and an id that matches nothing (a
+   * notification about a cancelled task, a link opened by the wrong
+   * account) is cleared just the same and leaves them on the trail
+   * rather than on an error.
+   */
+  useEffect(() => {
+    const wanted = searchParams.get('task');
+    if (!wanted || !dashboard) return;
+    openStep(wanted);
+    const next = new URLSearchParams(searchParams);
+    next.delete('task');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, dashboard, openStep, setSearchParams]);
 
   /**
    * Whether the page has scrolled past where the hero naturally sits, which is
@@ -186,29 +265,6 @@ export default function EmployeeTasks() {
       blocker: s.blocker ?? rich?.blocker ?? null,
     };
   });
-
-  function openStep(id: string) {
-    const rich = richById.get(id);
-    if (rich) {
-      setActiveTask(rich);
-      return;
-    }
-    // A completed or locked step isn't in the actionable buckets, so build the
-    // popup from the roadmap row instead of guessing at missing fields.
-    const step = dashboard!.steps.find((s) => s.id === id);
-    if (!step) return;
-    setActiveTask({
-      id: step.id,
-      title: step.title,
-      description: step.description ?? null,
-      status: step.status,
-      due_date: step.due_date,
-      is_checkpoint: step.is_checkpoint,
-      system_key: step.system_key ?? null,
-      subtask_count: step.subtask_count ?? 0,
-      subtask_completed_count: step.subtask_completed_count ?? 0,
-    });
-  }
 
   /**
    * The "you are here" step, taken from the trail's OWN order.
@@ -313,7 +369,10 @@ export default function EmployeeTasks() {
       {/* Reference on the left, work on the right. The rail is sticky so an
           article stays put while the trail scrolls past it. */}
       <div className="employee-home-split">
-        <EmployeeKnowledgeRail onboardingStatus={dashboard?.onboarding.status ?? ''} />
+        <EmployeeKnowledgeRail
+          onboardingStatus={dashboard?.onboarding.status ?? ''}
+          people={dashboard?.people ?? null}
+        />
 
         {roadmapSteps.length === 0 ? (
           <p className="muted">No steps on your onboarding yet — check back shortly.</p>

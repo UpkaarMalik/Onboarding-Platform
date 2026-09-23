@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import Modal from '../Modal';
 
 /**
@@ -19,6 +19,7 @@ import Modal from '../Modal';
 export default function ReasonDialog({
   title,
   subtitle,
+  context,
   label,
   placeholder,
   required = true,
@@ -31,6 +32,9 @@ export default function ReasonDialog({
 }: {
   title: string;
   subtitle?: string;
+  /** What the dialog is about, shown above the field — the open blocker
+   *  when resolving one — so it is not squeezed into the subtitle. */
+  context?: ReactNode;
   label: string;
   placeholder?: string;
   /** False for a note nobody has to write — resolving a blocker. */
@@ -79,7 +83,8 @@ export default function ReasonDialog({
         </>
       }
     >
-      <form id="reason-dialog-form" onSubmit={submit}>
+      <form id="reason-dialog-form" className="reason-dialog-form" onSubmit={submit}>
+        {context && <div className="reason-dialog-context">{context}</div>}
         <label className="field">
           <span className="field-label">
             {label}

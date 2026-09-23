@@ -417,7 +417,6 @@ export default function TaskOwnerDashboard() {
           title="Mark as blocked"
           subtitle={activeTask.title}
           label="What is it waiting on?"
-          placeholder="Device allocation pending"
           withDate
           confirmLabel="Mark as blocked"
           busy={blockBusy}
@@ -433,9 +432,9 @@ export default function TaskOwnerDashboard() {
       {activeTask?.blocker && resolveOpen && (
         <ReasonDialog
           title="Resolve blocker"
-          subtitle={`${activeTask.title} — ${activeTask.blocker.reason}`}
+          subtitle={activeTask.title}
+          context={<BlockerLine blocker={activeTask.blocker} />}
           label="What changed?"
-          placeholder="Laptop arrived and was handed over"
           required={false}
           confirmLabel="Resolve"
           busy={blockBusy}

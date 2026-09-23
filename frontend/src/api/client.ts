@@ -15,6 +15,18 @@ export class ApiError extends Error {
     public statusCode: number,
     public code: string,
     message: string,
+    /**
+     * Seconds until the caller may retry, from the response's
+     * Retry-After header. Only a 429 carries one, and only because
+     * main.ts lists that header in the CORS `exposedHeaders` — without
+     * it the browser hides the header from JavaScript and this is
+     * undefined even though the server sent it.
+     *
+     * The rate limiter's window slides, so this is the real remaining
+     * time rather than the full window: after five attempts spread
+     * across a minute, the next slot frees up in seconds, not in 60.
+     */
+    public retryAfter?: number,
   ) {
     super(message);
   }
@@ -104,9 +116,42 @@ const AUTH_ENTRY_POINTS = new Set([
 
 /** A 401 here means "not signed in", which is either a normal state
  *  (/auth/me on a fresh visit, /auth/logout when already logged out) or
- *  a credential rejection — never a session that timed out under us. */
+ *  a credential rejection — never a session that timed out under us.
+ *
+ *  This governs the automatic REDIRECT only. Whether to attempt a
+ *  refresh first is a different question with a different answer — see
+ *  isRefreshExempt. */
 function isAuthEntryPoint(path: string): boolean {
   return path === '/auth/me' || path === '/auth/logout' || AUTH_ENTRY_POINTS.has(path);
+}
+
+/**
+ * Paths where a 401 cannot be cured by refreshing, so we must not try:
+ * the login pair (there is no session yet — that request is how one
+ * gets created) and the refresh call itself (recursion).
+ *
+ * Everything else gets the silent refresh-and-retry, INCLUDING
+ * /auth/me. That inclusion is the fix for a bug that logged people out
+ * mid-work: /auth/me used to be refresh-exempt because it is also a
+ * redirect-exempt path, and AuthContext's 30 second heartbeat is its
+ * only repeat caller. So every 15 minutes, when the access cookie hit
+ * its max-age, the heartbeat was the request that met the 401 — and
+ * with no refresh attempted it read a routine cookie rollover as a dead
+ * session and sent the user to the login page.
+ *
+ * HR appeared unaffected only because HrDashboard's activity feed polls
+ * every 15s and sometimes won the race to refresh first. That was luck,
+ * not protection: it is mounted on one page, and a refresh it starts
+ * does not cancel a redirect the heartbeat has already scheduled.
+ *
+ * The heartbeat still redirects — but now only when the refresh itself
+ * fails, which is what it was always meant to detect: a revoked
+ * session, a blocked account, or one genuinely past its idle/absolute
+ * expiry. Those three fail rotateSession; an expired access cookie does
+ * not.
+ */
+function isRefreshExempt(path: string): boolean {
+  return path === '/auth/refresh' || path.startsWith('/auth/login/');
 }
 
 /** Reads the `csrf_token` cookie the server set at login. Non-HttpOnly
@@ -223,14 +268,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   // Access-cookie expired mid-request: try a refresh once, then retry
   // the original request with the fresh cookie. Refresh endpoint calls
   // are already exempt via _isRetryAfterRefresh to prevent recursion.
-  const isLoginPath = path.startsWith('/auth/login/');
-  if (
-    res.status === 401 &&
-    !options._isRetryAfterRefresh &&
-    !isLoginPath &&
-    path !== '/auth/refresh' &&
-    !isAuthEntryPoint(path)
-  ) {
+  if (res.status === 401 && !options._isRetryAfterRefresh && !isRefreshExempt(path)) {
     const refreshed = await tryRefreshOnce();
     if (refreshed) {
       res = await rawFetch(path, options);
@@ -261,7 +299,13 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     if (res.status === 401 && !isAuthEntryPoint(path) && !options._isRetryAfterRefresh) {
       redirectToLoginOnce();
     }
-    throw new ApiError(res.status, code, message || 'Something went wrong');
+    const retryAfter = Number(res.headers.get('Retry-After'));
+    throw new ApiError(
+      res.status,
+      code,
+      message || 'Something went wrong',
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+    );
   }
 
   /* Announced only on success, and only for methods that can change

@@ -96,4 +96,12 @@ export interface DashboardResponse {
   overdue: TaskRow[];
   steps: StepRow[];
   progress: { requiredTotal: number; requiredCompleted: number; percent: number };
+  /** Manager and buddy HR picked; null until someone is assigned. */
+  people: { manager: PersonRef | null; buddy: PersonRef | null };
+}
+
+export interface PersonRef {
+  id: string;
+  full_name: string;
+  department: string | null;
 }

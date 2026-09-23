@@ -181,7 +181,11 @@ export class JoineeDocumentsService {
           requirementId,
           actor.id,
           file.filename,
-          file.originalname,
+          // Multer hands over the multipart filename decoded as latin1, so a
+          // UTF-8 name arrived as mojibake: macOS screenshots put a narrow
+          // no-break space before "PM", stored as "â¯PM". Re-read the same
+          // bytes as UTF-8.
+          Buffer.from(file.originalname, 'latin1').toString('utf8'),
           file.mimetype,
           file.size,
         ],
@@ -322,7 +326,12 @@ export class JoineeDocumentsService {
         dto.decision === 'rejected'
           ? dto.note ?? 'Please upload it again.'
           : null,
-        '/start-here',
+        // onboarding_task_id is nullable — a requirement can exist
+        // without a gating task — so the page is the fallback, never a
+        // '?task=null' the trail would hunt for and never find.
+        upload.onboarding_task_id
+          ? `/start-here?task=${upload.onboarding_task_id}`
+          : '/start-here',
         { actorId: actor.id, client },
       );
 
