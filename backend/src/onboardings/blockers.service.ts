@@ -152,7 +152,7 @@ export class BlockersService {
         'task_blocked',
         `${task.title} is blocked`,
         dto.reason,
-        '/start-here',
+        `/start-here?task=${task.id}`,
         { actorId: actor.id, client },
       );
       // HR blocking something already knows; an owner doing it is news.
@@ -261,7 +261,7 @@ export class BlockersService {
         'task_unblocked',
         `${existing.task_title} is no longer blocked`,
         dto.note ?? null,
-        '/start-here',
+        `/start-here?task=${blocker.onboarding_task_id}`,
         { actorId: actor.id, client },
       );
 

@@ -60,6 +60,14 @@ describe('Notification events (e2e)', () => {
   async function mark() {
     seen = (await db.query<{ now: Date }>(`SELECT clock_timestamp() AS now`)).rows[0].now;
   }
+  /** Whether HR's profile says the gate has opened this task. */
+  async function isOpen(title: string) {
+    const res = await request(app.getHttpServer())
+      .get(`/employee-profile/${ids.joinee}`)
+      .set('Authorization', `Bearer ${creds.hr.token}`)
+      .expect(200);
+    return res.body.tasks.pending.find((t: { title: string }) => t.title === title)?.is_open;
+  }
   async function taskId(title: string) {
     const { rows } = await db.query<{ id: string }>(
       `SELECT id FROM onboarding_tasks WHERE onboarding_id = $1 AND title = $2`,
@@ -167,6 +175,10 @@ describe('Notification events (e2e)', () => {
     expect(await newFor('joinee')).toEqual([]);
     await mark();
 
+    // Uploaded but not yet approved: the handover is still behind the
+    // documents step, so HR's "Mark done" must not be offered yet.
+    expect(await isOpen('Company email & laptop handover')).toBe(false);
+
     // 3. HR approves: the joinee hears, and the steps it opened are announced.
     const { rows: up } = await db.query<{ id: string }>(
       `SELECT u.id FROM joinee_document_uploads u WHERE u.requirement_id = $1 AND u.superseded_at IS NULL`,
@@ -182,6 +194,8 @@ describe('Notification events (e2e)', () => {
       { kind: 'document_approved', title: 'Your Aadhaar Card was approved', body: null, link: '/start-here' },
     ]);
     await mark();
+
+    expect(await isOpen('Company email & laptop handover')).toBe(true);
 
     // 4. HR blocks and resolves the handover: the joinee hears both; HR,
     //    who did it, hears nothing.

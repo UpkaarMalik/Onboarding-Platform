@@ -750,7 +750,7 @@ export class OnboardingTasksService {
       `SELECT id, title, status, system_key, is_required
          FROM onboarding_tasks
         WHERE onboarding_id = $1 AND is_required = true
-        ORDER BY due_date, created_at`,
+        ORDER BY due_date, created_at, id`,
       [task.onboarding_id],
     );
     // Not part of the gated journey — nothing to check it against.
@@ -898,7 +898,10 @@ export class OnboardingTasksService {
       'task_completed',
       `${task.title} is complete`,
       null,
-      '/start-here',
+      // The task, not the page. Landing on the trail and leaving the
+      // person to find which of eleven steps the notification meant is
+      // what "redirect" was doing before.
+      `/start-here?task=${task.id}`,
       { actorId, client: queryable },
     );
   }
@@ -925,7 +928,7 @@ export class OnboardingTasksService {
          FROM onboarding_tasks ot
          JOIN onboardings o ON o.id = ot.onboarding_id
         WHERE ot.onboarding_id = $1 AND ot.is_required = true
-        ORDER BY ot.due_date, ot.created_at`,
+        ORDER BY ot.due_date, ot.created_at, ot.id`,
       [completed.onboarding_id],
     );
     const openIds = (tasks: typeof rows) => {
@@ -943,7 +946,7 @@ export class OnboardingTasksService {
         'task_available',
         `A new step is ready: ${step.title}`,
         null,
-        '/start-here',
+        `/start-here?task=${step.id}`,
         { actorId, client: queryable },
       );
     }

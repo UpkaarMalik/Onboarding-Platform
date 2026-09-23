@@ -203,6 +203,17 @@ export default function Login() {
    *  (a rejected credential pair, a server that didn't answer). */
   const [invalidField, setInvalidField] = useState<FieldName>(null);
   const [busy, setBusy] = useState(false);
+  /**
+   * When the rate limiter's window reopens, as an epoch millisecond, or
+   * null when nothing is blocked.
+   *
+   * Held as an absolute instant rather than a countdown so a backgrounded
+   * tab — where browsers throttle timers to once a minute — comes back
+   * with the right number instead of one frozen where it left off.
+   */
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const locked = lockedUntil !== null;
 
   const [passwordStep, setPasswordStep] = useState<PasswordStep>({ name: 'credentials' });
   const [joineeId, setJoineeId] = useState('');
@@ -225,10 +236,35 @@ export default function Login() {
   // looking at the sign-in form again instead of the home page.
   const [resetComplete, setResetComplete] = useState(false);
 
+  /** Counts the block down to zero and then releases the button. Runs
+   *  off the wall clock on every tick, so a late or coalesced interval
+   *  corrects itself rather than accumulating drift. */
+  useEffect(() => {
+    if (lockedUntil === null) return;
+    const tick = () => {
+      const left = Math.ceil((lockedUntil - Date.now()) / 1000);
+      if (left > 0) {
+        setSecondsLeft(left);
+      } else {
+        setLockedUntil(null);
+        setSecondsLeft(0);
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [lockedUntil]);
+
   /** Clears whatever the last attempt complained about. Wired to every
    *  input's onChange: an error that outlives the thing it was about
-   *  reads as the form still being broken after it has been fixed. */
+   *  reads as the form still being broken after it has been fixed.
+   *
+   *  A rate-limit message is the exception — it is about the browser,
+   *  not about what is typed in the boxes, and it is the only thing on
+   *  screen explaining why the button is dead. Editing a field does not
+   *  make it untrue, so it stays until the block expires. */
   function clearError() {
+    if (locked) return;
     if (error || invalidField) {
       setError(null);
       setInvalidField(null);
@@ -238,6 +274,19 @@ export default function Login() {
   function fail(message: string, field: FieldName = null) {
     setError(message);
     setInvalidField(field);
+  }
+
+  /**
+   * A 429 from the login limiter, turned into a dead submit button for
+   * as long as the server says. Falls back to the full 30s window when
+   * Retry-After is missing — a block that is guessed slightly long is
+   * a wasted wait, whereas one guessed short sends the user straight
+   * back into another 429.
+   */
+  function noteRateLimit(err: unknown) {
+    if (err instanceof ApiError && err.statusCode === 429) {
+      setLockedUntil(Date.now() + (err.retryAfter ?? 30) * 1000);
+    }
   }
 
   /**
@@ -314,6 +363,9 @@ export default function Login() {
 
   async function submitPassword(e: FormEvent) {
     e.preventDefault();
+    // The button is disabled, but Enter in a text field submits the
+    // form regardless of what the button looks like.
+    if (locked) return;
     // Trimmed because a Joinee ID is almost always pasted out of an
     // email or a chat message, and a trailing space turns a correct
     // credential into "Invalid credentials" with nothing to show for it.
@@ -339,6 +391,7 @@ export default function Login() {
       // same 'Invalid credentials', deliberately — saying which half was
       // wrong would confirm that an ID exists. So neither field is
       // singled out here; the message stands for the pair.
+      noteRateLimit(err);
       fail(describe(err));
     } finally {
       setBusy(false);
@@ -347,6 +400,7 @@ export default function Login() {
 
   async function submitPasswordReset(e: FormEvent) {
     e.preventDefault();
+    if (locked) return;
     if (passwordStep.name !== 'reset') return;
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
       return fail(
@@ -370,6 +424,28 @@ export default function Login() {
       setResetComplete(true);
       setPasswordStep({ name: 'credentials' });
     } catch (err) {
+      noteRateLimit(err);
+      // The pre-auth token is not a session and nothing refreshes it —
+      // this path is deliberately refresh-exempt, because there is no
+      // session to refresh until this very form succeeds. So a 401 here
+      // means the token ran out (JWT_PREAUTH_EXPIRES_IN) and the only
+      // way forward is to sign in again.
+      //
+      // Before this, that printed the server's "Invalid or expired
+      // token" against the New password field — blaming the one thing
+      // that was not wrong, on a form with no way back to sign-in, so a
+      // first-day joinee who took too long was stuck until they thought
+      // to reload. This is the only screen in the app that can reach
+      // that state: HR never sees it, because only joinees are created
+      // with must_reset_password.
+      if (err instanceof ApiError && err.statusCode === 401) {
+        setPasswordStep({ name: 'credentials' });
+        setNewPassword('');
+        setPassword('');
+        // Joinee ID is deliberately kept, so only the password is retyped.
+        fail('That took too long — sign in again to finish setting your password.');
+        return;
+      }
       fail(describe(err), 'newPassword');
     } finally {
       setBusy(false);
@@ -601,9 +677,18 @@ export default function Login() {
                 required
               />
 
-              <button className="login-submit" disabled={busy} type="submit">
-                <span className="login-submit__sheen" aria-hidden="true" />
-                <span>{busy ? 'Signing in…' : 'Sign in'}</span>
+              <button
+                className={`login-submit${locked ? ' login-submit--locked' : ''}`}
+                disabled={busy || locked}
+                type="submit"
+              >
+                {/* The sheen sweeps to say the button is live. It would
+                    read as activity on a button that is refusing to do
+                    anything, so a blocked button does not get one. */}
+                {!locked && <span className="login-submit__sheen" aria-hidden="true" />}
+                <span>
+                  {locked ? `Try again in ${secondsLeft}s` : busy ? 'Signing in…' : 'Sign in'}
+                </span>
               </button>
             </form>
           )}
@@ -626,9 +711,15 @@ export default function Login() {
                 autoFocus
                 required
               />
-              <button className="login-submit" disabled={busy} type="submit">
-                <span className="login-submit__sheen" aria-hidden="true" />
-                <span>{busy ? 'Saving…' : 'Set password'}</span>
+              <button
+                className={`login-submit${locked ? ' login-submit--locked' : ''}`}
+                disabled={busy || locked}
+                type="submit"
+              >
+                {!locked && <span className="login-submit__sheen" aria-hidden="true" />}
+                <span>
+                  {locked ? `Try again in ${secondsLeft}s` : busy ? 'Saving…' : 'Set password'}
+                </span>
               </button>
             </form>
           )}

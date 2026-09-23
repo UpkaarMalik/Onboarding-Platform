@@ -820,7 +820,7 @@ export class OnboardingsService {
        FROM onboarding_tasks ot
        ${openBlockerJoin('ot')}
        WHERE ot.onboarding_id = $1
-       ORDER BY ot.due_date, ot.created_at`,
+       ORDER BY ot.due_date, ot.created_at, ot.id`,
       [onboardingId],
     );
     return rows;
@@ -1267,7 +1267,7 @@ export class OnboardingsService {
        ${openBlockerJoin('ot')}
        WHERE ot.onboarding_id = $1
          AND ot.status NOT IN ('locked', 'completed', 'cancelled')
-       ORDER BY ot.due_date`,
+       ORDER BY ot.due_date, ot.id`,
       [onboarding.id],
     );
 
@@ -1324,7 +1324,7 @@ export class OnboardingsService {
        FROM onboarding_tasks ot
        ${openBlockerJoin('ot')}
        WHERE ot.onboarding_id = $1 AND ot.is_required = true
-       ORDER BY ot.due_date, ot.created_at`,
+       ORDER BY ot.due_date, ot.created_at, ot.id`,
       [onboarding.id],
     );
 
@@ -1333,6 +1333,21 @@ export class OnboardingsService {
     // trail-order.util, which the completion guard also reads — the trail can
     // therefore never offer a step that OnboardingTasksService would refuse.
     // The ORDER BY above is not redundant: it is the tiebreak inside each band.
+    //
+    // ot.id on the end of it is not decoration either. Every task on an
+    // onboarding is inserted in ONE transaction, and Postgres's now() is
+    // the transaction timestamp, so created_at is identical across all of
+    // them — a real onboarding here has 11 tasks sharing 3 distinct
+    // (due_date, created_at) keys. With no unique final key the order
+    // within a tie is undefined, and Postgres hands back tied rows in
+    // physical heap order. An UPDATE writes a new tuple at the end of the
+    // page, so BLOCKING a task moved it down the trail and blocking
+    // another moved that one instead — the list appeared to shuffle
+    // itself. Worse, openIndices() reads this same order, so which step
+    // counted as "next" was being decided by row layout rather than by
+    // the gate. The id makes it stable forever; it carries no meaning of
+    // its own, and none is needed, because the band is where the meaning
+    // lives.
     const orderedSteps = applySequenceGate(orderForTrail(steps));
 
     const { rows: people } = await this.db.query<{ manager: PersonRef | null; buddy: PersonRef | null }>(
@@ -1384,7 +1399,7 @@ export class OnboardingsService {
     const onboarding = onboardingRows[0];
 
     const { rows: taskRows } = await queryable.query(
-      `SELECT * FROM onboarding_tasks WHERE onboarding_id = $1 ORDER BY due_date, created_at`,
+      `SELECT * FROM onboarding_tasks WHERE onboarding_id = $1 ORDER BY due_date, created_at, id`,
       [onboardingId],
     );
 

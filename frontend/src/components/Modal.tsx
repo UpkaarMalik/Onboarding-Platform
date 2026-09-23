@@ -48,7 +48,9 @@ export default function Modal({
   actions?: ReactNode;
   /** @deprecated prefer `size="wide"` — kept so existing call sites still work. */
   wide?: boolean;
-  size?: 'default' | 'wide' | 'xl' | 'drawer';
+  /** 'panel' is a drawer at a quarter of the viewport, for a short list
+   *  beside the page rather than over it. */
+  size?: 'default' | 'wide' | 'xl' | 'drawer' | 'panel';
   busy?: boolean;
   subtitle?: ReactNode;
   icon?: ReactNode;
@@ -98,7 +100,7 @@ export default function Modal({
     >
       <div
         ref={dialogRef}
-        className={`modal modal--${resolved}${resolved === 'wide' ? ' modal--wide' : ''}`}
+        className={`modal modal--${resolved}${resolved === 'wide' ? ' modal--wide' : ''}${resolved === 'panel' ? ' modal--drawer' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}

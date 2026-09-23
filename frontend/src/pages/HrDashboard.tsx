@@ -110,6 +110,25 @@ const isoDaysAgo = daysAgoIso;
  * larger page size rather than adding new summary endpoints — good
  * enough for the onboarding volumes this app deals with.
  */
+/** Magnetic tilt on the "At a glance" cards: the pointer's position over
+ *  the card, as two CSS variables the stylesheet turns into rotateX/Y.
+ *  Mouse only — on touch the "hover" is a tap, and a card that jolts
+ *  sideways as you press it reads as a glitch. */
+const TILT_MAX = 9;
+function tiltCard(e: React.PointerEvent<HTMLElement>) {
+  if (e.pointerType !== 'mouse') return;
+  const el = e.currentTarget;
+  const box = el.getBoundingClientRect();
+  const x = (e.clientX - box.left) / box.width;
+  const y = (e.clientY - box.top) / box.height;
+  el.style.setProperty('--rx', `${(0.5 - y) * 2 * TILT_MAX}deg`);
+  el.style.setProperty('--ry', `${(x - 0.5) * 2 * TILT_MAX}deg`);
+}
+function untiltCard(e: React.PointerEvent<HTMLElement>) {
+  e.currentTarget.style.removeProperty('--rx');
+  e.currentTarget.style.removeProperty('--ry');
+}
+
 export default function HrDashboard() {
   const authedFetch = useAuthedFetch();
   const { user } = useAuth();
@@ -158,8 +177,28 @@ export default function HrDashboard() {
   const slots = useMemo(() => deptSlots(departments), [departments]);
   /* Joined into one string so the effect below has a primitive to compare:
      a fresh URLSearchParams object every render would re-fire it forever. */
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const rosterQuery = ROSTER_PARAMS.map((k) => searchParams.get(k) ?? '').join('\u0000');
+
+  /* ?profile= opens that joinee's profile — on first load (above) and also
+     when a link arrives while this page is already mounted, which is how a
+     notification like "X uploaded their PAN Card" lands on the joinee. */
+  const profileParam = searchParams.get('profile');
+  useEffect(() => {
+    if (profileParam) setProfileUserId(profileParam);
+  }, [profileParam]);
+
+  /* Closing drops the param too. Left in the URL, a reload reopened the
+     profile, and a second click on the same notification — the same URL —
+     went nowhere. */
+  function closeProfile() {
+    setProfileUserId(null);
+    if (profileParam) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('profile');
+      setSearchParams(next, { replace: true });
+    }
+  }
 
   useEffect(() => {
     authedFetch<Department[]>('/departments')
@@ -512,7 +551,14 @@ export default function HrDashboard() {
                   className={`home-card home-card--${c.tone}${activeStatFilter === c.key ? ' is-active' : ''}`}
                   aria-pressed={activeStatFilter === c.key}
                   onClick={() => pickCard(c.key)}
+                  onPointerMove={tiltCard}
+                  onPointerLeave={untiltCard}
                 >
+                  {/* Hover glow, shimmer sweep and the accent line along the
+                      foot — all CSS, all in the card's own --tone. */}
+                  <span className="home-card-fx home-card-glow" aria-hidden="true" />
+                  <span className="home-card-fx home-card-shimmer" aria-hidden="true" />
+                  <span className="home-card-fx home-card-line" aria-hidden="true" />
                   <span className={`home-card-icon ${c.tone}`} aria-hidden="true">{c.icon}</span>
                   <span className="home-card-text">
                     <span className="home-card-value">{c.value}</span>
@@ -558,7 +604,7 @@ export default function HrDashboard() {
       {profileUserId && (
         <EmployeeProfileModal
           userId={profileUserId}
-          onClose={() => setProfileUserId(null)}
+          onClose={closeProfile}
           onChanged={refreshEverything}
         />
       )}

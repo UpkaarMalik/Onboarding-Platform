@@ -141,3 +141,13 @@ export function onboardingStatusTone(status: string): 'pending' | 'progress' | '
   if (status === 'cancelled') return 'closed';
   return 'progress';
 }
+
+/** A stored phone number (digits only, country code first — the DB trigger
+ *  from migration 0019 guarantees that) as people read it: "+91 98234 45778",
+ *  grouped five-and-five like the create form's input. Anything that is not
+ *  an Indian mobile keeps its digits behind a "+". */
+export function formatPhone(digits: string | null | undefined): string | null {
+  if (!digits) return null;
+  if (/^91\d{10}$/.test(digits)) return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
+  return `+${digits}`;
+}

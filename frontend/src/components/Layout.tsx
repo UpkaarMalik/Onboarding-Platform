@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ROSTER_PATH, rosterQueryIsActive, withParam } from '../lib/rosterQuery';
+import NotificationBell from './NotificationBell';
 
 interface NavItem {
   to: string;
@@ -306,6 +307,8 @@ export default function Layout() {
             </div>
           )}
         </nav>
+
+        <NotificationBell />
 
         <div className="topnav-user" ref={menuRef}>
           <button

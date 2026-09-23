@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import PersonSelect, { useEligiblePeople } from './PersonSelect';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { ApiError, openFileInline } from '../api/client';
-import { formatDate } from '../lib/format';
+import { formatDate, formatPhone, todayIso } from '../lib/format';
 import Modal from './Modal';
+import AnimatedProgressBar from './AnimatedProgressBar';
 import BlockerLine, { type TaskBlocker } from './BlockerLine';
 import CopyButton from './CopyButton';
 import ReasonDialog from './tasks/ReasonDialog';
@@ -51,6 +53,9 @@ interface ProfileTask {
   completed_at: string | null;
   subtask_count: number;
   subtask_completed_count: number;
+  /** Whether the step-by-step gate has opened this task yet — the server
+   *  refuses to complete it until it has. */
+  is_open: boolean;
 }
 
 interface EmployeeProfile {
@@ -71,6 +76,8 @@ interface EmployeeProfile {
     start_date: string;
     manager_name: string | null;
     buddy_name: string | null;
+    manager_user_id: string | null;
+    buddy_user_id: string | null;
     template_name: string;
   } | null;
   documents: JoineeDocument[];
@@ -109,8 +116,9 @@ export default function EmployeeProfileModal({
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingAssignments, setEditingAssignments] = useState(false);
-  const [managerName, setManagerName] = useState('');
-  const [buddyName, setBuddyName] = useState('');
+  const [managerId, setManagerId] = useState('');
+  const [buddyId, setBuddyId] = useState('');
+  const people = useEligiblePeople();
   const [savingAssignments, setSavingAssignments] = useState(false);
   const [credentials, setCredentials] = useState<CredentialSummary | null>(null);
   const [regenerating, setRegenerating] = useState(false);
@@ -129,8 +137,8 @@ export default function EmployeeProfileModal({
     authedFetch<EmployeeProfile>(`/employee-profile/${userId}`)
       .then((p) => {
         setProfile(p);
-        setManagerName(p.onboarding?.manager_name ?? '');
-        setBuddyName(p.onboarding?.buddy_name ?? '');
+        setManagerId(p.onboarding?.manager_user_id ?? '');
+        setBuddyId(p.onboarding?.buddy_user_id ?? '');
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load profile'));
     // Loaded with the profile rather than behind a "View credentials" click —
@@ -149,11 +157,11 @@ export default function EmployeeProfileModal({
     setSavingAssignments(true);
     setError(null);
     try {
-      // Empty string is meaningful here — it clears the field, rather
-      // than leaving it untouched the way omitting the key does.
+      // null clears; both are always sent, so what the form shows is what
+      // gets saved.
       await authedFetch(`/onboardings/${profile.onboarding.id}/assignments`, {
         method: 'PATCH',
-        body: { managerName, buddyName },
+        body: { managerUserId: managerId || null, buddyUserId: buddyId || null },
       });
       setEditingAssignments(false);
       load();
@@ -293,13 +301,37 @@ export default function EmployeeProfileModal({
   }
 
   const { user, onboarding, documents, tasks } = profile;
+  // The step the gate is currently on — what a not-yet-open task waits for.
+  const waitingOn = tasks.pending.find((t) => t.is_required && t.is_open)?.title;
+  const percent = tasks.requiredTotal
+    ? Math.round((tasks.requiredCompleted / tasks.requiredTotal) * 100)
+    : 0;
 
   return (
-    <Modal title={user.full_name} onClose={onClose} wide>
+    <Modal
+      title={user.full_name}
+      onClose={onClose}
+      size="xl"
+      icon={<span className="profile-avatar">{initials(user.full_name)}</span>}
+      subtitle={
+        <>
+          {user.department_name ?? 'No department'}
+          {onboarding && (
+            <>
+              {' · '}
+              {onboarding.start_date > todayIso() ? 'Joins' : 'Joined'} {formatDate(onboarding.start_date)}
+            </>
+          )}
+        </>
+      }
+    >
+      <div className="profile-page">
       {error && <p className="error-text">{error}</p>}
 
       <section className="profile-section">
-        <h3>Details</h3>
+        <div className="profile-section-head">
+          <h3>Details</h3>
+        </div>
         <dl className="profile-grid">
           <div>
             <dt>Joinee ID</dt>
@@ -309,11 +341,23 @@ export default function EmployeeProfileModal({
           </div>
           <div>
             <dt>Mobile</dt>
-            <dd>{user.phone_number}</dd>
+            <dd>
+              <a className="profile-link" href={`tel:+${user.phone_number}`}>
+                {formatPhone(user.phone_number)}
+              </a>
+            </dd>
           </div>
           <div>
             <dt>Personal email</dt>
-            <dd>{user.personal_email ?? <span className="muted">Not recorded</span>}</dd>
+            <dd>
+              {user.personal_email ? (
+                <a className="profile-link" href={`mailto:${user.personal_email}`}>
+                  {user.personal_email}
+                </a>
+              ) : (
+                <span className="muted">Not recorded</span>
+              )}
+            </dd>
           </div>
           <div>
             <dt>Department</dt>
@@ -334,33 +378,27 @@ export default function EmployeeProfileModal({
 
       {onboarding && (
         <section className="profile-section">
-          <h3>
-            Manager &amp; buddy{' '}
+          <div className="profile-section-head">
+            <h3>Manager &amp; buddy</h3>
             {!editingAssignments && (
-              <button type="button" onClick={() => setEditingAssignments(true)}>
+              <button type="button" className="profile-head-btn" onClick={() => setEditingAssignments(true)}>
                 Edit
               </button>
             )}
-          </h3>
+          </div>
           {editingAssignments ? (
-            <form onSubmit={saveAssignments}>
-              <label>
-                Manager name
-                <input
-                  value={managerName}
-                  onChange={(e) => setManagerName(e.target.value)}
-                  placeholder="Leave blank to clear"
-                />
-              </label>
-              <label>
-                Buddy name
-                <input
-                  value={buddyName}
-                  onChange={(e) => setBuddyName(e.target.value)}
-                  placeholder="Leave blank to clear"
-                />
-              </label>
-              <div className="modal-actions">
+            <form className="profile-assign-form" onSubmit={saveAssignments}>
+              {/* Divs, not labels: a <label> would forward clicks on its
+                  caption to the dropdown's trigger. */}
+              <div className="profile-assign-field">
+                Manager
+                <PersonSelect value={managerId} onChange={setManagerId} people={people} exclude={userId} placeholder="Select manager" />
+              </div>
+              <div className="profile-assign-field">
+                Buddy
+                <PersonSelect value={buddyId} onChange={setBuddyId} people={people} exclude={userId} placeholder="Select buddy" />
+              </div>
+              <div className="profile-assign-actions">
                 <button type="button" onClick={() => setEditingAssignments(false)}>
                   Cancel
                 </button>
@@ -370,22 +408,18 @@ export default function EmployeeProfileModal({
               </div>
             </form>
           ) : (
-            <dl className="profile-grid">
-              <div>
-                <dt>Manager</dt>
-                <dd>{onboarding.manager_name ?? <span className="muted">Not assigned yet</span>}</dd>
-              </div>
-              <div>
-                <dt>Buddy</dt>
-                <dd>{onboarding.buddy_name ?? <span className="muted">Not assigned yet</span>}</dd>
-              </div>
-            </dl>
+            <div className="profile-people">
+              <AssignedPerson role="Manager" linked={!!onboarding.manager_user_id} name={onboarding.manager_name} />
+              <AssignedPerson role="Buddy" linked={!!onboarding.buddy_user_id} name={onboarding.buddy_name} />
+            </div>
           )}
         </section>
       )}
 
       <section className="profile-section">
-        <h3>Documents ({documents.length})</h3>
+        <div className="profile-section-head">
+          <h3>Documents <span className="profile-count">{documents.length}</span></h3>
+        </div>
         {documents.length === 0 ? (
           <p className="muted">No documents were requested for this joinee.</p>
         ) : (
@@ -400,8 +434,11 @@ export default function EmployeeProfileModal({
                 </div>
                 {doc.upload_id ? (
                   <>
-                    <span className="field-hint">
-                      {doc.original_filename} · uploaded {formatDate(doc.uploaded_at)}
+                    {/* The filename can be long and unbroken; it truncates
+                        and the full name is one hover away. */}
+                    <span className="doc-list__meta" title={doc.original_filename ?? undefined}>
+                      <span className="doc-list__file">{doc.original_filename}</span>
+                      <span>· uploaded {formatDate(doc.uploaded_at)}</span>
                     </span>
                     {doc.review_note && (
                       <span className="field-hint">Rejection note: {doc.review_note}</span>
@@ -452,39 +489,50 @@ export default function EmployeeProfileModal({
       </section>
 
       <section className="profile-section">
-        <h3>
-          Tasks — {tasks.requiredCompleted}/{tasks.requiredTotal} required done
-        </h3>
-        <h4 className="muted">Pending ({tasks.pending.length})</h4>
-        <ul className="task-list">
+        <div className="profile-section-head">
+          <h3>Tasks</h3>
+          <span className="profile-progress-label">
+            <strong>{tasks.requiredCompleted}</strong> of {tasks.requiredTotal} required done
+          </span>
+        </div>
+        <AnimatedProgressBar percent={percent} thin />
+        <h4 className="profile-subhead">Pending <span className="profile-count">{tasks.pending.length}</span></h4>
+        <ul className="profile-tasks">
           {tasks.pending.map((t) => (
-            <li key={t.id}>
-              {t.title}
-              {t.subtask_count > 0 && (
-                <span className="field-hint">
-                  {' '}
-                  · {t.subtask_completed_count}/{t.subtask_count} steps
-                </span>
-              )}
-              <span className={`status-pill status-${t.status}`}>{t.status}</span>
+            <li key={t.id} className="profile-task">
+              <span className="profile-task-title">
+                {t.title}
+                {t.subtask_count > 0 && (
+                  <span className="profile-task-steps">
+                    {t.subtask_completed_count}/{t.subtask_count} steps
+                  </span>
+                )}
+              </span>
+              <span className={`status-pill status-${t.status}`}>{t.status.replace(/_/g, ' ')}</span>
+              <span className="profile-task-actions">
               {/* Quiet actions: a link-weight button, not a filled one. This
                   is a list of a dozen tasks and a dozen solid buttons would
                   read as a dozen things HR is being asked to do. */}
-              {/* Only on a task HR owns, and only once the gate has opened it —
-                  the same two conditions the API applies, so the button is
-                  never offered where it would 400. */}
+              {/* Only on a task HR owns. Shown but disabled until the gate
+                  opens it — the API refuses it until then (409) — with the
+                  step it is waiting on, so HR can see why. */}
               {t.completion_mode === 'owner' && t.status !== 'locked' && !t.blocker && (
                 <button
                   type="button"
-                  className="link-action"
-                  disabled={completingTaskId === t.id}
+                  className="task-chip task-chip--done"
+                  disabled={completingTaskId === t.id || !t.is_open}
+                  title={
+                    t.is_open
+                      ? undefined
+                      : `Opens once "${waitingOn ?? 'the step before it'}" is done`
+                  }
                   onClick={() => void completeAsOwner(t.id)}
                 >
                   {completingTaskId === t.id ? 'Marking done…' : 'Mark done'}
                 </button>
               )}
               {t.blocker ? (
-                <button type="button" className="link-action" onClick={() => setResolving(t)}>
+                <button type="button" className="task-chip task-chip--resolve" onClick={() => setResolving(t)}>
                   Resolve
                 </button>
               ) : (
@@ -496,7 +544,7 @@ export default function EmployeeProfileModal({
                    does not exist should be missing. */
                 <button
                   type="button"
-                  className="link-action"
+                  className="task-chip task-chip--block"
                   disabled={t.status === 'locked'}
                   title={
                     t.status === 'locked'
@@ -508,32 +556,40 @@ export default function EmployeeProfileModal({
                   Mark as blocked
                 </button>
               )}
+              </span>
               {t.blocker && (
-                <BlockerLine blocker={t.blocker} />
-              )}
-            </li>
-          ))}
-          {tasks.pending.length === 0 && <li className="muted">Nothing outstanding.</li>}
-        </ul>
-        <h4 className="muted">Completed ({tasks.completed.length})</h4>
-        <ul className="task-list">
-          {tasks.completed.map((t) => (
-            <li key={t.id}>
-              {t.title}
-              {t.subtask_count > 0 && (
-                <span className="field-hint">
-                  {' '}
-                  · {t.subtask_completed_count}/{t.subtask_count} steps
+                <span className="profile-task-blocker">
+                  <BlockerLine blocker={t.blocker} />
                 </span>
               )}
             </li>
           ))}
-          {tasks.completed.length === 0 && <li className="muted">Nothing completed yet.</li>}
+          {tasks.pending.length === 0 && <li className="profile-empty">Nothing outstanding.</li>}
+        </ul>
+        <h4 className="profile-subhead">Completed <span className="profile-count">{tasks.completed.length}</span></h4>
+        <ul className="profile-tasks">
+          {tasks.completed.map((t) => (
+            <li key={t.id} className="profile-task profile-task--done">
+              <span className="profile-task-title">
+                <CheckIcon />
+                {t.title}
+                {t.subtask_count > 0 && (
+                  <span className="profile-task-steps">
+                    {t.subtask_completed_count}/{t.subtask_count} steps
+                  </span>
+                )}
+              </span>
+              {t.completed_at && <span className="profile-task-date">{formatDate(t.completed_at)}</span>}
+            </li>
+          ))}
+          {tasks.completed.length === 0 && <li className="profile-empty">Nothing completed yet.</li>}
         </ul>
       </section>
 
       <section className="profile-section profile-section--creds">
-        <h3>Login credentials</h3>
+        <div className="profile-section-head">
+          <h3>Login credentials</h3>
+        </div>
         {credentials ? (
           <>
             <div className="cred-row">
@@ -615,7 +671,6 @@ export default function EmployeeProfileModal({
           title="Mark as blocked"
           subtitle={blocking.title}
           label="What is it waiting on?"
-          placeholder="Device allocation pending"
           withDate
           confirmLabel="Mark as blocked"
           busy={blockBusy}
@@ -631,9 +686,9 @@ export default function EmployeeProfileModal({
       {resolving?.blocker && (
         <ReasonDialog
           title="Resolve blocker"
-          subtitle={`${resolving.title} — ${resolving.blocker.reason}`}
+          subtitle={resolving.title}
+          context={<BlockerLine blocker={resolving.blocker} />}
           label="What changed?"
-          placeholder="Laptop arrived and was handed over"
           required={false}
           confirmLabel="Resolve"
           busy={blockBusy}
@@ -647,6 +702,7 @@ export default function EmployeeProfileModal({
           }
         />
       )}
+      </div>
     </Modal>
   );
 }
@@ -660,3 +716,55 @@ function LockedIcon() {
   );
 }
 
+function initials(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function CheckIcon() {
+  return (
+    <svg className="profile-task-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** A picked person as a small tile. A typed name from before the picker
+ *  existed that matched nobody (the migration only linked exact matches) is
+ *  shown as such, so HR knows to pick someone. */
+function AssignedPerson({ role, linked, name }: { role: string; linked: boolean; name: string | null }) {
+  return (
+    <div className="profile-person">
+      <span className={`profile-person-avatar${linked ? '' : ' is-empty'}`} aria-hidden="true">
+        {linked && name ? initials(name) : <PersonIcon />}
+      </span>
+      <span className="profile-person-text">
+        <span className="profile-person-role">{role}</span>
+        {linked && name ? (
+          <span className="profile-person-name">{name}</span>
+        ) : name ? (
+          <span className="profile-person-name">
+            {name} <span className="profile-person-note">typed, not linked — edit to pick someone</span>
+          </span>
+        ) : (
+          <span className="profile-person-name is-empty">Not assigned yet</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
+/** Shown in an avatar when nobody is assigned yet. */
+function PersonIcon() {
+  return (
+    <svg className="person-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6" />
+    </svg>
+  );
+}
