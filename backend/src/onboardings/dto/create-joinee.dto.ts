@@ -28,12 +28,12 @@ export class CreateJoineeDto {
   startDate!: string;
 
   @IsOptional()
-  @IsString()
-  managerName?: string;
+  @IsUUID()
+  managerUserId?: string;
 
   @IsOptional()
-  @IsString()
-  buddyName?: string;
+  @IsUUID()
+  buddyUserId?: string;
 
   @IsOptional()
   @IsArray()

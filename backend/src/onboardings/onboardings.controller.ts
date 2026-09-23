@@ -95,6 +95,14 @@ export class OnboardingsController {
    * in the system when the second failed. The old endpoints stay for now;
    * this is the one the wizard uses.
    */
+  // The manager/buddy dropdowns' options. Declared before any ':id' route.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin_hr')
+  @Get('eligible-people')
+  eligiblePeople() {
+    return this.onboardingsService.listEligiblePeople();
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('superadmin_hr')
   @Post('joinee')

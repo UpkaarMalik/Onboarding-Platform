@@ -129,7 +129,7 @@ export class EmployeeProfileService {
     // profile, just with no onboarding block.
     const { rows: onboardingRows } = await this.db.query(
       `SELECT
-         o.id, o.status, o.start_date::text AS start_date, o.manager_name, o.buddy_name,
+         o.id, o.status, o.start_date::text AS start_date, o.manager_name, o.buddy_name, o.manager_user_id, o.buddy_user_id,
          o.template_version, o.created_at,
          t.name AS template_name
        FROM onboardings o

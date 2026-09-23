@@ -1,4 +1,4 @@
-import { ArrayUnique, IsArray, IsDateString, IsOptional, IsString, IsUUID } from 'class-validator';
+import { ArrayUnique, IsArray, IsDateString, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateOnboardingDto {
   @IsUUID()
@@ -8,16 +8,15 @@ export class CreateOnboardingDto {
   @IsDateString()
   startDate!: string;
 
-  // Free text, matching the create form's plain inputs. Optional so the
-  // pre-existing POST /onboardings callers and the e2e suite keep
-  // working without supplying them.
+  // Picked from GET /onboardings/eligible-people — someone whose own
+  // onboarding is completed. Optional (see docs/decisions/002).
   @IsOptional()
-  @IsString()
-  managerName?: string;
+  @IsUUID()
+  managerUserId?: string;
 
   @IsOptional()
-  @IsString()
-  buddyName?: string;
+  @IsUUID()
+  buddyUserId?: string;
 
   /**
    * Document types the joinee must upload, from the Documents step's

@@ -10,6 +10,7 @@ import { DatabaseService } from '../database/database.service';
 import { UsersService } from '../users/users.service';
 import { TemplatesService } from '../templates/templates.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AuthService } from '../auth/auth.service';
 import { CreateUserDto } from '../auth/dto/create-user.dto';
 import { CreateOnboardingDto } from './dto/create-onboarding.dto';
@@ -91,6 +92,8 @@ export interface OnboardingRow {
   cancel_reason: string | null;
   manager_name: string | null;
   buddy_name: string | null;
+  manager_user_id: string | null;
+  buddy_user_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -104,6 +107,30 @@ const UNIQUE_VIOLATION = '23505';
  *  see migration 0023. */
 export const DOCUMENT_UPLOAD_SYSTEM_KEY = 'document_upload';
 
+/** The two template tasks the picked manager and buddy own. Matched by
+ *  title, the same way trail-order.util bands tasks — templates carry no
+ *  key for them. */
+const MEET_TASK_TITLES = {
+  manager: 'Meet your reporting manager',
+  buddy: 'Meet your onboarding buddy',
+} as const;
+
+/** Who may be picked as a manager or buddy: an employee whose own
+ *  onboarding is completed (docs/decisions/002-manager-buddy.md). One
+ *  definition, used by the picker's list and by every write. */
+const ELIGIBLE_PEOPLE_SQL = `
+  SELECT u.id, u.full_name, d.name AS department
+    FROM users u
+    JOIN onboardings o ON o.user_id = u.id AND o.status = 'completed'
+    LEFT JOIN departments d ON d.id = u.department_id
+   WHERE u.role = 'employee' AND u.deleted_at IS NULL AND u.status <> 'disabled'`;
+
+export interface PersonRef {
+  id: string;
+  full_name: string;
+  department: string | null;
+}
+
 @Injectable()
 export class OnboardingsService {
   constructor(
@@ -113,6 +140,7 @@ export class OnboardingsService {
     private readonly activityLog: ActivityLogService,
     private readonly config: ConfigService,
     private readonly auth: AuthService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -149,6 +177,8 @@ export class OnboardingsService {
     }
 
     const startDate = new Date(dto.startDate);
+    const manager = await this.resolveEligible(outer ?? this.db, dto.managerUserId, user.id, 'manager');
+    const buddy = await this.resolveEligible(outer ?? this.db, dto.buddyUserId, user.id, 'buddy');
 
     /* One body, two ways in: on the caller's client when there is one, or
        on a transaction of its own. Without this the work would have to be
@@ -158,9 +188,9 @@ export class OnboardingsService {
         const { rows } = await client.query<OnboardingRow>(
           `INSERT INTO onboardings (
              user_id, department_id, template_id, template_version, start_date,
-             status, manager_name, buddy_name
+             status, manager_user_id, buddy_user_id, manager_name, buddy_name
            )
-           VALUES ($1, $2, $3, $4, $5, 'pre_onboarding', $6, $7)
+           VALUES ($1, $2, $3, $4, $5, 'pre_onboarding', $6, $7, $8, $9)
            RETURNING *`,
           [
             user.id,
@@ -168,8 +198,12 @@ export class OnboardingsService {
             template.id,
             template.version,
             dto.startDate,
-            dto.managerName ?? null,
-            dto.buddyName ?? null,
+            manager?.id ?? null,
+            buddy?.id ?? null,
+            // The text columns stay filled with the picked name for one
+            // release, so anything still reading them stays right.
+            manager?.full_name ?? null,
+            buddy?.full_name ?? null,
           ],
         );
         const onboarding = rows[0];
@@ -177,6 +211,8 @@ export class OnboardingsService {
         for (const task of template.tasks) {
           await this.insertOnboardingTask(client, onboarding.id, task, startDate);
         }
+
+        await this.assignMeetTasks(client, onboarding.id, { manager, buddy });
 
         if (dto.requiredDocumentTypeIds?.length) {
           await this.insertDocumentUploadTask(
@@ -204,12 +240,30 @@ export class OnboardingsService {
               departmentId: user.department_id,
               templateId: template.id,
               startDate: dto.startDate,
-              managerName: dto.managerName ?? null,
-              buddyName: dto.buddyName ?? null,
+              managerName: manager?.full_name ?? null,
+              managerUserId: manager?.id ?? null,
+              buddyName: buddy?.full_name ?? null,
+              buddyUserId: buddy?.id ?? null,
             },
           },
           client,
         );
+
+        const ownerTasks = template.tasks
+          .filter((t) => t.owner_role === 'task_owner')
+          .filter((t) => !(manager && t.title === MEET_TASK_TITLES.manager))
+          .filter((t) => !(buddy && t.title === MEET_TASK_TITLES.buddy))
+          .map((t) => t.title);
+        if (ownerTasks.length) {
+          await this.notifications.notifyRole(
+            'task_owner',
+            'task_waiting',
+            `New tasks for ${user.full_name}`,
+            `Waiting for you: ${ownerTasks.join(', ')}.`,
+            '/my-tasks',
+            { departmentId: user.department_id, actorId, client },
+          );
+        }
 
         return this.toOnboardingWithTasks(client, onboarding.id);
       }
@@ -264,8 +318,8 @@ export class OnboardingsService {
         {
           userId: created.user.id,
           startDate: dto.startDate,
-          managerName: dto.managerName,
-          buddyName: dto.buddyName,
+          managerUserId: dto.managerUserId,
+          buddyUserId: dto.buddyUserId,
           requiredDocumentTypeIds: dto.requiredDocumentTypeIds,
         },
         actorId,
@@ -595,43 +649,113 @@ export class OnboardingsService {
     dto: UpdateAssignmentsDto,
     actorId: string,
   ) {
-    const { rows } = await this.db.query<OnboardingRow>(
-      `UPDATE onboardings
-       SET manager_name = CASE WHEN $2::boolean THEN $3::text ELSE manager_name END,
-           buddy_name   = CASE WHEN $4::boolean THEN $5::text ELSE buddy_name   END
-       WHERE id = $1
-       RETURNING *`,
-      [
-        onboardingId,
-        dto.managerName !== undefined,
-        dto.managerName || null,
-        dto.buddyName !== undefined,
-        dto.buddyName || null,
-      ],
-    );
-    const onboarding = rows[0];
-    if (!onboarding) {
-      throw new NotFoundException('Onboarding not found');
-    }
+    const existing = await this.getOnboardingOrThrow(onboardingId);
+    const setManager = dto.managerUserId !== undefined;
+    const setBuddy = dto.buddyUserId !== undefined;
+    const manager = setManager
+      ? await this.resolveEligible(this.db, dto.managerUserId, existing.user_id, 'manager')
+      : undefined;
+    const buddy = setBuddy
+      ? await this.resolveEligible(this.db, dto.buddyUserId, existing.user_id, 'buddy')
+      : undefined;
 
-    await this.activityLog.log({
-      actorId,
-      action: 'onboarding.assignments_updated',
-      entityType: 'onboarding',
-      entityId: onboardingId,
-      // The names, not just presence flags: "assignments updated" with
-      // no names is unreadable months later, which is the one moment
-      // an audit trail exists for. Read back off the updated row so a
-      // field left untouched logs the value that actually stands.
-      metadata: {
-        managerName: onboarding.manager_name,
-        buddyName: onboarding.buddy_name,
-        managerChanged: dto.managerName !== undefined,
-        buddyChanged: dto.buddyName !== undefined,
-      },
+    return this.db.transaction(async (client) => {
+      const { rows } = await client.query<OnboardingRow>(
+        `UPDATE onboardings
+         SET manager_user_id = CASE WHEN $2::boolean THEN $3::uuid ELSE manager_user_id END,
+             manager_name    = CASE WHEN $2::boolean THEN $4::text ELSE manager_name END,
+             buddy_user_id   = CASE WHEN $5::boolean THEN $6::uuid ELSE buddy_user_id END,
+             buddy_name      = CASE WHEN $5::boolean THEN $7::text ELSE buddy_name END
+         WHERE id = $1
+         RETURNING *`,
+        [
+          onboardingId,
+          setManager,
+          manager?.id ?? null,
+          manager?.full_name ?? null,
+          setBuddy,
+          buddy?.id ?? null,
+          buddy?.full_name ?? null,
+        ],
+      );
+      const onboarding = rows[0];
+
+      // A person changed means their "Meet your…" task changes hands too
+      // (or goes back to unowned when cleared) — unless it is already done.
+      await this.assignMeetTasks(client, onboardingId, {
+        ...(setManager ? { manager: manager ?? null } : {}),
+        ...(setBuddy ? { buddy: buddy ?? null } : {}),
+      });
+
+      await this.activityLog.log(
+        {
+          actorId,
+          action: 'onboarding.assignments_updated',
+          entityType: 'onboarding',
+          entityId: onboardingId,
+          // The names, not just presence flags: "assignments updated" with
+          // no names is unreadable months later, which is the one moment
+          // an audit trail exists for. Read back off the updated row so a
+          // field left untouched logs the value that actually stands.
+          metadata: {
+            managerName: onboarding.manager_name,
+            managerUserId: onboarding.manager_user_id,
+            buddyName: onboarding.buddy_name,
+            buddyUserId: onboarding.buddy_user_id,
+            managerChanged: setManager,
+            buddyChanged: setBuddy,
+          },
+        },
+        client,
+      );
+
+      return onboarding;
     });
+  }
 
-    return onboarding;
+  /** Everyone who can be picked as a manager or buddy, for the dropdowns. */
+  async listEligiblePeople(): Promise<PersonRef[]> {
+    const { rows } = await this.db.query<PersonRef>(`${ELIGIBLE_PEOPLE_SQL} ORDER BY u.full_name`);
+    return rows;
+  }
+
+  /** The picked person, or null for "nobody". Refuses anyone the picker
+   *  would not have offered, so the rule holds for API callers too. */
+  private async resolveEligible(
+    queryable: Queryable,
+    userId: string | null | undefined,
+    joineeId: string,
+    role: 'manager' | 'buddy',
+  ): Promise<PersonRef | null> {
+    if (!userId) return null;
+    if (userId === joineeId) {
+      throw new BadRequestException(`A joinee cannot be their own ${role}`);
+    }
+    const { rows } = await queryable.query<PersonRef>(`${ELIGIBLE_PEOPLE_SQL} AND u.id = $1`, [userId]);
+    if (!rows[0]) {
+      throw new BadRequestException(
+        `The ${role} must be an employee who has completed their own onboarding`,
+      );
+    }
+    return rows[0];
+  }
+
+  /** Sets owner_user_id on the matching "Meet your…" task for each key
+   *  present (null clears it). Finished tasks keep the owner they had. */
+  private async assignMeetTasks(
+    queryable: Queryable,
+    onboardingId: string,
+    people: { manager?: PersonRef | null; buddy?: PersonRef | null },
+  ) {
+    for (const key of ['manager', 'buddy'] as const) {
+      if (!(key in people)) continue;
+      await queryable.query(
+        `UPDATE onboarding_tasks SET owner_user_id = $3
+          WHERE onboarding_id = $1 AND title = $2
+            AND status NOT IN ('completed', 'cancelled')`,
+        [onboardingId, MEET_TASK_TITLES[key], people[key]?.id ?? null],
+      );
+    }
   }
 
   /**
@@ -1211,8 +1335,21 @@ export class OnboardingsService {
     // The ORDER BY above is not redundant: it is the tiebreak inside each band.
     const orderedSteps = applySequenceGate(orderForTrail(steps));
 
+    const { rows: people } = await this.db.query<{ manager: PersonRef | null; buddy: PersonRef | null }>(
+      `SELECT
+         (SELECT json_build_object('id', u.id, 'full_name', u.full_name, 'department', d.name)
+            FROM users u LEFT JOIN departments d ON d.id = u.department_id
+           WHERE u.id = o.manager_user_id) AS manager,
+         (SELECT json_build_object('id', u.id, 'full_name', u.full_name, 'department', d.name)
+            FROM users u LEFT JOIN departments d ON d.id = u.department_id
+           WHERE u.id = o.buddy_user_id) AS buddy
+       FROM onboardings o WHERE o.id = $1`,
+      [onboarding.id],
+    );
+
     return {
       onboarding,
+      people: people[0],
       today: bucketedTasks.filter((t) => t.bucket === 'today'),
       upcoming: bucketedTasks.filter((t) => t.bucket === 'upcoming'),
       overdue: bucketedTasks.filter((t) => t.bucket === 'overdue'),

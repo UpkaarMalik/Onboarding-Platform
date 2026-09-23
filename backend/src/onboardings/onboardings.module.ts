@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ActivityLogModule } from '../activity-log/activity-log.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 import { OnboardingsController } from './onboardings.controller';
 import { OnboardingsService } from './onboardings.service';
@@ -18,6 +19,7 @@ import { BlockersService } from './blockers.service';
     UsersModule,
     TemplatesModule,
     ActivityLogModule,
+    NotificationsModule,
   ],
   controllers: [
     OnboardingsController,

@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthService, AuthenticatedResult } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import {
@@ -99,6 +100,26 @@ export class AuthController {
   // makes someone log in as an attacker's account is not a meaningful
   // threat.
 
+  /**
+   * Ten attempts per 30 seconds against any one Joinee ID, then 429
+   * until the window rolls.
+   *
+   * A wrong password here is answered with the same generic 401 as an
+   * unknown Joinee ID, on purpose — which leaves guessing as the only
+   * way in, and makes the rate at which someone may guess the control
+   * that actually bounds it.
+   *
+   * Counted per account rather than per address (see trackByJoineeId in
+   * app.module.ts) so that one person mistyping their password cannot
+   * lock out everyone sharing the office wifi.
+   *
+   * ThrottlerGuard is mounted per-route rather than globally, and
+   * listed FIRST so the count happens before any authentication work:
+   * a limit that only sees requests which got as far as bcrypt is one
+   * an attacker can outrun.
+   */
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 30_000 } })
   @Post('login/password')
   @SkipCsrf()
   async loginWithPassword(
@@ -111,7 +132,14 @@ export class AuthController {
     return this.finalizeLoginResult(res, result);
   }
 
-  @UseGuards(PreAuthGuard)
+  // Same limit, same reason. The pre-auth token narrows who may call
+  // this, but the new password is still chosen here, and the throttler
+  // is listed before PreAuthGuard so a flood is refused before the
+  // token is verified. This body carries no Joinee ID, so the tracker
+  // falls back to the pre-auth token — which names one user just as
+  // precisely.
+  @UseGuards(ThrottlerGuard, PreAuthGuard)
+  @Throttle({ default: { limit: 10, ttl: 30_000 } })
   @Post('login/password/complete-reset')
   @SkipCsrf()
   completePasswordReset(

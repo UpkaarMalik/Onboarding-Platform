@@ -7,6 +7,21 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 
+const AFTER_COMMIT = Symbol('afterCommit');
+
+/**
+ * Run `fn` once whatever `queryable` is writing is visible to other
+ * connections: after COMMIT for a transaction client from transaction(),
+ * straight away for anything else. For side effects that tell someone to
+ * re-read — fired before COMMIT, the re-read can land first and see nothing.
+ * Never runs on ROLLBACK.
+ */
+export function afterCommit(queryable: unknown, fn: () => void): void {
+  const hooks = (queryable as { [AFTER_COMMIT]?: Array<() => void> })?.[AFTER_COMMIT];
+  if (hooks) hooks.push(fn);
+  else fn();
+}
+
 /**
  * Thin wrapper around a pg Pool. No ORM, no query builder — every
  * query in this project is plain SQL, written and reviewed as SQL,
@@ -58,15 +73,19 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     work: (client: PoolClient) => Promise<T>,
   ): Promise<T> {
     const client = await this.pool.connect();
+    const hooks: Array<() => void> = [];
+    (client as any)[AFTER_COMMIT] = hooks;
     try {
       await client.query('BEGIN');
       const result = await work(client);
       await client.query('COMMIT');
+      for (const fn of hooks) fn();
       return result;
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
     } finally {
+      delete (client as any)[AFTER_COMMIT];
       client.release();
     }
   }
