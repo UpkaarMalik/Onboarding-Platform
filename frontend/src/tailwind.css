@@ -1,0 +1,7 @@
+/* Tailwind, scoped by tailwind.config.js `content` to the MacBook
+   components. Imported after index.css in main.tsx so utilities win over
+   the hand-written rules when both apply. Preflight is off — see the
+   comment in tailwind.config.js. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

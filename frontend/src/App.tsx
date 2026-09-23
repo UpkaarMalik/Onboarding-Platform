@@ -13,6 +13,7 @@ import HrDashboard from './pages/HrDashboard';
 import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
 import Documents from './pages/Documents';
 import Benefits from './pages/Benefits';
+import MacTools from './pages/MacTools';
 import AuditLog from './pages/AuditLog';
 // PARKED-FEATURE: diary, community, gallery
 //
@@ -72,6 +73,7 @@ export default function App() {
 
               <Route path="/benefits" element={<Benefits />} />
               <Route path="/documents" element={<Documents />} />
+              <Route path="/mac-tools" element={<MacTools />} />
               {/* PARKED-FEATURE: diary, community, gallery. Unrouted rather
                   than redirected — the catch-all below already sends an old
                   /community or /work-log bookmark to the role's home page.

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
@@ -74,14 +74,8 @@ export default function StartHere() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [knowledge, setKnowledge] = useState<any[]>([]);
-  const [diary, setDiary] = useState<any[]>([]);
-  const [diaryDraft, setDiaryDraft] = useState('');
-  const [savingDiary, setSavingDiary] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [ratingComment, setRatingComment] = useState('');
-  const [submittingRating, setSubmittingRating] = useState(false);
-  const [ratingSaved, setRatingSaved] = useState(false);
   const hasCelebratedCompletionRef = useRef(false);
 
   async function loadAll() {

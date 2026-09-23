@@ -2,7 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ROSTER_PATH, rosterQueryIsActive, withParam } from '../lib/rosterQuery';
+<<<<<<< HEAD
 import NotificationBell from './NotificationBell';
+=======
+import { BrandMark, BrandWord } from './BrandLogo';
+>>>>>>> 6f9214e (New to mac feature added)
 
 interface NavItem {
   to: string;
@@ -24,6 +28,7 @@ const IC = {
   search: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
   profile: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
   signout: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+  mac: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="3" width="12" height="9" rx="1.3" stroke="currentColor" strokeWidth="1.3"/><path d="M1.5 15h15" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
   chevron: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="6 9 12 15 18 9"/></svg>,
 };
 
@@ -38,6 +43,7 @@ const NAV_EMPLOYEE: NavItem[] = [
   { to: '/documents', label: 'Policies', icon: IC.policies },
   // { to: '/work-log', label: 'Diary', icon: IC.diary },
   { to: '/benefits', label: 'Benefits', icon: IC.benefits },
+  { to: '/mac-tools', label: 'Mac Tools', icon: IC.mac },
   // { to: '/community', label: 'Community', icon: IC.community },
 ];
 
@@ -228,8 +234,11 @@ export default function Layout() {
     <div className="app-shell">
       <header className="topnav">
         <NavLink to="/" className="topnav-brand">
-          <span className="topnav-logo">A</span>
-          <span className="topnav-brand-text"><b>AND</b> Onboard</span>
+          <BrandMark className="topnav-logo" />
+          <BrandWord
+            className="topnav-brand-text"
+            brandClassName="topnav-brand-text__brand"
+          />
         </NavLink>
 
         <nav ref={capsuleRef} className="topnav-glass" onMouseMove={trackGlare}>
