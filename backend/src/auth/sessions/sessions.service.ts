@@ -204,6 +204,15 @@ export class SessionsService {
    * A soft-deleted user has no live session at all — the join drops the
    * row, so the caller sees the same "no session" it sees for a revoked
    * one, which is the right answer for an account that is gone.
+   *
+   * Both expiry windows are checked here, not just the absolute one.
+   * Leaving idle_expires_at to rotateSession alone meant the idle
+   * timeout was enforced only when a refresh happened to occur: an
+   * access token minted just before a session went idle stayed good for
+   * its full 15 minutes afterwards, and any session whose refresh
+   * cookie was never presented again was accepted indefinitely up to
+   * the 7 day absolute cap. It is one more predicate on a query every
+   * authenticated request already runs.
    */
   async findLiveSessionById(sessionId: string): Promise<LiveSessionRow | null> {
     const { rows } = await this.db.query<LiveSessionRow>(
@@ -212,6 +221,7 @@ export class SessionsService {
          JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
         WHERE s.id = $1
           AND s.revoked_at IS NULL
+          AND s.idle_expires_at     > now()
           AND s.absolute_expires_at > now()`,
       [sessionId],
     );

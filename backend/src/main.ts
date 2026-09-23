@@ -6,13 +6,69 @@ import { ConfigService } from '@nestjs/config';
 // is a bare-function CommonJS module — a default import compiles to
 // `cookie_parser_1.default`, which is undefined at runtime.
 import * as cookieParser from 'cookie-parser';
+// Default import, unlike cookie-parser above: helmet's CJS bundle sets
+// `module.exports.default = module.exports`, so `helmet_1.default` is
+// the function. tsconfig has allowSyntheticDefaultImports.
+import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { resolveCookiePolicy } from './auth/sessions/session-cookies.util';
 // OTP-LOGIN-DISABLED
 // import { fixedOtpEnabled, FIXED_DEV_OTP } from './auth/utils/otp';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+
+  // Same source of truth the session cookies use, so HSTS and the
+  // Secure flag can never disagree about whether this deploy is HTTPS.
+  const cookiePolicy = resolveCookiePolicy(config);
+
+  // Cookie-carried auth requires an explicit list of allowed origins
+  // (wildcard + credentials is a browser-level 400) and
+  // credentials: true so the browser will actually send Set-Cookie
+  // responses back on subsequent requests. CORS_ORIGIN is a
+  // comma-separated env var so a single deploy can list a dev host and
+  // a prod host.
+  const originList =
+    (config.get<string>('CORS_ORIGIN') ?? 'http://localhost:5173')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  // First middleware in the chain: a header that only gets attached on
+  // the happy path is not a security header. Registered before the
+  // routes so it covers 404s and thrown exceptions too.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          // This server answers JSON and file downloads. The Vite dev
+          // origin is listed because CORS_ORIGIN is the one place that
+          // knows where the frontend lives; note that a CSP on an API
+          // response constrains almost nothing on its own — the policy
+          // that matters for XSS is the one the frontend serves with
+          // its own HTML.
+          'connect-src': ["'self'", ...originList],
+          // Nothing this server returns is ever meant to be framed.
+          'frame-ancestors': ["'none'"],
+          // In helmet's defaults, and it would rewrite plain-http
+          // requests in local development.
+          'upgrade-insecure-requests': cookiePolicy.secure ? [] : null,
+        },
+      },
+      // Only promise HTTPS when this deploy is actually on HTTPS.
+      // Sending HSTS from an http origin is ignored by browsers, but
+      // sending it from a staging box that later drops to http locks
+      // that hostname out of plain http for a year.
+      hsts: cookiePolicy.secure
+        ? { maxAge: 31536000, includeSubDomains: true }
+        : false,
+      // helmet defaults this to same-origin, which is wrong for an API
+      // on :3000 whose only callers are on another port.
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   // Global validation: every DTO with class-validator decorators gets
   // enforced automatically, and unknown fields are stripped rather
@@ -30,17 +86,6 @@ async function bootstrap() {
   // registered BEFORE the routes that read them.
   app.use(cookieParser());
 
-  // Cookie-carried auth requires an explicit list of allowed origins
-  // (wildcard + credentials is a browser-level 400) and
-  // credentials: true so the browser will actually send Set-Cookie
-  // responses back on subsequent requests. CORS_ORIGIN is a
-  // comma-separated env var so a single deploy can list a dev host and
-  // a prod host.
-  const originList =
-    (config.get<string>('CORS_ORIGIN') ?? 'http://localhost:5173')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
   app.enableCors({
     origin: originList,
     credentials: true,
@@ -48,6 +93,10 @@ async function bootstrap() {
     // the browser preflight has to see it in the allowed-headers list
     // or it will strip it before the actual request goes out.
     allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+    // Retry-After is not one of the seven headers a browser exposes to
+    // JavaScript by default, so without this the login form can read
+    // the 429 body but not how long the block has left to run.
+    exposedHeaders: ['Retry-After'],
   });
 
   const port = config.get<number>('PORT') ?? 3000;

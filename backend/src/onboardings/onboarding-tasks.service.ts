@@ -9,9 +9,10 @@ import { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { isOverdueSql } from './utils/overdue.util';
 import { OPEN_BLOCKER_JSON, openBlockerJoin } from './utils/blocker-payload.util';
-import { isTaskOpen } from './utils/trail-order.util';
+import { isTaskOpen, openIndices, orderForTrail } from './utils/trail-order.util';
 import { AssignTaskDto } from './dto/assign-task.dto';
 import {
   assertDateIfPresent,
@@ -126,6 +127,7 @@ export class OnboardingTasksService {
   constructor(
     private readonly db: DatabaseService,
     private readonly activityLog: ActivityLogService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async completeAsOwner(taskId: string, actor: AuthenticatedUser) {
@@ -623,9 +625,7 @@ export class OnboardingTasksService {
       queryable,
     );
 
-    if (rows[0].is_required) {
-      await this.maybeCompleteOnboarding(queryable, rows[0].onboarding_id, actorId);
-    }
+    await this.applyCompletionSideEffects(queryable, rows[0], actorId);
     return true;
   }
 
@@ -882,6 +882,70 @@ export class OnboardingTasksService {
     }
     if (task.is_required) {
       await this.maybeCompleteOnboarding(queryable, task.onboarding_id, actorId);
+      await this.notifyNewlyOpenedSteps(queryable, task, actorId);
+    }
+
+    // Someone else finishing a step for the employee (HR closing the
+    // handover, an owner confirming) is news even when it opens nothing.
+    const { employee_id } = (
+      await queryable.query<{ employee_id: string }>(
+        `SELECT user_id AS employee_id FROM onboardings WHERE id = $1`,
+        [task.onboarding_id],
+      )
+    ).rows[0];
+    await this.notifications.notify(
+      employee_id,
+      'task_completed',
+      `${task.title} is complete`,
+      null,
+      '/start-here',
+      { actorId, client: queryable },
+    );
+  }
+
+  /**
+   * "A new step is ready" for every step this completion opened. Open is
+   * derived by the trail gate, not stored, so the steps it opened are the
+   * gate's answer now minus its answer with this task still unfinished —
+   * the same function the trail draws with, so the two cannot disagree.
+   */
+  private async notifyNewlyOpenedSteps(
+    queryable: Queryable,
+    completed: OnboardingTaskRow,
+    actorId: string,
+  ): Promise<void> {
+    const { rows } = await queryable.query<{
+      id: string;
+      title: string;
+      status: string;
+      system_key: string | null;
+      user_id: string;
+    }>(
+      `SELECT ot.id, ot.title, ot.status, ot.system_key, o.user_id
+         FROM onboarding_tasks ot
+         JOIN onboardings o ON o.id = ot.onboarding_id
+        WHERE ot.onboarding_id = $1 AND ot.is_required = true
+        ORDER BY ot.due_date, ot.created_at`,
+      [completed.onboarding_id],
+    );
+    const openIds = (tasks: typeof rows) => {
+      const ordered = orderForTrail(tasks);
+      return new Set([...openIndices(ordered)].map((i) => ordered[i].id));
+    };
+    const before = openIds(
+      rows.map((r) => (r.id === completed.id ? { ...r, status: 'pending' } : r)),
+    );
+    for (const id of openIds(rows)) {
+      if (before.has(id)) continue;
+      const step = rows.find((r) => r.id === id)!;
+      await this.notifications.notify(
+        step.user_id,
+        'task_available',
+        `A new step is ready: ${step.title}`,
+        null,
+        '/start-here',
+        { actorId, client: queryable },
+      );
     }
   }
 

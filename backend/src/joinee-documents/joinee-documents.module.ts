@@ -7,6 +7,7 @@ import { extname } from 'path';
 import { mkdirSync } from 'fs';
 import { AuthModule } from '../auth/auth.module';
 import { ActivityLogModule } from '../activity-log/activity-log.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { OnboardingsModule } from '../onboardings/onboardings.module';
 import { JoineeDocumentsController } from './joinee-documents.controller';
 import { JoineeDocumentsService } from './joinee-documents.service';
@@ -34,6 +35,7 @@ const ALLOWED_MIME_TYPES = [
   imports: [
     AuthModule,
     ActivityLogModule,
+    NotificationsModule,
     // For OnboardingTasksService, which owns the completion of the
     // gating task once the last document is submitted.
     OnboardingsModule,

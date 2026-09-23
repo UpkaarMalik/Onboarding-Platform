@@ -43,6 +43,7 @@ process.env.TOTP_ISSUER ??= 'Onboarding Platform';
  * a real template would make a failure here ambiguous between the two.
  */
 describe('Blockers (e2e)', () => {
+  const suiteStartedAt = new Date();
   let app: INestApplication;
   let db: DatabaseService;
   let tokens: TokenService;
@@ -213,6 +214,16 @@ describe('Blockers (e2e)', () => {
     await db.query(`DELETE FROM onboardings WHERE id = ANY($1::uuid[])`, [
       createdOnboardingIds,
     ]);
+    // Notifications for the test users, and the HR fan-out that names them
+    // (notifyRole reaches every HR account, real ones included).
+    await db.query(
+      `DELETE FROM notifications n
+        WHERE n.user_id = ANY($1::uuid[])
+           OR (n.created_at >= $2 AND EXISTS (
+                 SELECT 1 FROM users u
+                  WHERE u.id = ANY($1::uuid[]) AND n.title LIKE '%' || u.full_name || '%'))`,
+      [createdUserIds, suiteStartedAt],
+    );
     await db.query(`DELETE FROM user_sessions WHERE user_id = ANY($1::uuid[])`, [
       createdUserIds,
     ]);

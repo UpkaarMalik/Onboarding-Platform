@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateBlockerDto } from './dto/create-blocker.dto';
 import { ResolveBlockerDto } from './dto/resolve-blocker.dto';
@@ -72,6 +73,7 @@ export class BlockersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly activityLog: ActivityLogService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async block(
@@ -145,6 +147,28 @@ export class BlockersService {
         client,
       );
 
+      await this.notifications.notify(
+        task.employee_id,
+        'task_blocked',
+        `${task.title} is blocked`,
+        dto.reason,
+        '/start-here',
+        { actorId: actor.id, client },
+      );
+      // HR blocking something already knows; an owner doing it is news.
+      if (actor.role !== 'superadmin_hr') {
+        await this.notifications.notifyRole(
+          'superadmin_hr',
+          // Its own kind: the employee's 'task_blocked' is news with nothing
+          // to do, this one is HR's to follow up (see NotificationBell).
+          'task_blocked_by_owner',
+          `${task.title} for ${task.employee_name} is blocked`,
+          dto.reason,
+          `/hr?profile=${task.employee_id}`,
+          { actorId: actor.id, client },
+        );
+      }
+
       return blocker;
     });
   }
@@ -155,13 +179,21 @@ export class BlockersService {
     dto: ResolveBlockerDto = {},
   ): Promise<BlockerRow> {
     const { rows } = await this.db.query<
-      BlockerRow & { task_owner_role: string; task_owner_user_id: string | null }
+      BlockerRow & {
+        task_owner_role: string;
+        task_owner_user_id: string | null;
+        task_title: string;
+        employee_id: string;
+      }
     >(
       `SELECT b.*,
               ot.owner_role    AS task_owner_role,
-              ot.owner_user_id AS task_owner_user_id
+              ot.owner_user_id AS task_owner_user_id,
+              ot.title         AS task_title,
+              o.user_id        AS employee_id
          FROM blockers b
          JOIN onboarding_tasks ot ON ot.id = b.onboarding_task_id
+         JOIN onboardings o ON o.id = ot.onboarding_id
         WHERE b.id = $1`,
       [blockerId],
     );
@@ -224,6 +256,15 @@ export class BlockersService {
         client,
       );
 
+      await this.notifications.notify(
+        existing.employee_id,
+        'task_unblocked',
+        `${existing.task_title} is no longer blocked`,
+        dto.note ?? null,
+        '/start-here',
+        { actorId: actor.id, client },
+      );
+
       return blocker;
     });
   }
@@ -234,9 +275,16 @@ export class BlockersService {
       status: string;
       owner_role: string;
       owner_user_id: string | null;
+      title: string;
+      employee_id: string;
+      employee_name: string;
     }>(
-      `SELECT id, status, owner_role, owner_user_id
-         FROM onboarding_tasks WHERE id = $1`,
+      `SELECT ot.id, ot.status, ot.owner_role, ot.owner_user_id, ot.title,
+              o.user_id AS employee_id, u.full_name AS employee_name
+         FROM onboarding_tasks ot
+         JOIN onboardings o ON o.id = ot.onboarding_id
+         JOIN users u ON u.id = o.user_id
+        WHERE ot.id = $1`,
       [taskId],
     );
     const task = rows[0];

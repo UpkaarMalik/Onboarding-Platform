@@ -8,6 +8,7 @@ import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { OnboardingTasksService } from '../onboardings/onboarding-tasks.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { ReviewDocumentDto } from './dto/review-document.dto';
 
@@ -57,6 +58,7 @@ export class JoineeDocumentsService {
     private readonly db: DatabaseService,
     private readonly activityLog: ActivityLogService,
     private readonly onboardingTasks: OnboardingTasksService,
+    private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -125,15 +127,18 @@ export class JoineeDocumentsService {
         user_id: string;
         onboarding_task_id: string | null;
         document_label: string;
+        full_name: string;
       }>(
         // The type's label comes along so the log entry can name the
         // document — "Aadhaar Card uploaded" rather than the useless
         // "a document was uploaded". FOR UPDATE OF r so the lock still
         // applies only to the requirement; document_types is reference
         // data and locking it would serialise unrelated uploads.
-        `SELECT r.id, r.user_id, r.onboarding_task_id, dt.label AS document_label
+        `SELECT r.id, r.user_id, r.onboarding_task_id, dt.label AS document_label,
+                usr.full_name
          FROM joinee_document_requirements r
          JOIN document_types dt ON dt.id = r.document_type_id
+         JOIN users usr ON usr.id = r.user_id
          WHERE r.id = $1
          FOR UPDATE OF r`,
         [requirementId],
@@ -217,6 +222,16 @@ export class JoineeDocumentsService {
         client,
       );
 
+      await this.notifications.notifyRole(
+        'superadmin_hr',
+        'document_uploaded',
+        `${requirement.full_name} uploaded their ${requirement.document_label}`,
+        'It is waiting for your review.',
+        // Straight to the joinee's profile, where the document is reviewed.
+        `/hr?profile=${requirement.user_id}`,
+        { actorId: actor.id, client },
+      );
+
       return { uploadId: uploadRows[0].id, status: 'submitted', taskCompleted };
     });
   }
@@ -226,6 +241,7 @@ export class JoineeDocumentsService {
     return this.db.transaction(async (client) => {
       const { rows } = await client.query<{
         requirement_id: string;
+        user_id: string;
         onboarding_task_id: string | null;
         document_label: string;
         original_filename: string;
@@ -239,7 +255,7 @@ export class JoineeDocumentsService {
            JOIN document_types dt ON dt.id = r.document_type_id
           WHERE u.id = $1 AND u.superseded_at IS NULL
             AND r.id = u.requirement_id
-        RETURNING u.requirement_id, r.onboarding_task_id,
+        RETURNING u.requirement_id, r.user_id, r.onboarding_task_id,
                   dt.label AS document_label, u.original_filename`,
         [uploadId, dto.decision, actor.id, dto.note ?? null],
       );
@@ -297,6 +313,17 @@ export class JoineeDocumentsService {
           },
         },
         client,
+      );
+
+      await this.notifications.notify(
+        upload.user_id,
+        `document_${dto.decision}`,
+        `Your ${upload.document_label} was ${dto.decision}`,
+        dto.decision === 'rejected'
+          ? dto.note ?? 'Please upload it again.'
+          : null,
+        '/start-here',
+        { actorId: actor.id, client },
       );
 
       return { uploadId, reviewStatus: dto.decision };
