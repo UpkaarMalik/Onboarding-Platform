@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import Layout from './components/Layout';
+import ScrollToTop from './components/ScrollToTop';
 import Login from './pages/Login';
 // PARKED-FEATURE: the old Start Here landing page. Home is the task trail
 // now (see NAV_EMPLOYEE in Layout), so this page is unrouted rather than
@@ -13,6 +14,7 @@ import HrDashboard from './pages/HrDashboard';
 import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
 import Documents from './pages/Documents';
 import Benefits from './pages/Benefits';
+import MacTools from './pages/MacTools';
 import AuditLog from './pages/AuditLog';
 // PARKED-FEATURE: diary, community, gallery
 //
@@ -37,6 +39,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           <Route path="/login" element={<Login />} />
 
@@ -72,6 +75,7 @@ export default function App() {
 
               <Route path="/benefits" element={<Benefits />} />
               <Route path="/documents" element={<Documents />} />
+              <Route path="/mac-tools" element={<MacTools />} />
               {/* PARKED-FEATURE: diary, community, gallery. Unrouted rather
                   than redirected — the catch-all below already sends an old
                   /community or /work-log bookmark to the role's home page.

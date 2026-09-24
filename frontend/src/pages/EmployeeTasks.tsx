@@ -58,6 +58,7 @@ export default function EmployeeTasks() {
   const [checklistBusy, setChecklistBusy] = useState(false);
   const heroAnchorRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLElement>(null);
+  const splitRef = useRef<HTMLDivElement>(null);
   const [heroStuck, setHeroStuck] = useState(false);
   /**
    * True while the roadmap's mark is sailing, during which the hero holds
@@ -210,6 +211,30 @@ export default function EmployeeTasks() {
       window.removeEventListener('resize', read);
     };
   }, [dashboard]);
+
+  /**
+   * Feeds the rail the hero's real pinned height.
+   *
+   * The rail pins below the hero, and both its `top` and its `max-height`
+   * are derived from that one number. It used to be a constant in the CSS,
+   * which drifts the moment the hero gains or loses a line: undershoot and
+   * the rail's top slides behind the hero and is clipped, overshoot and its
+   * bottom runs off the bottom of the screen. Measuring costs one
+   * ResizeObserver and cannot go stale.
+   */
+  useEffect(() => {
+    const hero = heroRef.current;
+    const split = splitRef.current;
+    if (!hero || !split) return;
+    const sync = () => {
+      // 12px of air so the rail isn't flush against the hero's shadow.
+      split.style.setProperty('--rail-clearance', `${hero.offsetHeight + 12}px`);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(hero);
+    return () => ro.disconnect();
+  }, [dashboard, heroStuck]);
 
   /** A checklist finished the task for us — same celebration and cleanup as
    *  pressing "Mark done", since a completed task drops out of the actionable
