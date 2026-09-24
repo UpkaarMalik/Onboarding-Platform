@@ -13,12 +13,17 @@ import { fireConfetti } from '../lib/confetti';
 import EmployeeKnowledgeRail from '../components/EmployeeKnowledgeRail';
 import { SERVER_PUSH_EVENT } from '../components/NotificationBell';
 import { dueLabel, formatDate } from '../lib/format';
-import type { DashboardResponse, TaskRow } from '../types/onboarding';
+import type { DashboardResponse, PersonRef, TaskRow } from '../types/onboarding';
 
 /** How far past the hero's resting place the page must scroll before the hero
  *  condenses. Enough that a nudge of the wheel doesn't fold the greeting away,
  *  small enough that it is gone by the time the trail needs the room. */
 const HERO_CONDENSE_AFTER = 24;
+/** How long the greeting stays up before the hero folds it away by itself.
+ *  Long enough to be read, short enough that nobody scrolls to get the room
+ *  back first — which is what everyone was doing when this only fired on
+ *  scroll. */
+const HERO_AUTO_CONDENSE_MS = 450;
 /**
  * Un-condense at a smaller scroll than condense engaged at.
  *
@@ -213,6 +218,39 @@ export default function EmployeeTasks() {
   }, [dashboard]);
 
   /**
+   * Folds the greeting away once the boat has moored, instead of waiting for
+   * a scroll the employee should not have to make.
+   *
+   * The voyage tows the page down to the task in play and then stops, and
+   * until this the hero stayed at full height through all of it — the trail
+   * arrived under a greeting nobody was reading any more, and the only way to
+   * get the room back was to scroll, which is the thing the tow just did for
+   * them. Waiting for the mooring rather than for load matters: condensing
+   * mid-crossing lifts the trail in document coordinates underneath a tow that
+   * is steering by them.
+   */
+  useEffect(() => {
+    if (!dashboard) return;
+    let id: number;
+    const foldWhenMoored = () => {
+      if (sailingRef.current) {
+        // Short, because this interval lands on top of the delay below — at
+        // 150ms the fold came a third of a beat late.
+        id = window.setTimeout(foldWhenMoored, 40);
+        return;
+      }
+      id = window.setTimeout(() => {
+        // A fresh voyage during the beat means the page is moving again, so
+        // go back to waiting for that one to finish.
+        if (sailingRef.current) return foldWhenMoored();
+        setHeroStuck(true);
+      }, HERO_AUTO_CONDENSE_MS);
+    };
+    foldWhenMoored();
+    return () => window.clearTimeout(id);
+  }, [dashboard]);
+
+  /**
    * Feeds the rail the hero's real pinned height.
    *
    * The rail pins below the hero, and both its `top` and its `max-height`
@@ -226,13 +264,20 @@ export default function EmployeeTasks() {
     const hero = heroRef.current;
     const split = splitRef.current;
     if (!hero || !split) return;
+    // The hero pins BELOW the topnav rather than under it, so its own top
+    // line stays readable while pinned. Both that offset and the rail's come
+    // off the same measured nav height.
+    const nav = document.querySelector<HTMLElement>('.topnav');
     const sync = () => {
+      const navH = nav?.offsetHeight ?? 0;
+      hero.style.setProperty('--nav-h', `${navH}px`);
       // 12px of air so the rail isn't flush against the hero's shadow.
-      split.style.setProperty('--rail-clearance', `${hero.offsetHeight + 12}px`);
+      split.style.setProperty('--rail-clearance', `${navH + hero.offsetHeight + 12}px`);
     };
     sync();
     const ro = new ResizeObserver(sync);
     ro.observe(hero);
+    if (nav) ro.observe(nav);
     return () => ro.disconnect();
   }, [dashboard, heroStuck]);
 
@@ -343,18 +388,38 @@ export default function EmployeeTasks() {
       {error && <p className="error-text">{error}</p>}
 
       <header ref={heroRef} className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}>
-        <span className="eyebrow">
-          <span className="tasks-eyebrow-dot" />
-          {doneSteps} of {totalSteps} steps done
-        </span>
-        {/* The greeting, and only the greeting. It folds away once the hero
-            sticks — it says nothing that changes as the employee works,
-            and it is the one part of this panel worth trading for trail. */}
-        <div className="tasks-hero-greeting">
+        {/* Count, title and the two names on one line, and all three survive
+            the condense. They are what answers "where am I, and who do I
+            ask" — the thing someone deep in the trail still wants — and
+            folding the names away with the greeting was why they were never
+            seen at all. */}
+        <div className="tasks-hero-row">
+          <span className="eyebrow">
+            <span className="tasks-eyebrow-dot" />
+            {doneSteps} of {totalSteps} steps done
+          </span>
+
           <h1 className="tasks-title">
             {allDone ? 'You’re all set, ' : 'Your trail, '}
             <span className="tasks-title-script">{firstName}</span>
           </h1>
+
+          {/* Empty third cell when there is nobody yet, so the title stays
+              centred on the row rather than sliding right. */}
+          {dashboard?.people ? (
+            <ul className="tasks-people">
+              <PersonLine role="Manager" person={dashboard.people.manager} />
+              <PersonLine role="Buddy" person={dashboard.people.buddy} />
+            </ul>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+        </div>
+
+        {/* All that is left of the greeting is the line restating the count,
+            which is the one part worth trading for trail once the hero
+            sticks. */}
+        <div className="tasks-hero-greeting">
           <p className="tasks-lede">
             {allDone
               ? 'Every step on your onboarding is complete. Look back through the trail any time.'
@@ -393,11 +458,8 @@ export default function EmployeeTasks() {
 
       {/* Reference on the left, work on the right. The rail is sticky so an
           article stays put while the trail scrolls past it. */}
-      <div className="employee-home-split">
-        <EmployeeKnowledgeRail
-          onboardingStatus={dashboard?.onboarding.status ?? ''}
-          people={dashboard?.people ?? null}
-        />
+      <div ref={splitRef} className="employee-home-split">
+        <EmployeeKnowledgeRail onboardingStatus={dashboard?.onboarding.status ?? ''} />
 
         {roadmapSteps.length === 0 ? (
           <p className="muted">No steps on your onboarding yet — check back shortly.</p>
@@ -558,6 +620,39 @@ function FlagIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" strokeLinejoin="round" />
       <path d="M4 22v-7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** One of the two people HR picked. Initials on the app's amber avatar;
+ *  no department tint, because no department is shown. */
+function PersonLine({ role, person }: { role: string; person: PersonRef | null }) {
+  const initials = person?.full_name
+    .trim()
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    <li className="people-line">
+      <span className={`people-avatar${person ? '' : ' is-empty'}`} aria-hidden="true">
+        {initials ?? <PersonIcon />}
+      </span>
+      <span className="people-text">
+        <span className="people-role">{role}</span>
+        <span className="people-name">{person?.full_name ?? 'Not assigned yet'}</span>
+      </span>
+    </li>
+  );
+}
+
+/** Shown in an avatar when nobody is assigned yet. */
+function PersonIcon() {
+  return (
+    <svg className="person-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6" />
     </svg>
   );
 }

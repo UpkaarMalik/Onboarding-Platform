@@ -293,7 +293,7 @@ const MARK_BERTH = 46;
  * and a long voyage feel like the same flick rather than the same number of
  * turns crammed into different times.
  */
-const SPIN_TURNS_PER_SEC = 1.0;
+const SPIN_TURNS_PER_SEC = 2.8;
 const SPIN_MIN_TURNS = 2;
 
 /**
