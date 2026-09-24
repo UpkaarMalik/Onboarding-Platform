@@ -1783,17 +1783,14 @@ button.danger:hover:not(:disabled) {
   text-decoration: none;
   user-select: none;
 }
+/* The brand mark itself, at the size the old gradient "A" tile was. No
+   background or shadow behind it: the artwork carries its own disc, and
+   a second rounded square around it reads as a badge on a badge. */
 .topnav-logo {
   width: 34px;
   height: 34px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  font-weight: 800;
-  color: #fff;
-  background: var(--gradient-accent);
-  box-shadow: var(--shadow-glow);
+  flex-shrink: 0;
+  overflow: visible;
 }
 .topnav-brand-text {
   font-size: 18px;
@@ -1801,12 +1798,10 @@ button.danger:hover:not(:disabled) {
   letter-spacing: -0.025em;
   color: var(--color-text);
 }
-.topnav-brand-text b {
-  font-weight: 800;
-  background: var(--gradient-accent);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+/* Same orange as the login wordmark, and exempt from 1.4.3 for the same
+   reason — it is part of the logotype. See .login-logo__word--brand. */
+.topnav-brand-text__brand {
+  color: #ef9b3c;
 }
 
 /* --- the glass capsule ---
@@ -2422,15 +2417,31 @@ section {
 }
 
 .card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  /* The same glass the hero and the rail panels are made of, rather than
+     opaque white: --pane for the tint, the blur behind it, a white
+     hairline for the edge and --pane-shadow, whose inset top line is the
+     catch-light. Without that line a translucent card reads as a
+     washed-out one instead of a pane of glass. */
+  background: var(--pane);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--pane-shadow);
   transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+/* A backdrop-filter inside another one filters its parent's ALREADY
+   composited output — a flat wash, not the page behind it. Cards sitting
+   in a rail panel keep the tint and the catch-light and drop the blur,
+   which they were getting from the panel anyway. */
+.employee-rail-block .card,
+.page-hero .card {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .card-hover:hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-shadow-lift), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 /* Smooth hover transitions — Dribbble-inspired scale / fade / slide.
@@ -4224,17 +4235,13 @@ li:hover .checkbox-mark {
   text-align: left;
   font: inherit;
   color: inherit;
-  /* Glass, like every other card in the app. This was
-     var(--color-surface) — flat opaque white — so the trail sat on the
-     page wash as a column of paper rectangles and stopped the wash dead
-     wherever a card fell. */
   background: var(--pane);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
   padding: 1.1rem 1.25rem;
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--pane-shadow);
   cursor: pointer;
   transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease),
     border-color 0.2s var(--ease);
@@ -4244,19 +4251,22 @@ li:hover .checkbox-mark {
 }
 .roadmap-card:not(.is-skeleton):hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-shadow-lift), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .roadmap-card--active {
   border-color: var(--color-accent);
   border-width: 2px;
-  box-shadow: 0 12px 30px -4px rgba(226, 125, 48, 0.18);
+  box-shadow: 0 12px 30px -4px rgba(226, 125, 48, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+/* Tinted glass, not opaque white — a done card that stopped being
+   translucent would be the one card on the page made of paper. */
 .roadmap-card--done {
-  /* Was #ffffff → #fbfdfb: opaque, and #fbfdfb is faintly GREEN, which
-     is a hue this palette does not own — a completed card came out
-     subtly cooler than everything around it. A finished step now just
-     recedes: same glass, less of it. */
-  background: var(--glass);
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.56) 0%,
+    rgba(246, 253, 248, 0.46) 100%
+  );
 }
 .roadmap-card--upcoming {
   opacity: 0.72;
@@ -4270,7 +4280,11 @@ li:hover .checkbox-mark {
   border-style: dashed;
   border-width: 2px;
   border-color: var(--color-accent);
-  background: linear-gradient(180deg, var(--color-bg), var(--color-surface-alt));
+  background: linear-gradient(
+    115deg,
+    rgba(255, 252, 246, 0.42) 0%,
+    rgba(255, 240, 218, 0.4) 100%
+  );
   text-align: center;
 }
 .roadmap-card.is-skeleton {
@@ -10202,9 +10216,26 @@ li:hover .checkbox-mark {
     rgba(255, 246, 232, 0.30) 45%,
     rgba(255, 240, 218, 0.36) 100%
   );
-  /* Kept as an alias: the catch-light now lives in --glass-shadow, so
-     repeating it here would draw it twice. */
-  --pane-shadow: var(--glass-shadow);
+  /* The top-edge catch-light. This is the strongest single cue that a
+     surface is glass rather than paper — without it a translucent card
+     just reads as a washed-out one. */
+  --pane-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  /* What --pane-shadow becomes on hover: the same cast, thrown further. */
+  --glass-shadow-lift: 0 22px 50px -20px rgba(60, 40, 15, 0.42),
+    0 6px 16px -8px rgba(60, 40, 15, 0.2);
+  /* The material itself. These were declared on .hr-dashboard only, so
+     --pane-shadow above — which is on :root and references
+     --glass-shadow — resolved to nothing on every other page, and the
+     employee rail's panels have been rendering with no shadow at all.
+     Same values, hoisted to where the token that depends on them lives.
+     The .hr-dashboard copies are left in place: identical values, so
+     they now simply re-declare what they inherit. */
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-strong: rgba(255, 255, 255, 0.76);
+  --glass-line: rgba(255, 255, 255, 0.72);
+  --glass-blur: saturate(180%) blur(18px);
+  --glass-shadow: 0 16px 40px -22px rgba(60, 40, 15, 0.35),
+    0 2px 8px -4px rgba(60, 40, 15, 0.08);
 }
 .page-hero {
   background: var(--pane);
@@ -10449,13 +10480,17 @@ li:hover .checkbox-mark {
      taken at runtime, because a ResizeObserver feeding a CSS variable is a
      lot of machinery for a value that only changes when that hero is
      redesigned. If it is, this moves with it. */
-  --rail-clearance: 8.5rem;
-  top: var(--rail-clearance);
+  /* EmployeeTasks measures the pinned hero and writes the real number into
+     --rail-clearance on the wrapper. The 8.5rem is only a fallback for
+     before that runs, and it lives in the var() rather than as a
+     declaration here: declared on this element it would SHADOW the
+     inherited value and the measurement would never take effect. */
+  top: var(--rail-clearance, 8.5rem);
   /* Deliberately NOT `overflow: auto`. The Mac tips are icons whose text is
      a tooltip drawn outside their own box, and a scroll container clips
      anything that leaves it — the tooltips would be cut off at the rail's
      edge. Only the office guide scrolls, below. */
-  max-height: calc(100vh - var(--rail-clearance) - var(--space-4));
+  max-height: calc(100vh - var(--rail-clearance, 8.5rem) - var(--space-4));
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -10494,14 +10529,63 @@ li:hover .checkbox-mark {
   grid-template-columns: minmax(0, 1fr);
 }
 .employee-rail .knowledge-card {
-  padding: 0.8rem 0.9rem;
+  padding: 0.7rem 0.85rem;
+  align-items: center;
 }
 .employee-rail .knowledge-card strong {
   font-size: var(--text-sm);
+  margin-bottom: 0;
 }
+/* Heading only at rest; the body unrolls when you point at the card.
+   max-height rather than display:none so it can animate, and the value is
+   a ceiling the longest article clears rather than its exact height —
+   `auto` is not a transitionable length. */
 .employee-rail .knowledge-card p {
   font-size: var(--text-xs);
-  margin: 2px 0 0;
+  margin: 0;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height 0.25s var(--ease),
+    opacity 0.2s var(--ease),
+    margin-top 0.25s var(--ease);
+}
+.employee-rail .knowledge-card:hover p,
+.employee-rail .knowledge-card:focus-within p {
+  max-height: 9rem;
+  opacity: 1;
+  margin-top: 4px;
+}
+/* The card lifts on hover, and a lifted card whose neighbours have moved
+   to make room for its text is a card that jumps out from under the
+   pointer. The grid holds still; only the hovered card grows. */
+.employee-rail .knowledge-card:hover {
+  transform: none;
+}
+.employee-rail .knowledge-card__body {
+  min-width: 0;
+}
+
+/* The office guide keeps ONE height while you scroll, and is the block
+   that gives way when the window is short.
+
+   It used to be `flex: 1` inside a rail whose own max-height is derived
+   from --rail-clearance, and that number is remeasured every time the
+   hero above condenses on scroll — so the block grew and shrank as the
+   page moved. But a hard 22rem meant that on a window under about 900px
+   the column added up to more than the rail could hold, and the block
+   below it — the laptop — hung past the bottom of a rail that is pinned,
+   so you could never scroll down to see the rest of it.
+
+   So: sized from the VIEWPORT, which does not change as you scroll, not
+   from the rail, which does. The 618px is what the rest of the column
+   needs — the people block, the laptop, the two gaps, the rail's own top
+   offset and bottom margin — so whatever is left over after that is the
+   guide's, between a floor of 8rem and the old 22rem ceiling. */
+.employee-rail-block--guide {
+  flex: none;
+  height: clamp(8rem, calc(100vh - 618px), 22rem);
 }
 /* The tips block never scrolls — it holds its icons and lets their tooltips
    escape upward over the trail. */
@@ -10601,6 +10685,303 @@ li:hover .checkbox-mark {
   }
   .tasks-trail {
     order: 1;
+  }
+}
+
+/* ============================================================
+   MacBook card — the way into Mac Tools from the rail
+
+   Front-on, not a desk scene: the lid is a flat panel hinged on its
+   BOTTOM edge and folded away from the viewer at -64deg. Shut is the lid
+   pointing back into the page; open is it standing upright at 0. So
+   there is no 3D deck to build — the base is a 15px bar it stands on.
+
+   Sized off the container rather than the viewport (the rail is narrower
+   than the 340px the design was drawn at) with the design's own numbers
+   as the ceiling, so it matches the mockup wherever there is room.
+
+   Every grey is a literal. They are the colour of an object, not of a
+   surface: hung off the palette the laptop turns white on a light page
+   and stops reading as a computer.
+   ============================================================ */
+.mb {
+  container-type: inline-size;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
+  aspect-ratio: 340 / 230;
+  perspective: 900px;
+  text-decoration: none;
+}
+.mb:focus-visible {
+  outline: 2px solid var(--color-accent, #e88f30);
+  outline-offset: 6px;
+  border-radius: 10px;
+}
+
+/* --- Lid ---------------------------------------------------------- */
+.mb__lid {
+  position: relative;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 88.24%;
+  height: 80%;
+  padding: 1.77cqw;
+  border-radius: 3.5cqw 3.5cqw 0.9cqw 0.9cqw;
+  /* Same graphite as the Mac Tools machine's lid, three stops so the
+     light falls off down the body instead of sitting flat. */
+  background: linear-gradient(to bottom, #5c5c64, #46464e 50%, #33333a);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.14) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.55);
+  transform-origin: bottom center;
+  transform: rotateX(-64deg);
+  transition:
+    transform 620ms cubic-bezier(0.22, 0.75, 0.15, 1),
+    box-shadow 500ms ease;
+}
+.mb:hover .mb__lid,
+.mb:focus-within .mb__lid {
+  transform: rotateX(0deg);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.14) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.55),
+    0 0 60px 6px rgba(255, 255, 255, 0.18);
+}
+
+/* --- Screen ------------------------------------------------------- */
+.mb__disp {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 2cqw;
+  background: #0b0b0d;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+/* The screen waking. Separate from the lid so it can lag behind the
+   swing — a laptop's display does not come on the instant it moves. */
+.mb__screenlight {
+  position: absolute;
+  inset: 0;
+  /* The Mac Tools screen's own surface, not plain white, so the two
+     machines wake to the same display. */
+  background: #f4f4f7;
+  opacity: 0;
+  transition: opacity 420ms ease 200ms;
+}
+.mb:hover .mb__screenlight,
+.mb:focus-within .mb__screenlight {
+  opacity: 1;
+}
+.mb__screentext {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* Negative: the lockup sits BELOW the screen's middle, clear of the
+     chip that lands over the upper half. */
+  margin-bottom: -3cqw;
+  opacity: 0;
+  transform: translateY(7.6cqw) scale(0.82);
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.28));
+  transition:
+    opacity 380ms ease 300ms,
+    transform 620ms cubic-bezier(0.18, 0.85, 0.25, 1) 300ms;
+}
+.mb:hover .mb__screentext,
+.mb:focus-within .mb__screentext {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+/* 1.48x the wordmark's size, which is the ratio the login lockup uses
+   (40px mark, 27px word). The artwork overhangs its box on purpose, so
+   it must not be clipped. */
+.mb__mark {
+  width: 11.3cqw;
+  height: 11.3cqw;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.mb__word {
+  font-size: 7.65cqw;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: #1d1d1f;
+}
+.mb__word--brand {
+  color: #ef9b3c;
+}
+
+/* --- The chip, last to arrive -------------------------------------
+   A card in FRONT of the machine, not a label inside the screen: it sits
+   outside the lid, unclipped, overhanging the bezel on both sides, and
+   lands over the logo. The depth is the shadow plus the tilt — it never
+   enters the lid's 3D space, so it stays square to the viewer while the
+   lid behind it is still foreshortened, which is what makes it read as
+   floating above rather than printed on. */
+.mb__pop {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  /* High enough that the card's top edge clears the lid's — breaking the
+     machine's outline is the whole effect — while still sitting over the
+     logo, which the card is meant to cover. */
+  top: 28%;
+  box-sizing: border-box;
+  width: 54cqw;
+  padding: 9cqw 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6cqw;
+  background: #050506;
+  border: 1px solid #2a2a30;
+  box-shadow:
+    0 2cqw 4cqw -1cqw rgba(0, 0, 0, 0.7),
+    0 6cqw 12cqw -2cqw rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+  font-size: 5.2cqw;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: #ffffff;
+  opacity: 0;
+  /* Starts small, low and flat against the lid, then comes up and
+     forward. The overshoot in the curve is the "pop". */
+  transform: translate(-50%, 34%) scale(0.72);
+  transform-origin: 50% 100%;
+  transition:
+    opacity 300ms ease,
+    transform 620ms cubic-bezier(0.18, 0.85, 0.25, 1);
+}
+.mb:hover .mb__pop,
+.mb:focus-within .mb__pop {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  transition-delay: 420ms;
+}
+
+/* --- Base --------------------------------------------------------- */
+.mb__base {
+  position: relative;
+  z-index: 3;
+  width: 94.71%;
+  height: 6.53%;
+  border-radius: 0.9cqw 0.9cqw 2.65cqw 2.65cqw;
+  background: linear-gradient(to bottom, #4e4e56, #3d3d45 45%, #2b2b31);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+.mb__notch {
+  position: absolute;
+  left: 50%;
+  top: 26%;
+  transform: translateX(-50%);
+  width: 21.76cqw;
+  height: 1.18cqw;
+  border-radius: 0.9cqw;
+  background: #5a5a63;
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mb__lid,
+  .mb__screenlight,
+  .mb__screentext,
+  .mb__pop {
+    transition: none;
+  }
+}
+
+/* ============================================================
+   Mac Tools — the tips coming out of a laptop that opens as you scroll
+
+   Two numbers, both written by the page's scroll handler:
+     --p  0..1  the whole runway; the lid opens over its first 42%
+     --q  0..1  the panel's journey out of the screen, after that
+   Everything else is calc() off those two.
+   ============================================================ */
+.mac-tools-head {
+  margin-bottom: var(--space-4);
+}
+.mac-tools-head h1 {
+  margin: 0 0 0.35rem;
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.mac-tools-head p {
+  margin: 0;
+}
+
+.mac-tools-scroll {
+  /* The laptop is 512px of un-scaled artboard and grows to 1.5x as it
+     opens, so it needs to be free of the page's reading column. */
+  margin: 0 calc(var(--space-4) * -1) var(--space-5);
+  overflow-x: clip;
+}
+.mac-tools-lede {
+  font-family: inherit;
+  color: var(--color-ink, #171a1f);
+}
+
+/* The same tips as ordinary cards. Only shown where the laptop is not:
+   otherwise the screen and the grid say the same thing twice, and the
+   panel travelling down out of the lid lands on top of the cards. */
+.mac-tools-fallback {
+  display: none;
+  margin-top: var(--space-5);
+}
+.mac-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: var(--space-2);
+}
+
+/* --- Cards -------------------------------------------------------- */
+.mac-tool-card {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.62rem;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(20, 22, 26, 0.09);
+}
+.mac-tool-icon {
+  font-size: 1.05rem;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+.mac-tool-card strong {
+  display: block;
+  font-size: 0.82rem;
+  color: #171a1f;
+}
+.mac-tool-card p {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.38;
+  color: #4a5059;
+}
+
+/* Narrow screens: the laptop is 512px wide before it scales, and the
+   component's own scale-[0.35] shrinks the type past reading size. Drop
+   it and let the cards below carry the tips. */
+@media (max-width: 900px), (prefers-reduced-motion: reduce) {
+  .mac-tools-scroll {
+    display: none;
+  }
+  .mac-tools-fallback {
+    display: block;
+    margin-top: 0;
   }
 }
 

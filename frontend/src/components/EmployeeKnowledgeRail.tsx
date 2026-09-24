@@ -1,31 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { DashboardResponse, PersonRef } from '../types/onboarding';
 import { useAuthedFetch } from '../api/useAuthedFetch';
+import MacBookCard from './MacBookCard';
 
 /** Onboarding statuses where the joinee has not reached the checkpoint yet
  *  and so sees the pre-checkpoint article set rather than the public one. */
 const PRE_CHECKPOINT_STATUSES = ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'];
-
-/** A new-to-Mac tip sheet — separate from the pre-checkpoint knowledge
- *  articles (which are department-scoped, come from the backend) since
- *  this applies to literally everyone regardless of onboarding stage
- *  and has nothing to do with department content. */
-const MAC_TIPS = [
-  { icon: '🔍', title: 'Spotlight search', content: 'Press Cmd+Space to instantly launch apps, find files, or do quick math — faster than digging through Finder.' },
-  { icon: '🪟', title: 'Mission Control', content: 'Swipe up with three fingers (or press Control+Up) to see every open window and virtual desktop at once.' },
-  { icon: '📋', title: 'Universal clipboard tricks', content: 'Cmd+C / Cmd+V work everywhere, and Cmd+Shift+4 grabs a screenshot of just the area you drag over.' },
-  { icon: '🖱️', title: 'Trackpad gestures', content: 'Pinch to zoom, two-finger swipe to go back/forward in a browser, and a three-finger drag to move windows around.' },
-  { icon: '🔒', title: 'Lock it fast', content: 'Cmd+Control+Q locks your screen instantly — good habit for the pantry coffee run.' },
-  { icon: '🗂️', title: 'Quick Look', content: 'Select any file and hit Space to preview it without opening an app — works on PDFs, images, and more.' },
-  { icon: '🛑', title: 'Force quit a frozen app', content: 'Cmd+Option+Esc opens the Force Quit window — pick the stuck app and end it without restarting your Mac.' },
-  { icon: '😀', title: 'Emoji & symbols', content: 'Cmd+Control+Space opens the emoji picker from anywhere you can type, including Slack and email.' },
-  { icon: '🪄', title: 'Split View', content: 'Hold the green full-screen button on any window to snap it to one side of the screen, then pick a second app for the other side.' },
-  { icon: '📤', title: 'AirDrop', content: 'Share a file to a nearby colleague\'s Mac or iPhone instantly from the Share menu — no cable, no email needed.' },
-  { icon: '🌗', title: 'Dark mode', content: 'System Settings → Appearance switches the whole OS to dark mode, or set it to change automatically at sunset.' },
-  { icon: '📝', title: 'Quick Note', content: 'Swipe up from the bottom-right corner of the trackpad (or Fn+Q) to jot a note without opening an app.' },
-  { icon: '🔠', title: 'Text replacement', content: 'System Settings → Keyboard → Text Replacement lets you type a short snippet (like "eml") that expands into your full company email.' },
-  { icon: '🎙️', title: 'Dictation', content: 'Press the Fn key twice to start dictation — useful for drafting a quick Slack message hands-free.' },
-];
 
 
 /** Best-effort icon for a knowledge article by keyword in its title —
@@ -41,6 +21,26 @@ function knowledgeIcon(title: string) {
   if (t.includes('dress') || t.includes('attire')) return '👔';
   if (t.includes('security') || t.includes('badge') || t.includes('access')) return '🪪';
   return '📌';
+}
+
+/** A short, plainly-worded heading for the rail.
+ *
+ *  The articles' own titles are written for a page that shows the body
+ *  text with them ("Pantry, water & washrooms"). In the rail the body is
+ *  hidden until you hover, so the heading is all there is to go on and it
+ *  has to fit one line. Cosmetic, and display-only — the article keeps
+ *  its real title everywhere else. Anything unrecognised falls through
+ *  unchanged, so a new article is never mislabelled, only unshortened. */
+function knowledgeHeading(title: string) {
+  const t = title.toLowerCase();
+  if (t.includes('pantry') || t.includes('water') || t.includes('washroom')) return 'Pantry & washrooms';
+  if (t.includes('lunch') || t.includes('meal') || t.includes('food')) return 'Lunch time';
+  if (t.includes('recreation') || t.includes('sport') || t.includes('game')) return 'Games & recreation';
+  if (t.includes('parking') || t.includes('transport') || t.includes('commute')) return 'Getting here';
+  if (t.includes('wifi') || t.includes('it ') || t.includes('laptop')) return 'Wi-Fi & IT';
+  if (t.includes('dress') || t.includes('attire')) return 'What to wear';
+  if (t.includes('security') || t.includes('badge') || t.includes('access')) return 'Badge & access';
+  return title;
 }
 
 /**
@@ -95,11 +95,13 @@ export default function EmployeeKnowledgeRail({
         </section>
       )}
       {knowledge.length > 0 && (
-        <section className="employee-rail-block">
+        <section className="employee-rail-block employee-rail-block--guide">
           <h2>Office guide</h2>
-          {/* The same tile the old Home page used — one card per article,
-              auto-fit means the grid collapses to a single column at the
-              rail's width without a second set of rules. */}
+          {/* Heading only, with the body on hover. Shown together they
+              did not fit: the rail is a quarter of the page, the block's
+              height moves as the hero above it condenses on scroll, and
+              the paragraphs were being cut mid-sentence at whatever
+              height was left. A heading always fits. */}
           <div className="knowledge-grid">
             {knowledge.map((k, i) => (
               <div
@@ -108,8 +110,8 @@ export default function EmployeeKnowledgeRail({
                 style={{ animationDelay: `${i * 0.07}s` }}
               >
                 <span className="knowledge-icon">{knowledgeIcon(k.title)}</span>
-                <div>
-                  <strong>{k.title}</strong>
+                <div className="knowledge-card__body">
+                  <strong title={k.title}>{knowledgeHeading(k.title)}</strong>
                   <p>{k.content}</p>
                 </div>
               </div>
@@ -118,28 +120,12 @@ export default function EmployeeKnowledgeRail({
         </section>
       )}
 
-      {/* Icons only; the tip itself is a tooltip on hover. Fourteen tips as
-          full cards would be longer than the trail beside them, and none of
-          them is something you read once and act on — they are a reference
-          you dip into. */}
+      {/* The tips themselves live on the Mac Tools page now. What's left
+          here is the way in: a laptop that says what it is on hover and
+          opens that page. The icon row it replaces put every tip behind a
+          hover tooltip, which no keyboard or touch user could reach. */}
       <section className="employee-rail-block employee-rail-block--tips">
-        <h2>New to Mac?</h2>
-        <div className="knowledge-emoji-row">
-          {MAC_TIPS.map((tip, i) => (
-            <div
-              key={tip.title}
-              className="knowledge-emoji-item"
-              style={{ animationDelay: `${i * 0.07}s` }}
-              tabIndex={0}
-            >
-              <span className="knowledge-emoji-icon">{tip.icon}</span>
-              <div className="knowledge-emoji-tooltip">
-                <strong>{tip.title}</strong>
-                <p>{tip.content}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <MacBookCard />
       </section>
     </aside>
   );
