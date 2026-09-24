@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { DashboardResponse, PersonRef } from '../types/onboarding';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import MacBookCard from './MacBookCard';
 
@@ -57,11 +56,8 @@ function knowledgeHeading(title: string) {
  */
 export default function EmployeeKnowledgeRail({
   onboardingStatus,
-  people,
 }: {
   onboardingStatus: string;
-  /** null while the dashboard is still loading. */
-  people: DashboardResponse['people'] | null;
 }) {
   const authedFetch = useAuthedFetch();
   const [knowledge, setKnowledge] = useState<{ id: string; title: string; content: string }[]>([]);
@@ -85,15 +81,6 @@ export default function EmployeeKnowledgeRail({
 
   return (
     <aside className="employee-rail">
-      {people && (
-        <section className="employee-rail-block employee-rail-block--people">
-          <h2>People</h2>
-          <ul className="people-list">
-            <PersonLine role="Manager" person={people.manager} />
-            <PersonLine role="Buddy" person={people.buddy} />
-          </ul>
-        </section>
-      )}
       {knowledge.length > 0 && (
         <section className="employee-rail-block employee-rail-block--guide">
           <h2>Office guide</h2>
@@ -131,35 +118,3 @@ export default function EmployeeKnowledgeRail({
   );
 }
 
-/** One of the two people HR picked. Initials on the app's amber avatar;
- *  no department tint, because no department is shown. */
-function PersonLine({ role, person }: { role: string; person: PersonRef | null }) {
-  const initials = person?.full_name
-    .trim()
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-  return (
-    <li className="people-line">
-      <span className={`people-avatar${person ? '' : ' is-empty'}`} aria-hidden="true">
-        {initials ?? <PersonIcon />}
-      </span>
-      <span className="people-text">
-        <span className="people-role">{role}</span>
-        <span className="people-name">{person?.full_name ?? 'Not assigned yet'}</span>
-      </span>
-    </li>
-  );
-}
-
-/** Shown in an avatar when nobody is assigned yet. */
-function PersonIcon() {
-  return (
-    <svg className="person-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6" />
-    </svg>
-  );
-}

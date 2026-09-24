@@ -8,7 +8,9 @@ const STATUS_COPY: Record<JoineeDocumentRow['status'], { label: string; hint: st
   awaiting_upload: { label: 'Needed', hint: 'Not uploaded yet' },
   submitted: { label: 'Submitted', hint: 'Waiting for HR to review' },
   approved: { label: 'Approved', hint: 'Accepted by HR' },
-  rejected: { label: 'Re-upload', hint: 'HR asked for a new copy' },
+  // The pill names the STATE; the button beside it already says Reupload, and
+  // two controls both reading "Re-upload" made the state itself unreadable.
+  rejected: { label: 'Rejected', hint: 'HR asked for a new copy' },
 };
 
 function prettyBytes(size: string | null): string | null {
@@ -232,7 +234,7 @@ export default function DocumentChecklist({
                         ) : (
                           <>
                             <UploadIcon />
-                            {doc.upload_id ? 'Replace' : 'Choose file'}
+                            {doc.upload_id ? 'Reupload' : 'Choose file'}
                           </>
                         )}
                       </button>

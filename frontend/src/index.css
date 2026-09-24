@@ -3818,9 +3818,13 @@ li:hover .checkbox-mark {
     box-shadow: 0 0 0 0 rgba(232, 143, 48, 0);
   }
 }
+/* 42 is two whole dash periods (stroke-dasharray: 9 12 — see
+   .roadmap-spine--flow). It has to be an exact multiple or the pattern does
+   not line up where the loop wraps: at 38 the dashes jumped 17 units every
+   time the animation restarted, which is the judder in the trail. */
 @keyframes trailFlow {
   from {
-    stroke-dashoffset: 38;
+    stroke-dashoffset: 42;
   }
   to {
     stroke-dashoffset: 0;
@@ -4332,14 +4336,21 @@ li:hover .checkbox-mark {
   box-shadow: 0 12px 30px -4px rgba(226, 125, 48, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
-/* Tinted glass, not opaque white — a done card that stopped being
-   translucent would be the one card on the page made of paper. */
+/* Green, and enough of it to read as done at a glance from across the trail —
+   the old tint was a 0.46-alpha wash that was indistinguishable from the
+   plain card beside it. Still tinted glass rather than opaque green: a done
+   card that stopped being translucent would be the one card on the page made
+   of paper. */
 .roadmap-card--done {
   background: linear-gradient(
     115deg,
-    rgba(255, 255, 255, 0.56) 0%,
-    rgba(246, 253, 248, 0.46) 100%
+    rgba(233, 246, 238, 0.94) 0%,
+    rgba(214, 238, 225, 0.88) 100%
   );
+  border-color: rgba(47, 143, 91, 0.4);
+}
+.roadmap-card--done .roadmap-card-title {
+  color: var(--color-success-ink);
 }
 .roadmap-card--upcoming {
   opacity: 0.72;
@@ -4647,18 +4658,22 @@ li:hover .checkbox-mark {
   animation: none;
   opacity: 0;
 }
+/* The flash sits at the very front of the cycle, because this animation
+   starts the instant the mark drops anchor (removing .is-sailing restarts
+   it). At 25% the shine arrived just over half a second AFTER the landing it
+   was meant to punctuate, reading as an unrelated twinkle. */
 @keyframes roadmapSparkle {
   0% {
     opacity: 0;
     transform: scale(0.15);
   }
-  25% {
+  8% {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1.12);
   }
-  55% {
-    opacity: 0.35;
-    transform: scale(0.55);
+  34% {
+    opacity: 0.3;
+    transform: scale(0.5);
   }
   100% {
     opacity: 0;
@@ -4739,9 +4754,62 @@ li:hover .checkbox-mark {
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
-  padding: 1.8rem 2rem 1.6rem;
+  padding: 1rem 1.5rem 1.1rem;
   text-align: center;
   animation: fadeInUp 0.35s var(--ease);
+}
+/* Count on the left, title in the middle, the two names on the right. The
+   outer columns are equal so the title is centred on the panel rather than
+   on whatever is left between them. */
+.tasks-hero-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  /* Folds with the greeting once the hero sticks, leaving the track and the
+     "up next" line as the whole panel. Collapsed by max-height rather than
+     display so it slides away instead of the trail jumping up by its
+     height. */
+  overflow: hidden;
+  max-height: 8rem;
+  transition: max-height 0.28s var(--ease), opacity 0.2s var(--ease);
+}
+.tasks-hero--stuck .tasks-hero-row {
+  max-height: 0;
+  opacity: 0;
+}
+.tasks-hero-row > .eyebrow {
+  justify-self: start;
+}
+.tasks-hero-row > .tasks-people {
+  justify-self: end;
+}
+/* Smaller than the rail's, because here they share a line with the title
+   rather than owning a card. */
+.tasks-hero-row .people-avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 11px;
+}
+/* Scoped to the hero: the track is shared with other pages, whose spacing
+   is not this panel's business. */
+.tasks-hero .journey-track {
+  margin-top: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+.tasks-hero .tasks-next {
+  margin-top: 0.8rem;
+}
+@media (max-width: 1100px) {
+  .tasks-hero-row {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: var(--space-2);
+  }
+  .tasks-hero-row > .eyebrow,
+  .tasks-hero-row > .tasks-people {
+    justify-self: center;
+  }
 }
 .tasks-hero .eyebrow {
   display: inline-flex;
@@ -4785,10 +4853,11 @@ li:hover .checkbox-mark {
   animation: softPulse 2s var(--ease) infinite;
 }
 .tasks-title {
-  font-size: clamp(1.9rem, 3.6vw, 2.7rem);
+  font-size: clamp(1.35rem, 2.2vw, 1.85rem);
   font-weight: 800;
   letter-spacing: -0.03em;
-  margin: 0 0 0.5rem;
+  margin: 0;
+  white-space: nowrap;
 }
 .tasks-title-script {
   font-family: 'Caveat', 'Outfit', cursive;
@@ -4802,7 +4871,7 @@ li:hover .checkbox-mark {
 .tasks-lede {
   color: var(--color-muted);
   max-width: 54ch;
-  margin: 0 auto 1.4rem;
+  margin: 0.35rem auto 0.9rem;
   line-height: 1.6;
 }
 /* The "up next" strip sits under the bar and the stage track, separated so it
@@ -4880,7 +4949,10 @@ li:hover .checkbox-mark {
    drop the whole trail a screen-height up the moment the page loaded. */
 .tasks-hero {
   position: sticky;
-  top: 0;
+  /* Below the topnav, not under it. EmployeeTasks measures the nav and writes
+     the real number; pinned at 0 the hero's whole top line — count, title,
+     names — sat behind the nav and was never seen. */
+  top: var(--nav-h, 0px);
   /* Over .tasks-page > *'s z-index: 1. Same specificity as that rule, so this
      only wins by coming after it in the file — don't move it above. */
   z-index: 3;
@@ -4906,6 +4978,20 @@ li:hover .checkbox-mark {
 .tasks-hero--stuck .tasks-hero-greeting {
   max-height: 0;
   opacity: 0;
+}
+/* Manager and buddy, on the title's line at the right-hand end. */
+.tasks-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--space-3);
+  text-align: left;
+}
+@media (max-width: 720px) {
+  .tasks-people {
+    display: none;
+  }
 }
 .tasks-hero--sailing,
 .tasks-hero--sailing .tasks-hero-greeting {
@@ -5669,18 +5755,27 @@ li:hover .checkbox-mark {
   border-color: var(--color-amber-line);
   box-shadow: var(--shadow-sm);
 }
+/* Review state, as a colour you can read across the grid: green accepted,
+   amber still with HR, red sent back. */
+.doc-card--approved {
+  background: var(--color-success-bg);
+  border-color: #cfe9d9;
+}
+.doc-card--submitted {
+  background: var(--color-warning-bg);
+  border-color: #e8d3a6;
+}
+.doc-card--rejected {
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger);
+}
+/* Beats the state colours above on specificity (two classes to their one), so
+   the drop target still paints over whatever state the card is in. */
 .doc-card.is-dragover {
   border-color: var(--color-accent);
   border-style: dashed;
   background: var(--color-amber-wash);
   transform: scale(1.01);
-}
-.doc-card--approved {
-  background: var(--color-success-bg);
-  border-color: #cfe9d9;
-}
-.doc-card--rejected {
-  border-color: var(--color-danger);
 }
 .doc-card-icon {
   width: 2.4rem;
@@ -5710,9 +5805,9 @@ li:hover .checkbox-mark {
   color: var(--color-danger);
 }
 .doc-card-icon--submitted {
-  background: var(--color-info-bg);
-  border-color: #cfe0ee;
-  color: var(--color-info);
+  background: #f7e7c2;
+  border-color: #e8d3a6;
+  color: var(--color-warning-ink);
 }
 .doc-card-main {
   flex: 1;
@@ -5746,8 +5841,8 @@ li:hover .checkbox-mark {
   color: var(--color-ink-soft);
 }
 .doc-status--submitted {
-  background: var(--color-info-bg);
-  color: var(--color-info);
+  background: #f7e7c2;
+  color: var(--color-warning-ink);
 }
 .doc-status--approved {
   background: #d9f0e3;
@@ -10592,13 +10687,22 @@ li:hover .checkbox-mark {
      a tooltip drawn outside their own box, and a scroll container clips
      anything that leaves it — the tooltips would be cut off at the rail's
      edge. Only the office guide scrolls, below. */
-  max-height: calc(100vh - var(--rail-clearance, 8.5rem) - var(--space-4));
+  /* height, not max-height: the column has to OWN the space down to the
+     bottom of the screen for the guide below to absorb what the other blocks
+     don't use. With max-height it only ever grew to fit its contents, which
+     left the laptop card floating in a band of empty rail. */
+  height: calc(100vh - var(--rail-clearance, 8.5rem) - var(--space-4));
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   min-height: 0;
 }
 .employee-rail-block {
+  /* These are <section>s, so they inherit the global section margin. In a
+     flex column that margin is dead space the guide above cannot absorb —
+     it is what left the laptop card short of the bottom. The rail's own gap
+     does the spacing. */
+  margin: 0;
   background: var(--pane);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
@@ -10685,14 +10789,12 @@ li:hover .checkbox-mark {
    needs — the people block, the laptop, the two gaps, the rail's own top
    offset and bottom margin — so whatever is left over after that is the
    guide's, between a floor of 8rem and the old 22rem ceiling. */
+/* Takes whatever the rail's other blocks leave, so the laptop below it lands
+   on the bottom of the screen instead of part-way up it. Its article grid
+   scrolls, so there is no height it cannot give back. */
 .employee-rail-block--guide {
-  flex: none;
-  height: clamp(8rem, calc(100vh - 618px), 22rem);
-}
-/* The tips block never scrolls — it holds its icons and lets their tooltips
-   escape upward over the trail. */
-.employee-rail-block--people {
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-height: 8rem;
 }
 .people-list {
   list-style: none;
