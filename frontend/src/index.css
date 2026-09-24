@@ -1259,7 +1259,7 @@ button.danger:hover:not(:disabled) {
      are semicircles however the height changes. */
   border-radius: 999px;
   background: linear-gradient(180deg, #f8c48c, #f0a65c);
-  color: #fff;
+  color: var(--lb-ink);
   font-family: inherit;
   font-size: 14px;
   font-weight: 700;
