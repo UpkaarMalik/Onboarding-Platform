@@ -2385,8 +2385,12 @@ button.danger:hover:not(:disabled) {
   flex: 1;
   width: 100%;
   padding: 24px 36px 0;
-  background: #f7f2ea;
-  background-image: radial-gradient(circle, #e8930c40 1.2px, transparent 1.2px);
+  /* --lb-bg, the sign-in screen's cream. Was #f7f2ea, half a step
+     cooler and lighter, which made the two screens read as two
+     products. The dot field stays: it is the app's own canvas and the
+     wash above sits on top of it. */
+  background: #f3efe7;
+  background-image: radial-gradient(circle, #e8930c33 1.2px, transparent 1.2px);
   background-size: 20px 20px;
   transition: filter 0.3s ease;
   /* clip, NOT hidden. Both hide sideways overflow, but `hidden` makes this a
@@ -2398,6 +2402,26 @@ button.danger:hover:not(:disabled) {
      answering to the window. */
   overflow-x: clip;
   box-sizing: border-box;
+}
+
+/* The measure every page is read at.
+
+   .app-main stays full width — it paints the dot field and the washes sit on
+   top of it — and this caps only what goes inside. Without it a page just
+   grew with the monitor: on a 2560px screen the roster's columns drifted
+   metres apart and a paragraph ran to 200 characters, which is past the
+   point anyone can find the start of the next line.
+
+   1440 is not arbitrary: it is the figure the HR home was already tuned to,
+   and it was set there after a split cap (1440 for the narrow sections, 1800
+   for the wider ones) made the stat cards jut out from under the panels above
+   them. One number for the whole app means no page can develop its own
+   private idea of how wide the app is, and a new page inherits it without
+   having to remember. */
+.app-content {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
 }
 
 /* --- Sections / cards --- */
@@ -4340,7 +4364,7 @@ li:hover .checkbox-mark {
   color: var(--color-accent-dark);
 }
 .roadmap-card-pill--queued {
-  background: #f4efe7;
+  background: rgba(244, 239, 231, 0.6);
   color: var(--color-ink-soft);
 }
 .roadmap-card-pill--upcoming {
@@ -4393,7 +4417,7 @@ li:hover .checkbox-mark {
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--color-ink-soft);
-  background: #f4efe7;
+  background: rgba(244, 239, 231, 0.6);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   padding: 0.16rem 0.5rem;
@@ -4412,7 +4436,7 @@ li:hover .checkbox-mark {
   display: block;
   height: 0.28rem;
   border-radius: var(--radius-pill);
-  background: #efe8dd;
+  background: rgba(239, 232, 221, 0.7);
   overflow: hidden;
   margin-top: 0.6rem;
 }
@@ -4651,10 +4675,16 @@ li:hover .checkbox-mark {
   /* Full width, matching the trail block below it. The progress panel used to
      be capped at 34rem, which left it visibly narrower than the journey it
      described. */
+  /* Its own amber glow over glass, instead of over opaque
+     --color-surface-alt. The glow is what makes this hero its own
+     thing; the cream behind it was what made it a card sitting ON the
+     page rather than a pane of it. */
   background:
-    radial-gradient(420px 220px at 88% 0%, rgba(240, 166, 83, 0.22), transparent 70%),
-    var(--color-surface-alt);
-  border: 1px solid var(--color-border);
+    radial-gradient(420px 220px at 88% 0%, rgba(240, 166, 83, 0.20), transparent 70%),
+    var(--pane);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
   padding: 1.8rem 2rem 1.6rem;
   text-align: center;
@@ -4754,10 +4784,19 @@ li:hover .checkbox-mark {
    padding so the dots reach the edges. */
 .tasks-page {
   position: relative;
+  /* Makes this a stacking context, which the wash below depends on.
+     Its ::before and ::after sit at z-index -1; without a stacking
+     context here they join the ROOT one and are painted behind
+     .app-main's own background, which is opaque — so the whole wash
+     rendered and was then covered up, and the employee page came out
+     flat cream while HR's showed the gradient. .hr-dashboard already
+     carries `isolation: isolate` for exactly this reason. Safe now that
+     every popup on this page goes through Modal's portal; before that,
+     a new stacking context here is what trapped dialogs under the nav. */
+  isolation: isolate;
 }
-.tasks-page::before {
-  display: none;
-}
+/* The wash is defined further down, alongside HR's — the employee's
+   trail gets the same background as every other signed-in page. */
 .tasks-page > * {
   position: relative;
   z-index: 1;
@@ -8223,6 +8262,10 @@ li:hover .checkbox-mark {
   flex-direction: column;
   gap: var(--space-4);
   padding-bottom: var(--space-6);
+  /* The 1440 cap that used to live here is now .app-content in the shell,
+     so every page shares it rather than this one page having its own. The
+     wash behind is position: fixed, so it still fills the screen. */
+  width: 100%;
 }
 
 /* --- summary cards ---
@@ -9103,12 +9146,6 @@ li:hover .checkbox-mark {
    deletion of this block reverts the look.
    ============================================================ */
 .hr-dashboard {
-  --glass: rgba(255, 255, 255, 0.58);
-  --glass-strong: rgba(255, 255, 255, 0.76);
-  --glass-line: rgba(255, 255, 255, 0.72);
-  --glass-blur: saturate(180%) blur(18px);
-  --glass-shadow: 0 16px 40px -22px rgba(60, 40, 15, 0.35),
-    0 2px 8px -4px rgba(60, 40, 15, 0.08);
   position: relative;
   isolation: isolate;
   gap: var(--space-4);
@@ -9118,6 +9155,9 @@ li:hover .checkbox-mark {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  /* Same reason as .tasks-page above. */
+  position: relative;
+  isolation: isolate;
   padding-bottom: var(--space-6);
   position: relative;
   isolation: isolate;
@@ -9126,28 +9166,62 @@ li:hover .checkbox-mark {
 /* The wash. Fixed, so it does not scroll with the content and the glass
    above it keeps shifting colour as the page moves. -1 against the
    isolated stacking context above, so it never covers anything. */
+/* The page background, taken from the sign-in screen so the app does not
+   change character the moment someone logs in.
+
+   Three warm radials in the same arrangement .login-wash uses, at the
+   same strengths: a large amber high on the right, sand low on the left,
+   peach across the top. The login's third blob is an olive green; it is
+   replaced with peach here for the reason the violet and green blobs
+   were dropped from this wash before — at the strength glass needs in
+   order to read, a hue the brand does not own stops being a subliminal
+   wash and becomes a visible spot. The cool blue that survived that
+   round goes too, because the sign-in screen has no cool in it at all.
+
+   Strength matters as much as hue: with panes at ~0.5 alpha only a
+   fraction of this reaches the eye, and glass with nothing behind it
+   worth blurring is just pale paper. */
 .hr-dashboard::before,
-.start-here::before {
+.start-here::before,
+.tasks-page::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   background:
-    /* Stronger than they were. At the old alphas, with cards at ~0.66,
-       only 6-9% of this reached the eye, so the panes were translucent
-       on paper and opaque in practice. Glass needs something behind it
-       worth blurring. */
-    /* Amber and one cool blob, and that is the whole palette. The violet
-       and green blobs are gone — they were the two hues furthest from
-       this product's warm cream, and at the strength glass needs to read
-       they stopped being a subliminal wash and became visible spots.
-       The pairing that remains still gives the panes something to vary
-       against, which is what makes them look like glass instead of pale
-       paper, without introducing a colour the brand doesn't own. */
-    radial-gradient(44rem 30rem at 84% -10%, rgba(249, 146, 58, 0.42), transparent 64%),
-    radial-gradient(38rem 28rem at -4% 30%, rgba(120, 180, 255, 0.2), transparent 66%),
-    radial-gradient(34rem 26rem at 96% 82%, rgba(249, 146, 58, 0.22), transparent 66%);
+    radial-gradient(47.5rem 32.5rem at 78% 22%, rgba(245, 185, 124, 0.40), transparent 66%),
+    radial-gradient(38.75rem 28.75rem at 14% 74%, rgba(247, 219, 160, 0.36), transparent 64%),
+    radial-gradient(32.5rem 26.25rem at 52% 2%, rgba(250, 220, 184, 0.34), transparent 68%);
+}
+
+/* The drifting orb, the other half of the sign-in screen's background.
+   One rather than the login's two, because a pseudo-element can only
+   carry one animation and a second orb would mean a second DOM node on
+   every page for decoration. Fixed, so it drifts behind the content
+   rather than scrolling with it. */
+.hr-dashboard::after,
+.start-here::after,
+.tasks-page::after {
+  content: '';
+  position: fixed;
+  left: 4vw;
+  top: 20vh;
+  width: 320px;
+  height: 320px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 185, 124, 0.30), transparent 68%);
+  filter: blur(8px);
+  animation: lbDrift 13.64s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hr-dashboard::after,
+  .start-here::after,
+  .tasks-page::after {
+    animation: none;
+  }
 }
 
 /* --- the two panels ---
@@ -9324,8 +9398,13 @@ li:hover .checkbox-mark {
    which beat the department gradient set above. Their surface IS the
    department tint now, so this block leaves them alone. */
 
-/* --- everything below the panels, so the page reads as one system --- */
+/* --- everything below the panels, so the page reads as one system ---
+   .tasks-page is in the list because the employee's sections were still
+   falling through to the global `section` rule, which is opaque
+   var(--color-surface). One page's cards were glass and the other's were
+   paper, from the same markup. */
 .roster-shell,
+.tasks-page section,
 .hr-dashboard section {
   background: var(--glass);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -9616,6 +9695,11 @@ li:hover .checkbox-mark {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+  /* A name and its count belong together; past this the row is only gap.
+     Above the 306px it reaches at the page's 1440px cap, so it changes
+     nothing there — it stops the rows stretching wherever else the
+     component ends up wider. */
+  max-width: 320px;
 }
 .dept-donut-key {
   display: flex;
@@ -10117,11 +10201,34 @@ li:hover .checkbox-mark {
    the shared PageHero, and a token defined on one page's wrapper is not
    reachable from another's. */
 :root {
+  /* The glass recipe, one definition for the whole app.
+     These used to live on .hr-dashboard, which meant they resolved to
+     nothing anywhere else — and .page-hero below, which is SHARED by
+     HR's dashboard and the employee's trail, is one of the places that
+     reads them. On the employee page it was therefore asking for a
+     backdrop-filter, a border colour and a shadow that were all
+     undefined, so the hero rendered as flat paper while the identical
+     component on HR's page rendered as glass. --pane-shadow, three
+     lines down, had the same problem: it is declared here at :root and
+     built out of --glass-shadow, which :root could not see. */
+  --glass: rgba(255, 255, 255, 0.40);
+  --glass-strong: rgba(255, 255, 255, 0.58);
+  --glass-line: rgba(255, 255, 255, 0.72);
+  --glass-blur: saturate(190%) blur(24px);
+  /* The inset top edge is part of the recipe, not an extra. It is the
+     strongest single cue that a surface is glass rather than paper —
+     without it a translucent card just reads as a washed-out one. It
+     used to be bolted on in --pane-shadow, which meant only the panels
+     that happened to use that token got it. */
+  --glass-shadow: 0 16px 40px -22px rgba(60, 40, 15, 0.35),
+    0 2px 8px -4px rgba(60, 40, 15, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
   --pane: linear-gradient(
     115deg,
-    rgba(255, 252, 246, 0.5) 0%,
-    rgba(255, 246, 232, 0.4) 45%,
-    rgba(255, 240, 218, 0.46) 100%
+    rgba(255, 252, 246, 0.40) 0%,
+    rgba(255, 246, 232, 0.30) 45%,
+    rgba(255, 240, 218, 0.36) 100%
   );
   /* The top-edge catch-light. This is the strongest single cue that a
      surface is glass rather than paper — without it a translucent card
@@ -10349,6 +10456,10 @@ li:hover .checkbox-mark {
   .dept-panel .dept-donut-legend {
     margin-top: 0;
     padding-left: 0;
+    /* Stacked under the rings: centred beneath them, at its capped width,
+       rather than hugging the left edge while the chart sits in the middle. */
+    justify-self: center;
+    width: 100%;
   }
   .dept-panel .dept-donut {
     justify-content: center;
