@@ -414,7 +414,7 @@ button.danger:hover:not(:disabled) {
   position: absolute;
   left: 0;
   right: 0;
-  top: 682px;
+  top: 706px;
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--lb-line) 12%, var(--lb-line) 88%, transparent);
 }
@@ -549,10 +549,10 @@ button.danger:hover:not(:disabled) {
 .login-panel {
   position: absolute;
   box-sizing: border-box;
-  /* Stands ON the horizon: .login-hr is at top 682 of the 900px scatter,
-     i.e. 218 up from its bottom, so both anchor to that number and move
+  /* Stands ON the horizon: .login-hr is at top 706 of the 900px scatter,
+     i.e. 194 up from its bottom, so both anchor to that number and move
      together whatever the viewport does. */
-  bottom: 217px;
+  bottom: 193px;
 }
 /* The façade.
 
@@ -689,7 +689,7 @@ button.danger:hover:not(:disabled) {
   position: absolute;
   left: 352px;
   /* Same horizon anchor as .login-panel. */
-  bottom: 217px;
+  bottom: 193px;
   width: 92px;
   height: 92px;
   border: 1.4px solid var(--lb-ink);
