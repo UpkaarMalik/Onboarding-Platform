@@ -780,11 +780,13 @@ export class OnboardingsService {
       upcoming: number;
       onboarding: number;
       blocked: number;
+      total_employees: number;
     }>(
       `SELECT
          COUNT(*) FILTER (WHERE running AND not_started)::int AS upcoming,
          COUNT(*) FILTER (WHERE running)::int AS onboarding,
-         COUNT(*) FILTER (WHERE running AND has_open_blocker)::int AS blocked
+         COUNT(*) FILTER (WHERE running AND has_open_blocker)::int AS blocked,
+         (SELECT COUNT(*) FROM users WHERE deleted_at IS NULL)::int AS total_employees
        FROM (
          SELECT
            o.status NOT IN ('completed', 'cancelled') AS running,

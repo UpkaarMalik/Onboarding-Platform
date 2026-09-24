@@ -585,13 +585,12 @@ export default function HrOverview({
       {confirmDisable && (
         <Modal title="Block sign-in?" onClose={() => setConfirmDisable(null)}>
           <p>
-            <strong>{confirmDisable.employee_name}</strong> will no longer be able to sign in —
-            neither with their Joinee ID and password nor with their mobile number and OTP. Any
-            session they already have stops working on its next request.
+            <strong>{confirmDisable.employee_name}</strong> will no longer be able to sign in with
+            their Joinee ID and password. Any active session stops working on its next request.
           </p>
           <p className="muted">
-            Their onboarding, tasks and documents are untouched, and you can restore access at any
-            time from this list.
+            Their onboarding, tasks and documents are untouched. You can restore access at any time
+            from this list.
           </p>
           <div className="modal-actions">
             <button type="button" onClick={() => setConfirmDisable(null)}>Cancel</button>
@@ -624,17 +623,23 @@ export default function HrOverview({
 
       {joinerCredentials && (
         <Modal title="Account created" onClose={() => setJoinerCredentials(null)}>
-          <p>
-            Shown once — deliver these to the joinee directly. Use Copy rather than retyping.
+          <p style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+            Shown once — share these directly with the joinee.
           </p>
-          <p className="credential-row">
-            <strong>Login:</strong> <code>{joinerCredentials.loginId}</code>
-            <CopyButton text={joinerCredentials.loginId} />
-          </p>
-          <p className="credential-row">
-            <strong>Password:</strong> <code>{joinerCredentials.temporaryPassword}</code>
-            <CopyButton text={joinerCredentials.temporaryPassword} />
-          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+            {[
+              { label: 'Login ID', value: joinerCredentials.loginId },
+              { label: 'Password', value: joinerCredentials.temporaryPassword },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ background: 'var(--color-surface-alt)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.75rem 1rem' }}>
+                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.35rem' }}>{label}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <code style={{ flex: 1, fontFamily: 'monospace', fontSize: '1rem', fontWeight: 600, color: 'var(--color-text)', background: 'none', border: 'none', padding: 0 }}>{value}</code>
+                  <CopyButton text={value} />
+                </div>
+              </div>
+            ))}
+          </div>
           <div className="modal-actions">
             <button className="btn-primary" onClick={() => setJoinerCredentials(null)}>Done</button>
           </div>

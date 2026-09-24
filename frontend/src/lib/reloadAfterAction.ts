@@ -44,6 +44,17 @@ const NO_RELOAD = [
   '/notifications/',
   '/onboardings/joinee',
   'regenerate-credentials',
+  // Actions fired from the EmployeeProfileModal: document review, task
+  // blocking, blocker resolution, and the HR-side "mark done". All of
+  // these are inside a modal opened via React state, not the URL. A hard
+  // reload dismisses the modal and — because HrDashboard reads ?profile=
+  // from the URL on every mount — causes it to reopen from the URL param,
+  // which is the "card keeps appearing" loop. The modal calls load() and
+  // onChanged() itself after each action, so no data freshness is lost.
+  '/joinee-documents/',
+  '/block',
+  '/complete-as-owner',
+  '/blockers/',
 ];
 
 export function shouldReloadFor(path: string): boolean {
