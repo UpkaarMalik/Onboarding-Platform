@@ -2404,6 +2404,26 @@ button.danger:hover:not(:disabled) {
   box-sizing: border-box;
 }
 
+/* The measure every page is read at.
+
+   .app-main stays full width — it paints the dot field and the washes sit on
+   top of it — and this caps only what goes inside. Without it a page just
+   grew with the monitor: on a 2560px screen the roster's columns drifted
+   metres apart and a paragraph ran to 200 characters, which is past the
+   point anyone can find the start of the next line.
+
+   1440 is not arbitrary: it is the figure the HR home was already tuned to,
+   and it was set there after a split cap (1440 for the narrow sections, 1800
+   for the wider ones) made the stat cards jut out from under the panels above
+   them. One number for the whole app means no page can develop its own
+   private idea of how wide the app is, and a new page inherits it without
+   having to remember. */
+.app-content {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+}
+
 /* --- Sections / cards --- */
 section {
   background: var(--color-surface);
@@ -8242,16 +8262,10 @@ li:hover .checkbox-mark {
   flex-direction: column;
   gap: var(--space-4);
   padding-bottom: var(--space-6);
-  /* One cap for the whole page: the greeting, the two-panel row, the
-     stat cards and the roster all end at the same edge, so the page
-     reads as a stack of aligned bands rather than a ragged step. A
-     split cap (1440 for the narrow sections, 1800 for the wider ones)
-     made the stat cards and the roster jut out from under the panels
-     above them on a >1512px screen. The wash behind is position: fixed,
-     so it still fills the screen. */
+  /* The 1440 cap that used to live here is now .app-content in the shell,
+     so every page shares it rather than this one page having its own. The
+     wash behind is position: fixed, so it still fills the screen. */
   width: 100%;
-  max-width: 1440px;
-  margin-inline: auto;
 }
 
 /* --- summary cards ---
