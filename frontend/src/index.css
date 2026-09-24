@@ -2111,17 +2111,18 @@ button.danger:hover:not(:disabled) {
 
 .topnav-menu {
   position: absolute;
-  /* Anchored to BOTH edges so it spans exactly the name-and-ID column: the
-     left edge starts where that text does (the 32px avatar plus the
-     button's 10px gap and 10px padding), the right edge stays flush with
-     the button. Setting only `left` let a fixed-width menu run off the
-     side of the window. */
-  left: 52px;
+  /* Anchored on the RIGHT only, and sized by its own contents.
+
+     It used to be pinned to both edges so it spanned the name-and-ID column
+     exactly. That made the width a function of how long the signed-in
+     person's name happened to be, and on a short one — "Ram Verma" — the
+     column was narrower than the words inside it, so "Sign Out" wrapped onto
+     two lines. Growing leftward from the button's edge cannot run off the
+     side of the window the way a fixed width with only `left` set did. */
+  left: auto;
   right: 0;
   top: calc(100% + 8px);
-  /* No min-width: the two anchors decide the width between them. A floor
-     larger than that span won the argument and pushed the menu off the
-     side of the window. */
+  min-width: max-content;
   overflow: hidden;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.92);
@@ -2148,6 +2149,7 @@ button.danger:hover:not(:disabled) {
   font-weight: 500;
   color: var(--color-muted);
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s var(--ease), color 0.15s var(--ease);
 }
@@ -4312,10 +4314,13 @@ li:hover .checkbox-mark {
   text-align: left;
   font: inherit;
   color: inherit;
-  background: var(--pane);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-line);
+  /* Solid, not glass. The completed stretch of the connector is emerald and
+     it runs BEHIND these cards (.roadmap-trail is z-index 0 to their 1), so a
+     backdrop-filter sampled it and smeared green up through the card as the
+     page scrolled. Opaque warm white in the same hues --pane was tinting
+     with, so the cards read the same without sampling anything. */
+  background: linear-gradient(115deg, #fffdf9 0%, #fff8ee 45%, #fff4e4 100%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 1.1rem 1.25rem;
   box-shadow: var(--pane-shadow);
@@ -4325,6 +4330,47 @@ li:hover .checkbox-mark {
 }
 .roadmap-row--left .roadmap-card {
   text-align: right;
+}
+/* The step's picture, on the card's OUTER edge — the side its text is not
+   aligned to, so the two never fight for the same corner. Absolute, with the
+   card padded to match, because a picture in the flow would change the card's
+   height and the trail's curve is measured from those heights.
+
+   multiply, not a keyed PNG: the sources are flat art on white, and letting
+   the white multiply away means it takes the colour of whatever card it sits
+   on — cream, green or amber — instead of needing a cut-out per state. */
+.roadmap-card-art {
+  position: absolute;
+  top: 50%;
+  /* Set per step in TaskRoadmap: the three drawings sit at different scales
+     inside their own canvases, so one width would render them at three
+     different visual sizes. */
+  width: var(--art-w, 86px);
+  height: auto;
+  transform: translateY(-50%);
+  /* Grey and faded, so it reads as a watermark behind the step rather than
+     three saturated stickers competing with the cards' own state colours.
+     multiply still carries the white away; grayscale drops the source art's
+     blues and greys, which belonged to no palette on this page. */
+  filter: grayscale(1) contrast(0.95);
+  opacity: 0.42;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  user-select: none;
+}
+/* Padding derived from the picture's own width, so a bigger drawing takes its
+   own room rather than needing this number nudged to match. */
+.roadmap-row--left .roadmap-card--art {
+  padding-left: calc(var(--art-w, 86px) + 2rem);
+}
+.roadmap-row--left .roadmap-card-art {
+  left: 0.9rem;
+}
+.roadmap-row--right .roadmap-card--art {
+  padding-right: calc(var(--art-w, 86px) + 2rem);
+}
+.roadmap-row--right .roadmap-card-art {
+  right: 0.9rem;
 }
 .roadmap-card:not(.is-skeleton):hover {
   transform: translateY(-3px);
@@ -4338,16 +4384,10 @@ li:hover .checkbox-mark {
 }
 /* Green, and enough of it to read as done at a glance from across the trail —
    the old tint was a 0.46-alpha wash that was indistinguishable from the
-   plain card beside it. Still tinted glass rather than opaque green: a done
-   card that stopped being translucent would be the one card on the page made
-   of paper. */
+   plain card beside it. Opaque like the base card, for the same reason. */
 .roadmap-card--done {
-  background: linear-gradient(
-    115deg,
-    rgba(233, 246, 238, 0.94) 0%,
-    rgba(214, 238, 225, 0.88) 100%
-  );
-  border-color: rgba(47, 143, 91, 0.4);
+  background: linear-gradient(115deg, #e9f6ee 0%, #d6eee1 100%);
+  border-color: #a9d6bf;
 }
 .roadmap-card--done .roadmap-card-title {
   color: var(--color-success-ink);
@@ -4630,6 +4670,31 @@ li:hover .checkbox-mark {
 .roadmap-mark-boomerang {
   fill: #ed952b;
 }
+/* At rest the mark is the logo: the boomerang sitting on its disc. The disc
+   drops away as it casts off and re-forms when it moors at the task.
+
+   Faded as a GROUP, so the glow's own infinite opacity pulse is multiplied
+   by this rather than fought with. Cutting the glow dead with
+   `animation: none` was what made the departure look abrupt.
+
+   The two directions are timed apart on purpose. Leaving is shorter and
+   eases IN, so the disc is gone before the spin is up to speed. Arriving is
+   longer, eases OUT and waits a beat, so the logo settles after the
+   boomerang has stopped instead of racing it home. */
+.roadmap-mark-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    opacity 0.52s cubic-bezier(0.22, 0.61, 0.36, 1) 0.08s,
+    transform 0.52s cubic-bezier(0.22, 0.61, 0.36, 1) 0.08s;
+}
+.roadmap-runner.is-sailing .roadmap-mark-ring {
+  opacity: 0;
+  transform: scale(0.86);
+  transition:
+    opacity 0.36s cubic-bezier(0.5, 0, 0.75, 0),
+    transform 0.36s cubic-bezier(0.5, 0, 0.75, 0);
+}
 /* Deliberately NO transform-box/transform-origin on the spinning group.
    The voyage writes `rotate(deg)` as an SVG transform ATTRIBUTE, which turns
    about the current user-space origin — and that origin is the motion point,
@@ -4743,16 +4808,15 @@ li:hover .checkbox-mark {
   /* Full width, matching the trail block below it. The progress panel used to
      be capped at 34rem, which left it visibly narrower than the journey it
      described. */
-  /* Its own amber glow over glass, instead of over opaque
-     --color-surface-alt. The glow is what makes this hero its own
-     thing; the cream behind it was what made it a card sitting ON the
-     page rather than a pane of it. */
+  /* Its own amber glow, over an OPAQUE base rather than glass. As a pane it
+     sat still while the trail scrolled under it, and its backdrop-filter
+     sampled whatever passed beneath — the completed cards are green, so a
+     green cloud drifted across the bar on every scroll. Nothing to sample
+     now; the glow stays, the reflection goes. */
   background:
     radial-gradient(420px 220px at 88% 0%, rgba(240, 166, 83, 0.20), transparent 70%),
-    var(--pane);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-line);
+    var(--panel-warm);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 1rem 1.5rem 1.1rem;
   text-align: center;
@@ -4927,10 +4991,17 @@ li:hover .checkbox-mark {
    shadow, margin) — the trail is meant to sit directly on the page's dot
    field, not inside a card. Also cancels `section:hover`'s transform: a
    scaling ancestor re-rasterises the connector SVGs and makes the dashed
-   strokes shimmer. */
-.tasks-trail,
-.tasks-trail:hover {
+   strokes shimmer.
+
+   Qualified with .tasks-page because `.tasks-page section` (the glass panel
+   rule) is one-one-one and was quietly out-scoring the bare class, putting
+   the trail back in a card. The backdrop-filter has to go too: it comes from
+   that same rule and blurs the dot field THROUGH a transparent background. */
+.tasks-page .tasks-trail,
+.tasks-page .tasks-trail:hover {
   background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -10413,6 +10484,11 @@ li:hover .checkbox-mark {
     rgba(255, 246, 232, 0.30) 45%,
     rgba(255, 240, 218, 0.36) 100%
   );
+  /* The opaque twin of --pane, for panels that cannot be glass because
+     something coloured scrolls underneath them. Sampled off the HR
+     dashboard's panels so the two pages read as one theme rather than one
+     warm and one bleached. */
+  --panel-warm: linear-gradient(115deg, #fdf6e9 0%, #fbf0dd 48%, #fdecd4 100%);
   /* The top-edge catch-light. This is the strongest single cue that a
      surface is glass rather than paper — without it a translucent card
      just reads as a washed-out one. */
@@ -10687,26 +10763,36 @@ li:hover .checkbox-mark {
      a tooltip drawn outside their own box, and a scroll container clips
      anything that leaves it — the tooltips would be cut off at the rail's
      edge. Only the office guide scrolls, below. */
-  /* height, not max-height: the column has to OWN the space down to the
-     bottom of the screen for the guide below to absorb what the other blocks
-     don't use. With max-height it only ever grew to fit its contents, which
-     left the laptop card floating in a band of empty rail. */
-  height: calc(100vh - var(--rail-clearance, 8.5rem) - var(--space-4));
+  /* Sized by its contents, not by the viewport.
+
+     It used to be `height: calc(100vh - …)`, which forced the whole column
+     into whatever the window left. On a laptop-height screen that was ~438px
+     for ~570px of content, and the blocks fought over the shortfall: the
+     articles scrolled, then the laptop was clipped to a third of itself.
+     Neither is worth the thing the fixed height bought — no empty band under
+     the laptop — and a content-sized rail cannot have an empty band anyway,
+     because it ends where its content does. It still pins; a rail taller
+     than the window simply scrolls into view like the rest of the page. */
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   min-height: 0;
 }
-.employee-rail-block {
+/* Qualified with .tasks-page for the same reason .tasks-trail is: the glass
+   panel rule `.tasks-page section` is one-one-one and out-scores a bare
+   class, so an unqualified selector here silently loses. */
+.tasks-page .employee-rail-block {
   /* These are <section>s, so they inherit the global section margin. In a
      flex column that margin is dead space the guide above cannot absorb —
      it is what left the laptop card short of the bottom. The rail's own gap
      does the spacing. */
   margin: 0;
-  background: var(--pane);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-line);
+  /* Opaque, and the same warm mix as the hero: the rail is pinned while the
+     trail scrolls past it, so glass here samples the cards going by. */
+  background: var(--panel-warm);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: 1px solid var(--color-border);
   border-radius: 20px;
   box-shadow: var(--pane-shadow);
   padding: var(--space-3);
@@ -10723,45 +10809,57 @@ li:hover .checkbox-mark {
 }
 /* The article tiles are the part that can outgrow the screen, so the scroll
    lives here rather than on the rail. */
+/* No inner scroll, and no shrinking either. As a flex item with min-height:0
+   it could settle ten pixels under its own content, which the block's
+   overflow:hidden then sliced off the last article. flex:0 0 auto makes the
+   grid's content the thing the block is sized FROM rather than something it
+   can compress. */
 .employee-rail .knowledge-grid {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  min-height: 0;
+  flex: 0 0 auto;
   padding-right: 4px;
 }
 /* One column: the rail is a quarter of the page, and auto-fit's 220px
    minimum would otherwise force a horizontal overflow on a narrow one. */
 .employee-rail .knowledge-grid {
   grid-template-columns: minmax(0, 1fr);
+  /* Each row takes its own article's height. The grid has a definite height
+     (it is the flexible block in a pinned rail), and default `auto` rows
+     split that between them equally — which squeezed every card, and cut the
+     three-line article off ten pixels short. align-content alone does not
+     fix it; the row SIZING is what has to change. */
+  grid-auto-rows: max-content;
+  /* Tighter than the page-wide 0.9rem. The three articles have to fit the
+     block without scrolling, and the gaps were 29px of the 33px they were
+     over by. */
+  gap: 0.55rem;
 }
 .employee-rail .knowledge-card {
-  padding: 0.7rem 0.85rem;
+  padding: 0.6rem 0.85rem;
   align-items: center;
+}
+/* The three office-guide pictures, in place of the emoji. multiply carries
+   their white grounds away so they sit straight on the card the way the
+   emoji did, with no plate of white behind them. */
+.knowledge-icon--art {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+  mix-blend-mode: multiply;
 }
 .employee-rail .knowledge-card strong {
   font-size: var(--text-sm);
   margin-bottom: 0;
 }
-/* Heading only at rest; the body unrolls when you point at the card.
-   max-height rather than display:none so it can animate, and the value is
-   a ceiling the longest article clears rather than its exact height —
-   `auto` is not a transitionable length. */
+/* The whole summary, always. No clamp and no hover reveal — the articles are
+   written short enough to read in place, and text that only appears when you
+   point at it is text most people never find. Each card takes the height its
+   own sentence needs. */
 .employee-rail .knowledge-card p {
   font-size: var(--text-xs);
-  margin: 0;
-  max-height: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition:
-    max-height 0.25s var(--ease),
-    opacity 0.2s var(--ease),
-    margin-top 0.25s var(--ease);
-}
-.employee-rail .knowledge-card:hover p,
-.employee-rail .knowledge-card:focus-within p {
-  max-height: 9rem;
-  opacity: 1;
-  margin-top: 4px;
+  margin: 3px 0 0;
+  line-height: 1.45;
+  color: var(--color-muted);
 }
 /* The card lifts on hover, and a lifted card whose neighbours have moved
    to make room for its text is a card that jumps out from under the
@@ -10789,12 +10887,45 @@ li:hover .checkbox-mark {
    needs — the people block, the laptop, the two gaps, the rail's own top
    offset and bottom margin — so whatever is left over after that is the
    guide's, between a floor of 8rem and the old 22rem ceiling. */
+/* Corner art, on the same recipe as .dept-panel-art on the HR dashboard:
+   absolutely placed so it never pushes the content around, faded well back
+   so it stays decoration, and inert to the pointer. The block clips it, so
+   it can't escape the rounded corner. */
+.rail-guide-art {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  width: 64px;
+  height: auto;
+  opacity: 0.3;
+  pointer-events: none;
+  user-select: none;
+}
+/* Reserves the art's height, which is what moves the article cards below it
+   — the art itself is out of flow and pushes nothing. Has to clear the art's
+   FULL height (top offset + the art's 64px) plus a gap, or the first card
+   slides under the drawing's shoulders. */
+.rail-guide-head {
+  min-height: 64px;
+  flex-shrink: 0;
+}
+.rail-guide-head h2 {
+  margin: 0;
+}
+
 /* Takes whatever the rail's other blocks leave, so the laptop below it lands
    on the bottom of the screen instead of part-way up it. Its article grid
    scrolls, so there is no height it cannot give back. */
 .employee-rail-block--guide {
-  flex: 1 1 auto;
-  min-height: 8rem;
+  /* Content-sized and NOT shrinkable, so the articles are never the thing
+     that gives. On a laptop-height window the rail is ~440px and the laptop
+     card was taking 238 of it as a fixed block, which left the guide 74px of
+     grid for 261px of articles — a scrollbar on every short screen. The
+     laptop is decoration; the articles are the content. */
+  flex: 0 0 auto;
+  /* Anchors .rail-guide-art, and clips it to the rounded corner. */
+  position: relative;
+  overflow: hidden;
 }
 .people-list {
   list-style: none;
@@ -10848,8 +10979,11 @@ li:hover .checkbox-mark {
   font-weight: 600;
   color: var(--color-text);
 }
+/* Full size, and never clipped. The width caps and the overflow:hidden that
+   used to live here were rationing a fixed-height rail; the rail is sized by
+   its contents now, so there is nothing to ration. */
 .employee-rail-block--tips {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   overflow: visible;
 }
 .employee-rail .knowledge-emoji-row {

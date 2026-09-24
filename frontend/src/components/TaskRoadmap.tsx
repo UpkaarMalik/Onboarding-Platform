@@ -1,6 +1,12 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { dueLabel } from '../lib/format';
 import { MARK_BOOMERANG_PATH, MARK_RADIUS } from '../lib/andMark';
+import uploadArt from '../assets/task-upload.png';
+import docsArt from '../assets/task-docs.png';
+import laptopArt from '../assets/task-laptop.png';
+import managerArt from '../assets/task-manager.png';
+import buddyArt from '../assets/task-buddy.png';
+import accessArt from '../assets/task-access.png';
 import BlockerLine, { type TaskBlocker } from './BlockerLine';
 
 export interface RoadmapItem {
@@ -294,6 +300,11 @@ const MARK_BERTH = 46;
  * turns crammed into different times.
  */
 const SPIN_TURNS_PER_SEC = 2.8;
+
+/** How long the mark sits whole at the start of the trail before casting off.
+ *  Roughly the rest beat in the reference loop, where the ring holds for the
+ *  first fifth of the cycle. */
+const MARK_REST_MS = 700;
 const SPIN_MIN_TURNS = 2;
 
 /**
@@ -343,10 +354,18 @@ function Sparkle() {
 function MarkShape({ spinRef }: { spinRef: React.RefObject<SVGGElement> }) {
   return (
     <g className="roadmap-mark">
-      {/* A soft glow under the disc, and only that: it marks where the
-          employee is without tinting the mark. */}
-      <circle className="roadmap-mark-glow" r={MARK_RADIUS + 3} filter="url(#roadmapRunnerGlow)" />
-      <circle className="roadmap-mark-disc" r={MARK_RADIUS} />
+      {/* Glow and disc as ONE group, because they come and go together and
+          the group is what fades. Fading them individually meant the glow —
+          which runs an infinite opacity pulse — could only be cut dead with
+          `animation: none`, and that hard snap was what made the whole
+          departure look abrupt. Group opacity multiplies the pulse instead
+          of fighting it. */}
+      <g className="roadmap-mark-ring">
+        {/* A soft glow under the disc, and only that: it marks where the
+            employee is without tinting the mark. */}
+        <circle className="roadmap-mark-glow" r={MARK_RADIUS + 3} filter="url(#roadmapRunnerGlow)" />
+        <circle className="roadmap-mark-disc" r={MARK_RADIUS} />
+      </g>
       {/* The boomerang is its own group so the disc behind it stays put while
           it turns. The transform is written by the voyage effect, never here —
           one source of truth for its angle, the same rule the position
@@ -488,9 +507,22 @@ function RoadmapTrail({
      * (removing `animation` and adding it back is what replays the keyframes).
      */
     const runner = boat.parentNode as SVGGElement | null;
+    /** Looks airborne: the disc and its glow drop away, leaving the bare
+     *  boomerang to turn. */
+    const setFlying = (flying: boolean) => {
+      runner?.classList.toggle('is-sailing', flying);
+    };
+    /** IS on a voyage. Held separately from the look because the mark sits
+     *  whole at the start for a beat before it casts off, and everything that
+     *  waits on the crossing — the tow, the hero's fold — has to count that
+     *  beat as part of it. Collapsing the two would let the hero fold away
+     *  before the boomerang had even left. */
+    const setVoyage = (underway: boolean) => {
+      onVoyageRef.current?.(underway);
+    };
     const setSailing = (sailing: boolean) => {
-      runner?.classList.toggle('is-sailing', sailing);
-      onVoyageRef.current?.(sailing);
+      setFlying(sailing);
+      setVoyage(sailing);
     };
 
     /**
@@ -676,9 +708,17 @@ function RoadmapTrail({
     const first = path.getPointAtLength(0);
     place(first.x, first.y);
     spinTo(0);
-    setSailing(true);
-    raf = requestAnimationFrame(tick);
+    // Underway from here, so the tow and the hero's fold both wait — but the
+    // mark holds its resting shape, disc and all, for a beat before it goes.
+    // It is the brand logo at rest, and casting off on the very first frame
+    // meant the start of the trail never showed it whole.
+    setVoyage(true);
+    const castOff = window.setTimeout(() => {
+      setFlying(true);
+      raf = requestAnimationFrame(tick);
+    }, MARK_REST_MS);
     return () => {
+      window.clearTimeout(castOff);
       cancelAnimationFrame(raf);
       setSailing(false);
       unhook();
@@ -732,6 +772,29 @@ function RoadmapTrail({
   );
 }
 
+/** The picture for a step, if it has one. Matched on the system key where
+ *  there is one and on the title otherwise — the other two steps carry no
+ *  key, and a keyword is better than hard-coding a row id. Cosmetic and
+ *  best-effort: a step that matches nothing simply gets no picture. */
+function stepArt(step: RoadmapItem): { src: string; width: number } | null {
+  if (step.system_key === 'document_upload') return { src: uploadArt, width: 86 };
+  const t = step.title.toLowerCase();
+  // The laptop and the papers are drawn smaller within their own canvas than
+  // the folder is, so they need more pixels to read at the same visual size.
+  if (t.includes('laptop') || t.includes('macbook')) return { src: laptopArt, width: 112 };
+  if (t.includes('read the doc') || t.includes('handbook')) return { src: docsArt, width: 104 };
+  // Buddy before manager: "Meet your onboarding buddy" contains neither
+  // word the manager rule looks for, but keeping the narrower match first
+  // means a future "buddy's manager" style title cannot be caught by the
+  // wrong one.
+  if (t.includes('buddy')) return { src: buddyArt, width: 96 };
+  if (t.includes('manager') || t.includes('reporting')) return { src: managerArt, width: 118 };
+  if (t.includes('entry') || t.includes('exit') || t.includes('access')) {
+    return { src: accessArt, width: 110 };
+  }
+  return null;
+}
+
 function CheckIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
@@ -762,13 +825,22 @@ function RoadmapCard({
   const total = step.subtask_count ?? 0;
   const done = step.subtask_completed_count ?? 0;
   const isDocuments = step.system_key === 'document_upload';
+  const art = stepArt(step);
 
   return (
     <Tag
       type={clickable ? 'button' : undefined}
-      className={`roadmap-card roadmap-card--${state}${final ? ' roadmap-card--final' : ''}`}
+      className={`roadmap-card roadmap-card--${state}${final ? ' roadmap-card--final' : ''}${art ? ' roadmap-card--art' : ''}`}
+      /* The art's width drives the card's padding on that side, so one
+         number keeps the picture and the space it needs in step. */
+      style={art ? ({ ['--art-w' as string]: `${art.width}px` } as React.CSSProperties) : undefined}
       onClick={clickable ? () => onSelect(step.id) : undefined}
     >
+      {/* Decorative: empty alt and aria-hidden, the title says what the step
+          is. Sits on the card's OUTER edge — the side the text is not
+          aligned to — so it never crowds the words. */}
+      {art && <img className="roadmap-card-art" src={art.src} alt="" aria-hidden="true" />}
+
       <div className="roadmap-card-top">
         <span className="roadmap-card-step">
           Step {String(index + 1).padStart(2, '0')}

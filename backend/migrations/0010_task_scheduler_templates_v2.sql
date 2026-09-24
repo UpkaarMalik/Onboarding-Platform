@@ -27,7 +27,7 @@ SELECT engineering_template.id, t.title, t.description, t.owner_role,
        t.is_checkpoint, t.milestone
 FROM engineering_template, (VALUES
   ('Read the docs',
-   'Read the Employee Handbook, Meal Reimbursement Policy, Domestic Travel Policy, and Group Health Insurance policy — all available on the Documents page, same four for every department.',
+   'Four policies to read on the Documents page: Employee Handbook, Meal Reimbursement, Domestic Travel and Group Health Insurance.',
    'employee', 0, 'normal', true, 'employee', false, 'Day 1'),
   ('Meet your reporting manager',
    'Introductory call or meeting with your reporting manager.',
@@ -75,7 +75,7 @@ SELECT finance_template.id, t.title, t.description, t.owner_role,
        t.is_checkpoint, t.milestone
 FROM finance_template, (VALUES
   ('Read the docs',
-   'Read the Employee Handbook, Meal Reimbursement Policy, Domestic Travel Policy, and Group Health Insurance policy — all available on the Documents page, same four for every department.',
+   'Four policies to read on the Documents page: Employee Handbook, Meal Reimbursement, Domestic Travel and Group Health Insurance.',
    'employee', 0, 'normal', true, 'employee', false, 'Day 1'),
   ('Meet your reporting manager',
    'Introductory call or meeting with your reporting manager.',
@@ -117,7 +117,7 @@ SELECT operations_template.id, t.title, t.description, t.owner_role,
        t.is_checkpoint, t.milestone
 FROM operations_template, (VALUES
   ('Read the docs',
-   'Read the Employee Handbook, Meal Reimbursement Policy, Domestic Travel Policy, and Group Health Insurance policy — all available on the Documents page, same four for every department.',
+   'Four policies to read on the Documents page: Employee Handbook, Meal Reimbursement, Domestic Travel and Group Health Insurance.',
    'employee', 0, 'normal', true, 'employee', false, 'Day 1'),
   ('Meet your reporting manager',
    'Introductory call or meeting with your reporting manager.',
