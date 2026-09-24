@@ -1,11 +1,26 @@
 import { useEffect, useState } from 'react';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import MacBookCard from './MacBookCard';
+import thinker from '../assets/office-guide-thinker.png';
+import pantryArt from '../assets/guide-pantry.png';
+import lunchArt from '../assets/guide-lunch.png';
+import gamesArt from '../assets/guide-games.png';
 
 /** Onboarding statuses where the joinee has not reached the checkpoint yet
  *  and so sees the pre-checkpoint article set rather than the public one. */
 const PRE_CHECKPOINT_STATUSES = ['pre_onboarding', 'email_provisioned', 'checkpoint_pending'];
 
+
+/** The picture for a knowledge article, matched on its title the same way
+ *  the heading below is. Only the three office-guide articles have one; the
+ *  emoji underneath stays as the fallback so a new article is never iconless. */
+function knowledgeArt(title: string): string | null {
+  const t = title.toLowerCase();
+  if (t.includes('pantry') || t.includes('water') || t.includes('washroom')) return pantryArt;
+  if (t.includes('lunch') || t.includes('meal') || t.includes('food')) return lunchArt;
+  if (t.includes('recreation') || t.includes('sport') || t.includes('game')) return gamesArt;
+  return null;
+}
 
 /** Best-effort icon for a knowledge article by keyword in its title —
  *  purely cosmetic, falls back to a generic pin so an article never
@@ -83,7 +98,12 @@ export default function EmployeeKnowledgeRail({
     <aside className="employee-rail">
       {knowledge.length > 0 && (
         <section className="employee-rail-block employee-rail-block--guide">
-          <h2>Office guide</h2>
+          {/* Decorative only — empty alt and aria-hidden, same as the HR
+              dashboard's badge art. The articles below carry the meaning. */}
+          <img className="rail-guide-art" src={thinker} alt="" aria-hidden="true" />
+          <div className="rail-guide-head">
+            <h2>Office guide</h2>
+          </div>
           {/* Heading only, with the body on hover. Shown together they
               did not fit: the rail is a quarter of the page, the block's
               height moves as the hero above it condenses on scroll, and
@@ -96,7 +116,16 @@ export default function EmployeeKnowledgeRail({
                 className="knowledge-card card card-hover"
                 style={{ animationDelay: `${i * 0.07}s` }}
               >
-                <span className="knowledge-icon">{knowledgeIcon(k.title)}</span>
+                {knowledgeArt(k.title) ? (
+                  <img
+                    className="knowledge-icon knowledge-icon--art"
+                    src={knowledgeArt(k.title)!}
+                    alt=""
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <span className="knowledge-icon">{knowledgeIcon(k.title)}</span>
+                )}
                 <div className="knowledge-card__body">
                   <strong title={k.title}>{knowledgeHeading(k.title)}</strong>
                   <p>{k.content}</p>

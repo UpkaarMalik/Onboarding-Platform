@@ -17,7 +17,7 @@ INSERT INTO knowledge_articles (category_id, title, content, department_id, visi
 SELECT
   (SELECT id FROM knowledge_categories WHERE name = 'Office Guide'),
   'Pantry, water & washrooms',
-  'The pantry, drinking water, and washrooms are all on the 3rd floor.',
+  'Pantry, water and washrooms are all on the 3rd floor.',
   NULL:: uuid,
   'public',
   true
@@ -25,7 +25,7 @@ UNION ALL
 SELECT
   (SELECT id FROM knowledge_categories WHERE name = 'Office Guide'),
   'Lunch',
-  'Lunch is typically taken around 2 PM and should be concluded within 45 minutes. Meal coupons are available; using them is optional.',
+  'Lunch is around 2 PM and takes about 45 minutes. Coupons are optional.',
   NULL::uuid,
   'public',
   true
