@@ -365,7 +365,13 @@ export default function Layout() {
       </header>
 
       <main className="app-main">
-        <Outlet />
+        {/* One measure for every page. The shell stays full width so its dot
+            field and washes still reach the edges; only the CONTENT is
+            capped and centred, which is why this is a wrapper rather than a
+            max-width on .app-main itself. */}
+        <div className="app-content">
+          <Outlet />
+        </div>
       </main>
     </div>
   );
