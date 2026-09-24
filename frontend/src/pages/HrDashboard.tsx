@@ -350,6 +350,40 @@ export default function HrDashboard() {
     }
   }, [rosterQuery]);
 
+  /**
+   * The stat cards' pointer tilt.
+   *
+   * .home-cards--row sets `perspective: 900px` and each card transforms by
+   * `rotateX(var(--rx)) rotateY(var(--ry))` — but nothing was setting those
+   * two properties, so every card sat at 0deg and the row read as flat. The
+   * CSS for this survived a merge that the markup did not; the three effect
+   * layers below were lost the same way.
+   *
+   * Six degrees is the whole range. Past about eight the text starts to
+   * visibly keystone on a 136px card, which reads as a rendering fault
+   * rather than as depth.
+   */
+  const TILT_DEG = 6;
+
+  function tiltCard(event: React.MouseEvent<HTMLButtonElement>) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const el = event.currentTarget;
+    const box = el.getBoundingClientRect();
+    // -0.5 … 0.5 from the centre of the card.
+    const x = (event.clientX - box.left) / box.width - 0.5;
+    const y = (event.clientY - box.top) / box.height - 0.5;
+    // Y drives rotateX and is negated: pushing the pointer DOWN should tip
+    // the far edge away, not toward you.
+    el.style.setProperty('--rx', `${-y * TILT_DEG}deg`);
+    el.style.setProperty('--ry', `${x * TILT_DEG}deg`);
+  }
+
+  function untiltCard(event: React.MouseEvent<HTMLButtonElement>) {
+    const el = event.currentTarget;
+    el.style.setProperty('--rx', '0deg');
+    el.style.setProperty('--ry', '0deg');
+  }
+
   function pickCard(key: string) {
     const next = activeStatFilter === key ? null : key;
     setActiveStatFilter(next);
@@ -502,7 +536,17 @@ export default function HrDashboard() {
                   className={`home-card home-card--${c.tone}${activeStatFilter === c.key ? ' is-active' : ''}`}
                   aria-pressed={activeStatFilter === c.key}
                   onClick={() => pickCard(c.key)}
+                  onMouseMove={tiltCard}
+                  onMouseLeave={untiltCard}
                 >
+                  {/* The three effect layers the CSS expects. All decorative,
+                      all pointer-events: none, all behind the content — the
+                      tone glow, the sweep across on hover, and the underline
+                      that draws in and stays while the card is the active
+                      filter. */}
+                  <span className="home-card-fx home-card-glow" aria-hidden="true" />
+                  <span className="home-card-fx home-card-shimmer" aria-hidden="true" />
+                  <span className="home-card-fx home-card-line" aria-hidden="true" />
                   <span className={`home-card-icon ${c.tone}`} aria-hidden="true">{c.icon}</span>
                   <span className="home-card-text">
                     <span className="home-card-value">{c.value}</span>

@@ -686,7 +686,7 @@ export default function Login() {
                     anything, so a blocked button does not get one. */}
                 {!locked && <span className="login-submit__sheen" aria-hidden="true" />}
                 <span>
-                  {locked ? `Try again in ${secondsLeft}s` : busy ? 'Signing in…' : 'Sign in'}
+                  {locked ? `Try again in ${secondsLeft}s` : busy ? 'Logging in…' : 'Log in'}
                 </span>
               </button>
             </form>
