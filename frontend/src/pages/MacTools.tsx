@@ -71,16 +71,16 @@ export default function MacTools() {
 function MacScreen() {
   return (
     <div
-      className="flex h-full w-full flex-col bg-[#0d0d12]"
+      className="flex h-full w-full flex-col bg-[#f4f4f7]"
       aria-hidden="true"
     >
-      <div className="flex h-[26px] shrink-0 items-center gap-2 border-b border-[#22222c] bg-[#15151c] px-[10px]">
+      <div className="flex h-[32px] shrink-0 items-center gap-2 border-b border-[#d9d9e0] bg-[#e9e9ee] px-[10px]">
         <span className="flex gap-[5px]">
           <span className="h-2 w-2 rounded-full bg-[#ec6a5e]" />
           <span className="h-2 w-2 rounded-full bg-[#f4bf4f]" />
           <span className="h-2 w-2 rounded-full bg-[#61c554]" />
         </span>
-        <span className="grow text-center text-[8px] tracking-[0.3px] text-[#8b8b96]">
+        <span className="grow text-center text-[10px] tracking-[0.3px] text-[#5d5d68]">
           mac-tips
         </span>
         <span className="w-10" />
@@ -96,26 +96,26 @@ function MacScreen() {
           height inside the card it already occupies. Without the fixed
           rows the hovered row grew and nudged every row below it down,
           which is a lot of movement for reading one tip. */}
-      <div className="grid min-h-0 grow grid-cols-2 grid-rows-5 gap-[8px] overflow-hidden px-[12px] py-[9px]">
+      <div className="grid min-h-0 grow grid-cols-2 grid-rows-5 gap-[10px] overflow-hidden px-[15px] py-[11px]">
         {MAC_TIPS.map((tip) => (
           <div
             key={tip.title}
-            className="group flex min-h-0 cursor-default flex-col justify-center overflow-hidden rounded-[7px] border border-[#23232d] bg-[#131319] px-[13px] py-[8px] transition-colors duration-200 hover:border-[#3a3a49] hover:bg-[#1c1c25]"
+            className="group flex min-h-0 cursor-default flex-col justify-center overflow-hidden rounded-[7px] border border-[#dcdce3] bg-white px-[16px] py-[10px] shadow-[0_1px_2px_rgba(16,16,24,0.05)] transition-colors duration-200 hover:border-[#bdbdc9] hover:bg-[#fbfbfd]"
           >
-            <div className="flex items-center gap-[9px]">
-              <span className="text-[16px] leading-none">{tip.icon}</span>
-              <span className="text-[11.5px] font-semibold leading-[1.25] text-[#c8c8d2] transition-colors duration-200 group-hover:text-[#f2f2f5]">
+            <div className="flex items-center gap-[11px]">
+              <span className="text-[21px] leading-none">{tip.icon}</span>
+              <span className="text-[15.5px] font-semibold leading-[1.25] text-[#2a2a33] transition-colors duration-200 group-hover:text-[#101017]">
                 {tip.title}
               </span>
             </div>
-            <p className="m-0 max-h-0 overflow-hidden text-[8.6px] leading-[1.5] text-[#8b8b96] opacity-0 transition-all duration-200 group-hover:mt-[5px] group-hover:max-h-[58px] group-hover:opacity-100">
+            <p className="m-0 max-h-0 overflow-hidden text-[11.5px] leading-[1.5] text-[#63636f] opacity-0 transition-all duration-200 group-hover:mt-[6px] group-hover:max-h-[70px] group-hover:opacity-100">
               {tip.content}
             </p>
           </div>
         ))}
       </div>
 
-      <div className="flex h-5 shrink-0 items-center justify-between border-t border-[#22222c] bg-[#15151c] px-[10px] text-[7px] text-[#6f6f7a]">
+      <div className="flex h-6 shrink-0 items-center justify-between border-t border-[#d9d9e0] bg-[#e9e9ee] px-[10px] text-[8.5px] text-[#63636f]">
         <span>{MAC_TIPS.length} tips</span>
         <span>AndBoard &nbsp;·&nbsp; New to Mac</span>
       </div>

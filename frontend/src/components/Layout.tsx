@@ -2,11 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ROSTER_PATH, rosterQueryIsActive, withParam } from '../lib/rosterQuery';
-<<<<<<< HEAD
 import NotificationBell from './NotificationBell';
-=======
 import { BrandMark, BrandWord } from './BrandLogo';
->>>>>>> 6f9214e (New to mac feature added)
 
 interface NavItem {
   to: string;

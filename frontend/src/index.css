@@ -2413,15 +2413,31 @@ section {
 }
 
 .card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  /* The same glass the hero and the rail panels are made of, rather than
+     opaque white: --pane for the tint, the blur behind it, a white
+     hairline for the edge and --pane-shadow, whose inset top line is the
+     catch-light. Without that line a translucent card reads as a
+     washed-out one instead of a pane of glass. */
+  background: var(--pane);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--pane-shadow);
   transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+/* A backdrop-filter inside another one filters its parent's ALREADY
+   composited output — a flat wash, not the page behind it. Cards sitting
+   in a rail panel keep the tint and the catch-light and drop the blur,
+   which they were getting from the panel anyway. */
+.employee-rail-block .card,
+.page-hero .card {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .card-hover:hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-shadow-lift), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 /* Smooth hover transitions — Dribbble-inspired scale / fade / slide.
@@ -4215,11 +4231,13 @@ li:hover .checkbox-mark {
   text-align: left;
   font: inherit;
   color: inherit;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
+  background: var(--pane);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
   padding: 1.1rem 1.25rem;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--pane-shadow);
   cursor: pointer;
   transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease),
     border-color 0.2s var(--ease);
@@ -4229,15 +4247,22 @@ li:hover .checkbox-mark {
 }
 .roadmap-card:not(.is-skeleton):hover {
   transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-shadow-lift), inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 .roadmap-card--active {
   border-color: var(--color-accent);
   border-width: 2px;
-  box-shadow: 0 12px 30px -4px rgba(226, 125, 48, 0.18);
+  box-shadow: 0 12px 30px -4px rgba(226, 125, 48, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+/* Tinted glass, not opaque white — a done card that stopped being
+   translucent would be the one card on the page made of paper. */
 .roadmap-card--done {
-  background: linear-gradient(180deg, #ffffff, #fbfdfb);
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.56) 0%,
+    rgba(246, 253, 248, 0.46) 100%
+  );
 }
 .roadmap-card--upcoming {
   opacity: 0.72;
@@ -4251,7 +4276,11 @@ li:hover .checkbox-mark {
   border-style: dashed;
   border-width: 2px;
   border-color: var(--color-accent);
-  background: linear-gradient(180deg, var(--color-bg), var(--color-surface-alt));
+  background: linear-gradient(
+    115deg,
+    rgba(255, 252, 246, 0.42) 0%,
+    rgba(255, 240, 218, 0.4) 100%
+  );
   text-align: center;
 }
 .roadmap-card.is-skeleton {
@@ -10098,6 +10127,22 @@ li:hover .checkbox-mark {
      surface is glass rather than paper — without it a translucent card
      just reads as a washed-out one. */
   --pane-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  /* What --pane-shadow becomes on hover: the same cast, thrown further. */
+  --glass-shadow-lift: 0 22px 50px -20px rgba(60, 40, 15, 0.42),
+    0 6px 16px -8px rgba(60, 40, 15, 0.2);
+  /* The material itself. These were declared on .hr-dashboard only, so
+     --pane-shadow above — which is on :root and references
+     --glass-shadow — resolved to nothing on every other page, and the
+     employee rail's panels have been rendering with no shadow at all.
+     Same values, hoisted to where the token that depends on them lives.
+     The .hr-dashboard copies are left in place: identical values, so
+     they now simply re-declare what they inherit. */
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-strong: rgba(255, 255, 255, 0.76);
+  --glass-line: rgba(255, 255, 255, 0.72);
+  --glass-blur: saturate(180%) blur(18px);
+  --glass-shadow: 0 16px 40px -22px rgba(60, 40, 15, 0.35),
+    0 2px 8px -4px rgba(60, 40, 15, 0.08);
 }
 .page-hero {
   background: var(--pane);
@@ -10425,14 +10470,25 @@ li:hover .checkbox-mark {
   min-width: 0;
 }
 
-/* The office guide keeps ONE height.
+/* The office guide keeps ONE height while you scroll, and is the block
+   that gives way when the window is short.
+
    It used to be `flex: 1` inside a rail whose own max-height is derived
    from --rail-clearance, and that number is remeasured every time the
    hero above condenses on scroll — so the block grew and shrank as the
-   page moved. A fixed height off the same list it is showing does not. */
+   page moved. But a hard 22rem meant that on a window under about 900px
+   the column added up to more than the rail could hold, and the block
+   below it — the laptop — hung past the bottom of a rail that is pinned,
+   so you could never scroll down to see the rest of it.
+
+   So: sized from the VIEWPORT, which does not change as you scroll, not
+   from the rail, which does. The 618px is what the rest of the column
+   needs — the people block, the laptop, the two gaps, the rail's own top
+   offset and bottom margin — so whatever is left over after that is the
+   guide's, between a floor of 8rem and the old 22rem ceiling. */
 .employee-rail-block--guide {
   flex: none;
-  max-height: 22rem;
+  height: clamp(8rem, calc(100vh - 618px), 22rem);
 }
 /* The tips block never scrolls — it holds its icons and lets their tooltips
    escape upward over the trail. */
@@ -10580,10 +10636,12 @@ li:hover .checkbox-mark {
   height: 80%;
   padding: 1.77cqw;
   border-radius: 3.5cqw 3.5cqw 0.9cqw 0.9cqw;
-  background: linear-gradient(to bottom, #242428, #141416);
+  /* Same graphite as the Mac Tools machine's lid, three stops so the
+     light falls off down the body instead of sitting flat. */
+  background: linear-gradient(to bottom, #5c5c64, #46464e 50%, #33333a);
   box-shadow:
-    0 -1px 0 0 #3d3d43 inset,
-    0 0 0 1px #000000;
+    0 1px 0 0 rgba(255, 255, 255, 0.14) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.55);
   transform-origin: bottom center;
   transform: rotateX(-64deg);
   transition:
@@ -10594,8 +10652,8 @@ li:hover .checkbox-mark {
 .mb:focus-within .mb__lid {
   transform: rotateX(0deg);
   box-shadow:
-    0 -1px 0 0 #3d3d43 inset,
-    0 0 0 1px #000000,
+    0 1px 0 0 rgba(255, 255, 255, 0.14) inset,
+    0 0 0 1px rgba(0, 0, 0, 0.55),
     0 0 60px 6px rgba(255, 255, 255, 0.18);
 }
 
@@ -10609,6 +10667,7 @@ li:hover .checkbox-mark {
   height: 100%;
   border-radius: 2cqw;
   background: #0b0b0d;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
   overflow: hidden;
 }
 /* The screen waking. Separate from the lid so it can lag behind the
@@ -10616,7 +10675,9 @@ li:hover .checkbox-mark {
 .mb__screenlight {
   position: absolute;
   inset: 0;
-  background: #ffffff;
+  /* The Mac Tools screen's own surface, not plain white, so the two
+     machines wake to the same display. */
+  background: #f4f4f7;
   opacity: 0;
   transition: opacity 420ms ease 200ms;
 }
@@ -10718,8 +10779,8 @@ li:hover .checkbox-mark {
   width: 94.71%;
   height: 6.53%;
   border-radius: 0.9cqw 0.9cqw 2.65cqw 2.65cqw;
-  background: linear-gradient(to bottom, #48484e, #2b2b2f 45%, #191a1c);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
+  background: linear-gradient(to bottom, #4e4e56, #3d3d45 45%, #2b2b31);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
 }
 .mb__notch {
   position: absolute;
@@ -10729,7 +10790,7 @@ li:hover .checkbox-mark {
   width: 21.76cqw;
   height: 1.18cqw;
   border-radius: 0.9cqw;
-  background: #57575e;
+  background: #5a5a63;
   box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.12);
 }
 

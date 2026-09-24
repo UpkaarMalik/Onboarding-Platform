@@ -591,8 +591,21 @@ export default function Login() {
                       setJoineeId(e.target.value);
                       clearError();
                     }}
+                    onKeyDown={(e) => {
+                      // Enter would otherwise submit the form right away
+                      // (a multi-field form submits on Enter in any of
+                      // its text inputs) and fail on the empty password.
+                      // Send focus to Password instead, same as Tab.
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault();
+                      document.getElementById('login-password')?.focus();
+                    }}
                     placeholder="Enter your Joinee ID"
                     autoComplete="username"
+                    // Skip straight to Password when the ID is already
+                    // filled in — e.g. coming back from a password reset,
+                    // where only the new password needs typing.
+                    autoFocus={!joineeId}
                     aria-invalid={invalidField === 'joineeId' || undefined}
                     aria-describedby={
                       idCheck === 'missing' || idCheck === 'unavailable'
@@ -659,6 +672,7 @@ export default function Login() {
                 placeholder="Enter your password"
                 autoComplete="current-password"
                 invalid={invalidField === 'password'}
+                autoFocus={!!joineeId}
                 required
               />
 

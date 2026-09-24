@@ -26,6 +26,23 @@ import { IconCaretLeftFilled } from "@tabler/icons-react";
 import { IconCaretDownFilled } from "@tabler/icons-react";
 
 
+/** The machine's own coordinate system. Both numbers come from the
+ *  mockup: its lid is 326/512 of the width, so a 1000-wide machine is
+ *  637 tall. The deck is shallower than the mockup's 352/512 because the
+ *  hinge and the painted vent bar are gone — and because the machine's
+ *  on-screen width is exactly (available height / (DESIGN_H/DESIGN_W)),
+ *  every unit shaved here is width gained. */
+const DESIGN_W = 1000;
+const DESIGN_H = 1169; // lid 608 + deck 561
+
+/** How far the lid leans before you scroll. Negative about a BOTTOM
+ *  origin tips the top edge TOWARDS the camera — the lid leaning into
+ *  the room, not reclining away from it. Hinging on the bottom edge is
+ *  what keeps the lid and the deck exactly the same width where they
+ *  meet, whichever way it leans. 20deg, not the 30 that read as a roof:
+ *  the lean should be legible, not the subject. */
+const REST_TILT = -20;
+
 export const MacbookScroll = ({
   src,
   showGradient,
@@ -58,6 +75,34 @@ export const MacbookScroll = ({
 
   const [isMobile, setIsMobile] = useState(false);
 
+  // The machine is drawn at DESIGN_W x DESIGN_H and then scaled to fit
+  // whatever room the pinned box has. This replaces a hand-picked
+  // `lg:scale-[…]` that was measured at 1440x900 and was wrong at every
+  // other size — which is why the laptop looked different on a big
+  // monitor. Fixing the proportions means the on-screen width is set by
+  // the viewport's HEIGHT, so a taller screen genuinely gets a bigger
+  // laptop instead of the same one with more space around it.
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState(1);
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    // offsetWidth/Height, not getBoundingClientRect: the rect reports the
+    // element AFTER its own transform, so measuring it here would feed the
+    // scale back into itself and converge on zero. offset* are layout
+    // values and ignore transforms.
+    const measure = () => {
+      const width = el.offsetWidth;
+      const height = el.offsetHeight;
+      if (!width || !height) return;
+      setFit(Math.min(height / DESIGN_H, width / DESIGN_W));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
     if (window && window.innerWidth < 768) {
       setIsMobile(true);
@@ -84,15 +129,21 @@ export const MacbookScroll = ({
   const scaleX = useTransform(
     scrollYProgress,
     [0, 0.3],
-    [1, isMobile ? 1 : 1.4],
+    [1, isMobile ? 1 : 1.85],
   );
   const scaleY = useTransform(
     scrollYProgress,
     [0, 0.3],
-    [1, isMobile ? 1 : 1.4],
+    [1, isMobile ? 1 : 1.85],
   );
-  const translate = useTransform(scrollYProgress, [0, 1], [0, 0]);
-  const rotate = useTransform(scrollYProgress, [0.1, 0.12, 0.3], [0, 0, 0]);
+  const translate = useTransform(scrollYProgress, [0, 1], [0, 110]);
+  // At rest the lid is reclined; it stands up as you scroll. The camera
+  // is deliberately far away (6000px, not the registry's 800) — a near
+  // camera projects the reclined lid's bottom edge much narrower than
+  // its top, so the machine met the deck as a trapezoid. Far away, the
+  // tilt reads as foreshortening (height x cos0) with the width left
+  // alone, so the lid still meets the deck edge to edge.
+  const rotate = useTransform(scrollYProgress, [0, 0.3], [REST_TILT, 0]);
   const textTransform = useTransform(scrollYProgress, [0, 0.3], [0, 100]);
   const textOpacity = useTransform(scrollYProgress, [0, 0.2], [1, 0]);
 
@@ -105,7 +156,11 @@ export const MacbookScroll = ({
           in the pinned box for half again as much. The nudge down goes
           with it: scaling the pinned box about its centre pushes the
           screen's title bar up under the topnav. */}
-      <div className="sticky top-[88px] relative flex h-[calc(100vh-88px)] shrink-0 scale-[0.35] transform flex-col items-center justify-center [perspective:800px] sm:scale-50 md:scale-100 lg:translate-y-[0px] lg:scale-[0.741]">
+      <div
+        ref={stageRef}
+        className="sticky top-[88px] relative flex h-[calc(100vh-88px)] shrink-0 transform flex-col items-center justify-center [perspective:800px]"
+        style={{ transform: `scale(${fit})` }}
+      >
       <motion.h2
         style={{
           translateY: textTransform,
@@ -133,12 +188,12 @@ export const MacbookScroll = ({
           shrink-0 because it is a flex item in a column that can
           overflow, and it clips — so a squash here silently eats the
           trackpad instead of showing anything. */}
-      <div className="relative -z-10 h-[32.8rem] w-[62.5rem] shrink-0 overflow-hidden rounded-2xl bg-[#272729]">
+      <div className="relative -z-10 h-[561px] w-[62.5rem] shrink-0 overflow-hidden rounded-2xl bg-gradient-to-b from-[#4e4e56] via-[#3d3d45] to-[#2b2b31]">
         {/* The gap between the hinge and the keys. The mockup paints a
             black bar across it; no MacBook has one, and it read as a
             drawn line. Bare deck, and shallower — the keyboard wants
             the height more. */}
-        <div className="h-6 w-full" />
+        <div className="h-[18px] w-full" />
         {/* The keypad is a fixed width, not a percentage of the base.
             Every key in it is a fixed number of pixels wide, so on a
             wider machine a percentage leaves the rows ending short and a
@@ -154,8 +209,8 @@ export const MacbookScroll = ({
               132 …) and they only line up with each other at one size.
               The wrapper is sized to the scaled result so layout still
               knows how tall the keyboard is. */}
-          <div className="h-[361px] w-[53.75rem] shrink-0">
-            <div className="w-[25.5rem] origin-top-left scale-[2.108]">
+          <div className="h-[335px] w-[50rem] shrink-0">
+            <div className="w-[25.5rem] origin-top-left scale-[1.96]">
               <Keypad />
             </div>
           </div>
@@ -164,7 +219,7 @@ export const MacbookScroll = ({
           </div>
         </div>
         <Trackpad />
-        <div className="absolute inset-x-0 bottom-0 mx-auto h-2 w-20 rounded-tl-3xl rounded-tr-3xl bg-gradient-to-t from-[#272729] to-[#050505]" />
+        <div className="absolute inset-x-0 bottom-0 mx-auto h-2 w-20 rounded-tl-3xl rounded-tr-3xl bg-gradient-to-t from-[#3a3a42] to-[#141418]" />
         {showGradient && (
           <div className="absolute inset-x-0 bottom-0 z-50 h-40 w-full bg-gradient-to-t from-white via-white to-transparent dark:from-black dark:via-black"></div>
         )}
@@ -191,25 +246,30 @@ export const Lid = ({
   children?: React.ReactNode;
 }) => {
   return (
-    <div className="relative [perspective:2000px]">
-      <div
+    <div className="[perspective:3000px]">
+      {/* Both lids recline together, about their shared bottom edge. The
+          rotation lives out here rather than on either lid because the
+          screen also scales, and the scale wants a different origin (the
+          top) — one element cannot have two. */}
+      <motion.div
+        className="relative"
         style={{
-          // Same transform as the screen that sits on top of it, origin
-          // included. They used to differ — this one hinged at its
-          // bottom edge, the screen at its top — so the two trapezoids
-          // tapered opposite ways and this one showed all round the
-          // screen as a black surround with flared bottom corners.
-          transform: "perspective(2000px) translateZ(0px)",
-          transformOrigin: "top",
+          rotateX: rotate,
+          transformOrigin: "bottom",
           transformStyle: "preserve-3d",
         }}
-        className="relative h-[35.7rem] w-[62.5rem] rounded-2xl bg-[#010101] p-2 [box-shadow:0px_2px_0px_2px_#171717_inset]"
       >
-        <div className="absolute inset-2 flex items-center justify-center rounded-[10px] bg-[#0d0d12]">
+      <div
+        style={{
+          transformStyle: "preserve-3d",
+        }}
+        className="relative h-[38rem] w-[62.5rem] rounded-2xl bg-gradient-to-b from-[#5c5c64] via-[#46464e] to-[#33333a] p-4 [box-shadow:0px_2px_0px_2px_rgba(255,255,255,0.14)_inset,0px_0px_0px_1px_rgba(0,0,0,0.55)]"
+      >
+        <div className="absolute inset-4 flex items-center justify-center rounded-[20px] bg-[#f4f4f7] [box-shadow:0_0_0_1px_rgba(0,0,0,0.25)]">
           <span className="flex items-center gap-1.5">
             <BrandMark className="h-[18px] w-[18px] shrink-0 overflow-visible" />
             <BrandWord
-              className="text-[13px] font-bold tracking-tight text-white"
+              className="text-[13px] font-bold tracking-tight text-[#1d1d1f]"
               brandClassName="text-[#ef9b3c]"
             />
           </span>
@@ -219,18 +279,20 @@ export const Lid = ({
         style={{
           scaleX: scaleX,
           scaleY: scaleY,
-          rotateX: rotate,
+          // No rotateX here: the group above reclines both lids together.
+          // Rotating again on this one stacked a second 30deg on top of
+          // the first and folded the screen away from its own frame.
           translateY: translate,
           transformStyle: "preserve-3d",
           transformOrigin: "top",
         }}
-        className="absolute inset-0 h-[35.7rem] w-[62.5rem] rounded-2xl bg-[#010101] p-2 [box-shadow:0px_2px_0px_2px_#171717_inset]"
+        className="absolute inset-0 h-[38rem] w-[62.5rem] rounded-2xl bg-gradient-to-b from-[#5c5c64] via-[#46464e] to-[#33333a] p-4 [box-shadow:0px_2px_0px_2px_rgba(255,255,255,0.14)_inset,0px_0px_0px_1px_rgba(0,0,0,0.55)]"
       >
         {/* inset-2, not inset-0. An absolutely positioned child resolves
             `inset` against the padding box, so the registry's inset-0
             screen covers the p-2 the lid sets aside for its bezel — the
             display ran edge to edge and the machine had no frame. */}
-        <div className="absolute inset-2 overflow-hidden rounded-[10px] bg-[#0d0d12]">
+        <div className="absolute inset-4 overflow-hidden rounded-[20px] bg-[#f4f4f7] [box-shadow:0_0_0_1px_rgba(0,0,0,0.25)]">
           {children ??
             (src ? (
               <img
@@ -240,8 +302,12 @@ export const Lid = ({
               />
             ) : null)}
         </div>
-        {/* notch */}
-        <div className="absolute inset-x-0 top-2 mx-auto h-[9px] w-[104px] rounded-b-md bg-[#010101]" />
+        {/* Notch. Shallower than the mockup's 18px: it hangs over the top
+            of the display, and at 18 it sat right on the window title —
+            which was invisible while the title bar was dark and obvious
+            the moment the screen went light. */}
+        <div className="absolute inset-x-0 top-4 mx-auto h-[9px] w-[170px] rounded-b-lg bg-[#3c3c44]" />
+      </motion.div>
       </motion.div>
     </div>
   );
@@ -254,10 +320,10 @@ export const Trackpad = () => {
     // ring plus a soft top shadow gives it an edge without turning it
     // into a drawn rectangle.
     <div
-      className="mx-auto my-1.5 h-32 w-[40%] rounded-xl"
+      className="mx-auto my-[10px] h-[188px] w-[40%] rounded-[23px] bg-gradient-to-b from-[#43434b] to-[#383840]"
       style={{
         boxShadow:
-          "0 0 0 1.5px rgba(0,0,0,0.55) inset, 0 4px 9px -3px rgba(0,0,0,0.5) inset",
+          "0 0 0 1.5px rgba(0,0,0,0.6) inset, 0 1px 0 0 rgba(255,255,255,0.09) inset, 0 5px 11px -4px rgba(0,0,0,0.55) inset",
       }}
     ></div>
   );
@@ -265,7 +331,7 @@ export const Trackpad = () => {
 
 export const Keypad = () => {
   return (
-    <div className="mx-1 h-full [transform:translateZ(0)] rounded-md bg-[#050505] p-1 [will-change:transform]">
+    <div className="mx-1 h-full [transform:translateZ(0)] rounded-md bg-[#1b1b20] p-1 [will-change:transform]">
       {/* First Row */}
       <div className="mb-[2px] flex w-full shrink-0 gap-[2px]">
         <KBtn
@@ -636,7 +702,12 @@ export const KBtn = ({
     <div
       className={cn(
         "[transform:translateZ(0)] rounded-[4px] p-[0.5px] [will-change:transform]",
-        backlit && "bg-white/[0.2] shadow-xl shadow-white/75",
+        // The backlight is two shadows, not one, so it survives a change
+        // of chassis colour: a white bloom that shows against a dark
+        // deck, and a dark drop that shows against a light one. On any
+        // colour at least one of them is doing the work.
+        backlit &&
+          "bg-white/40 shadow-[0_0_12px_3px_rgba(255,255,255,0.65),0_1px_2px_rgba(0,0,0,0.5)]",
       )}
     >
       <div
@@ -669,8 +740,8 @@ export const SpeakerGrid = () => {
       className="mt-1 flex h-[calc(100%-0.25rem)] gap-[2px] px-[0.5px]"
       style={{
         backgroundImage:
-          "radial-gradient(circle, #08080A 0.5px, transparent 0.5px)",
-        backgroundSize: "3px",
+          "radial-gradient(circle, #16161a 1.3px, transparent 1.3px)",
+        backgroundSize: "6px 6px",
       }}
     ></div>
   );
@@ -683,7 +754,7 @@ export const OptionKey = ({ className }: { className: string }) => {
       version="1.1"
       id="icon"
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 32"
+      viewBox="0 0 32 32"
       className={className}
     >
       <rect

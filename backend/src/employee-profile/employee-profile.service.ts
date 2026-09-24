@@ -3,25 +3,9 @@ import {
   OPEN_BLOCKER_JSON,
   openBlockerJoin,
 } from '../onboardings/utils/blocker-payload.util';
-import { isTaskOpen, orderForTrail } from '../onboardings/utils/trail-order.util';
 import { DatabaseService } from '../database/database.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { SessionsService } from '../auth/sessions/sessions.service';
-
-/**
- * The columns HR's profile reads off onboarding_tasks. Spelled out only
- * so the rows satisfy TrailTask and can go through orderForTrail; the
- * index signature carries the rest (subtask counts, the blocker payload)
- * through untouched.
- */
-export interface ProfileTaskRow {
-  id: string;
-  title: string;
-  status: string;
-  system_key: string | null;
-  is_required: boolean;
-  [column: string]: unknown;
-}
 
 /**
  * Read-only aggregation behind HR's "click a joinee, see everything"
@@ -145,8 +129,8 @@ export class EmployeeProfileService {
     // profile, just with no onboarding block.
     const { rows: onboardingRows } = await this.db.query(
       `SELECT
-         o.id, o.status, o.start_date::text AS start_date, o.manager_name, o.buddy_name, o.manager_user_id, o.buddy_user_id,
-         o.template_version, o.created_at,
+         o.id, o.status, o.start_date::text AS start_date, o.manager_name, o.buddy_name,
+         o.template_version, o.experience_rating, o.created_at,
          t.name AS template_name
        FROM onboardings o
        JOIN onboarding_templates t ON t.id = o.template_id
@@ -174,8 +158,8 @@ export class EmployeeProfileService {
     // Subtask counts come from a correlated aggregate rather than a
     // second round trip, so a task's popup progress ("2 of 4") renders
     // without the client fetching every task's subtasks up front.
-    const { rows: taskRows } = onboarding
-      ? await this.db.query<ProfileTaskRow>(
+    const { rows: tasks } = onboarding
+      ? await this.db.query(
           `SELECT
              ot.id, ot.title, ot.description, ot.status, ot.due_date,
              ot.priority, ot.is_required, ot.completion_mode,
@@ -192,42 +176,11 @@ export class EmployeeProfileService {
            FROM onboarding_tasks ot
            ${openBlockerJoin('ot')}
            WHERE ot.onboarding_id = $1
-           ORDER BY ot.due_date, ot.created_at, ot.id`,
+           ORDER BY ot.due_date, ot.created_at`,
           [onboarding.id],
         )
-      : { rows: [] as ProfileTaskRow[] };
+      : { rows: [] as Record<string, unknown>[] };
 
-    /* The ORDER BY above is the tiebreak, not the order. The sequence a
-       joinee actually walks is the band order in trail-order.util —
-       paperwork, then reading, then the laptop and email, then installs,
-       then the rest — and due_date does not express it: five of these
-       tasks are due on day 0, so among them the SQL was returning
-       whichever row happened to be inserted first.
-
-       The result was that HR and the joinee read the same list in
-       different orders. On a real onboarding, "Meet your reporting
-       manager" was second here and ninth on the joinee's trail, and
-       "Upload your documents" — the task that gates every other one —
-       was third here and first there. HR could not tell from this screen
-       what the joinee was actually looking at.
-
-       Ordering only. The statuses stay as the column holds them: the
-       joinee's view runs applySequenceGate over these same rows, but HR
-       is meant to act on tasks the joinee cannot yet open — HR is who
-       closes the email and laptop handover — so gating the status here
-       would grey out controls HR legitimately needs. */
-    /* What the gate WOULD allow, as a flag beside the stored status rather
-       than instead of it: the completion endpoints refuse a required task
-       isTaskOpen says is not open (409 "This step is not open yet"), so HR's
-       "Mark done" on the handover must not be offered before the documents
-       step is done. Same function as the gate, over the same required rows. */
-    const required = taskRows.filter((task) => task.is_required);
-    const tasks = orderForTrail(taskRows).map((task) => ({
-      ...task,
-      is_open: !task.is_required || isTaskOpen(required, task.id),
-    }));
-
-    // filter() preserves order, so both buckets stay in trail order.
     const completedTasks = tasks.filter((task) => task.status === 'completed');
     const pendingTasks = tasks.filter(
       (task) => task.status !== 'completed' && task.status !== 'cancelled',
