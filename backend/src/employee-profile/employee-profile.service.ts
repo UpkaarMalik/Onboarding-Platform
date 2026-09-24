@@ -3,6 +3,7 @@ import {
   OPEN_BLOCKER_JSON,
   openBlockerJoin,
 } from '../onboardings/utils/blocker-payload.util';
+import { orderForTrail, isTaskOpen } from '../onboardings/utils/trail-order.util';
 import { DatabaseService } from '../database/database.service';
 import { ActivityLogService } from '../activity-log/activity-log.service';
 import { SessionsService } from '../auth/sessions/sessions.service';
@@ -130,6 +131,11 @@ export class EmployeeProfileService {
     const { rows: onboardingRows } = await this.db.query(
       `SELECT
          o.id, o.status, o.start_date::text AS start_date, o.manager_name, o.buddy_name,
+         -- The ids, not just the names. Without them the client cannot tell a
+         -- manager picked from the list apart from a name someone typed, so
+         -- it treated every one as unlinked: no initials in the avatar, and a
+         -- "typed, not linked" warning on people who were properly linked.
+         o.manager_user_id, o.buddy_user_id,
          o.template_version, o.experience_rating, o.created_at,
          t.name AS template_name
        FROM onboardings o
@@ -181,8 +187,23 @@ export class EmployeeProfileService {
         )
       : { rows: [] as Record<string, unknown>[] };
 
-    const completedTasks = tasks.filter((task) => task.status === 'completed');
-    const pendingTasks = tasks.filter(
+    // Sort into the same band order the employee sees on their trail
+    // (paperwork → reading → email/laptop → installs → rest), using the
+    // shared util so HR and the employee always look at the same sequence.
+    // In-memory sort is fine: a user's task list is 10–20 rows.
+    type TaskRow = { id: string; title: string; system_key: string | null; status: string; is_required: boolean };
+    const ordered = orderForTrail(tasks as TaskRow[]);
+
+    // is_open is what the button in the HR modal gates on — a task HR owns
+    // is shown but disabled until the gate opens it. Without this field the
+    // button was always disabled because !undefined === true.
+    const withOpen = ordered.map((task) => ({
+      ...task,
+      is_open: isTaskOpen(tasks as TaskRow[], task.id as string),
+    }));
+
+    const completedTasks = withOpen.filter((task) => task.status === 'completed');
+    const pendingTasks = withOpen.filter(
       (task) => task.status !== 'completed' && task.status !== 'cancelled',
     );
 
@@ -196,7 +217,7 @@ export class EmployeeProfileService {
         // Counted over required tasks only, matching how
         // OnboardingsService.listAllOnboardings computes the dashboard's
         // progress fraction — so the two screens never disagree.
-        requiredTotal: tasks.filter((task) => task.is_required).length,
+        requiredTotal: withOpen.filter((task) => task.is_required).length,
         requiredCompleted: completedTasks.filter((task) => task.is_required).length,
       },
     };

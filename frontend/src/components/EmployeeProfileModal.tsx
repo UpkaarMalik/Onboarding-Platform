@@ -734,9 +734,15 @@ function CheckIcon() {
   );
 }
 
-/** A picked person as a small tile. A typed name from before the picker
- *  existed that matched nobody (the migration only linked exact matches) is
- *  shown as such, so HR knows to pick someone. */
+/** A picked person as a small tile.
+ *
+ *  `linked` only decides the avatar now: a linked person gets their initials,
+ *  anyone else gets the generic icon. It used to also print "typed, not
+ *  linked — edit to pick someone" beside the name, which was wrong on every
+ *  row — the profile query did not return manager_user_id/buddy_user_id, so
+ *  `linked` was always false and the warning appeared even for people picked
+ *  properly from the list. The ids are returned now; the warning is gone
+ *  because HR can see who is assigned and the Edit button is right there. */
 function AssignedPerson({ role, linked, name }: { role: string; linked: boolean; name: string | null }) {
   return (
     <div className="profile-person">
@@ -745,12 +751,8 @@ function AssignedPerson({ role, linked, name }: { role: string; linked: boolean;
       </span>
       <span className="profile-person-text">
         <span className="profile-person-role">{role}</span>
-        {linked && name ? (
+        {name ? (
           <span className="profile-person-name">{name}</span>
-        ) : name ? (
-          <span className="profile-person-name">
-            {name} <span className="profile-person-note">typed, not linked — edit to pick someone</span>
-          </span>
         ) : (
           <span className="profile-person-name is-empty">Not assigned yet</span>
         )}

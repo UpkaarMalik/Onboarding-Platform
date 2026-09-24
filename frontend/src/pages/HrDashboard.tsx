@@ -15,6 +15,8 @@ import PageHero from '../components/ui/PageHero';
 import ActivityFeed from '../components/ActivityFeed';
 import DepartmentDonut from '../components/DepartmentDonut';
 import { deptLightClass, deptSlots, type DeptSlots } from '../lib/deptColor';
+import EmployeeProfileModal from '../components/EmployeeProfileModal';
+import CopyButton from '../components/CopyButton';
 
 interface Department {
   id: string;
@@ -31,61 +33,6 @@ interface DocumentType {
 
 /** One requirement plus its current (non-superseded) upload, as returned
  *  by /employee-profile/:id and /joinee-documents/users/:id. */
-interface JoineeDocument {
-  requirement_id: string;
-  status: 'awaiting_upload' | 'submitted' | 'approved' | 'rejected';
-  label: string;
-  upload_id: string | null;
-  original_filename: string | null;
-  mime_type: string | null;
-  uploaded_at: string | null;
-  review_status: 'pending_review' | 'approved' | 'rejected' | null;
-  review_note: string | null;
-}
-
-interface ProfileTask {
-  id: string;
-  title: string;
-  status: string;
-  due_date: string;
-  priority: string;
-  is_required: boolean;
-  system_key: string | null;
-  completed_at: string | null;
-  subtask_count: number;
-  subtask_completed_count: number;
-}
-
-interface EmployeeProfile {
-  user: {
-    id: string;
-    full_name: string;
-    joinee_id: string;
-    phone_number: string;
-    personal_email: string | null;
-    company_email: string | null;
-    status: string;
-    must_reset_password: boolean;
-    department_name: string | null;
-  };
-  onboarding: {
-    id: string;
-    status: string;
-    start_date: string;
-    manager_name: string | null;
-    buddy_name: string | null;
-    template_name: string;
-  } | null;
-  documents: JoineeDocument[];
-  tasks: {
-    pending: ProfileTask[];
-    completed: ProfileTask[];
-    requiredTotal: number;
-    requiredCompleted: number;
-  };
-}
-
-
 const isoDaysAgo = daysAgoIso;
 
 
@@ -102,14 +49,25 @@ const isoDaysAgo = daysAgoIso;
 export default function HrDashboard() {
   const authedFetch = useAuthedFetch();
   const { user } = useAuth();
+  // Must be declared before profileUserId so the hook runs in consistent order.
+  const [searchParams, setSearchParams] = useSearchParams();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedOnboarding, setSelectedOnboarding] = useState<any | null>(null);
-  const [profileUserId, setProfileUserId] = useState<string | null>(
-    // The Dashboard roster links here as /hr?profile=<userId> so its View
-    // button lands on the joinee instead of making HR search again.
-    () => new URLSearchParams(window.location.search).get('profile'),
-  );
+  // Driven from the URL so navigating to /hr?profile=<id> from a
+  // notification (or any other link) opens the modal even when HR is
+  // already on this page and the useState initializer has already run.
+  const profileUserId = searchParams.get('profile');
+  const setProfileUserId = (id: string | null) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) next.set('profile', id);
+        else next.delete('profile');
+        return next;
+      },
+      { replace: true },
+    );
 
   const [overviewRows, setOverviewRows] = useState<any[]>([]);
   const [stuckTotal, setStuckTotal] = useState(0);
@@ -136,7 +94,7 @@ export default function HrDashboard() {
   const [rosterReload, setRosterReload] = useState(0);
   /** The greeting's live line. null = the server has not answered yet, which
    *  is a different thing from zero and renders differently. */
-  const [summary, setSummary] = useState<{ upcoming: number; blocked: number } | null>(
+  const [summary, setSummary] = useState<{ upcoming: number; blocked: number; total_employees: number } | null>(
     null,
   );
   /* The cards scroll the roster into view rather than opening a panel that
@@ -147,7 +105,6 @@ export default function HrDashboard() {
   const slots = useMemo(() => deptSlots(departments), [departments]);
   /* Joined into one string so the effect below has a primitive to compare:
      a fresh URLSearchParams object every render would re-fire it forever. */
-  const [searchParams] = useSearchParams();
   const rosterQuery = ROSTER_PARAMS.map((k) => searchParams.get(k) ?? '').join('\u0000');
 
   useEffect(() => {
@@ -205,7 +162,7 @@ export default function HrDashboard() {
    */
   const loadSummary = useCallback(() => {
     if (document.hidden) return;
-    authedFetch<{ upcoming: number; blocked: number }>('/onboardings/summary')
+    authedFetch<{ upcoming: number; blocked: number; total_employees: number }>('/onboardings/summary')
       .then((next) => {
         setSummary(next);
         setSummaryError(null);
@@ -431,7 +388,7 @@ export default function HrDashboard() {
               )
             ) : (
               <>
-                <span>{plural(summary.upcoming, 'upcoming onboarding')}</span>
+                <span>Total Employees: {summary.total_employees}</span>
                 {/* The blocker state gets its own line and always states
                     itself, including when there is nothing wrong. "No
                     blockers" read affirmatively is worth more than the
@@ -622,19 +579,23 @@ export default function HrDashboard() {
 
       {joinerCredentials && (
         <Modal title="Account created" onClose={() => setJoinerCredentials(null)}>
-          <p>
-            Shown once — deliver these to them directly. Use Copy rather than retyping them by hand:
-            the temporary password mixes case and symbols on purpose, so a single mistyped character
-            is easy to miss and will make it look like the credentials "don't work."
+          <p style={{ fontSize: '0.875rem', color: 'var(--color-muted)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
+            Shown once — share these directly with the joinee.
           </p>
-          <p className="credential-row">
-            <strong>Login:</strong> <code>{joinerCredentials.loginId}</code>
-            <CopyButton text={joinerCredentials.loginId} />
-          </p>
-          <p className="credential-row">
-            <strong>Password:</strong> <code>{joinerCredentials.temporaryPassword}</code>
-            <CopyButton text={joinerCredentials.temporaryPassword} />
-          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+            {[
+              { label: 'Login ID', value: joinerCredentials.loginId },
+              { label: 'Password', value: joinerCredentials.temporaryPassword },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ background: 'var(--color-surface-alt)', border: '1px solid var(--color-border)', borderRadius: '10px', padding: '0.75rem 1rem' }}>
+                <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '0.35rem' }}>{label}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <code style={{ flex: 1, fontFamily: 'monospace', fontSize: '1rem', fontWeight: 600, color: 'var(--color-text)', background: 'none', border: 'none', padding: 0 }}>{value}</code>
+                  <CopyButton text={value} />
+                </div>
+              </div>
+            ))}
+          </div>
           <div className="modal-actions">
             <button className="btn-primary" onClick={() => setJoinerCredentials(null)}>
               Done
@@ -1340,429 +1301,5 @@ function AddTaskOwnerModal({
         </div>
       </form>
     </Modal>
-  );
-}
-
-/**
- * HR's "click a joinee, see everything" view: the details captured at
- * creation, the documents they uploaded (previewable inline), and their
- * tasks split into outstanding and done.
- *
- * One request to /employee-profile/:id assembles all three server-side,
- * so this doesn't fan out into a request per section.
- */
-function EmployeeProfileModal({
-  userId,
-  onClose,
-  onChanged,
-}: {
-  userId: string;
-  onClose: () => void;
-  onChanged: () => void;
-}) {
-  const authedFetch = useAuthedFetch();
-  const [profile, setProfile] = useState<EmployeeProfile | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [editingAssignments, setEditingAssignments] = useState(false);
-  const [managerName, setManagerName] = useState('');
-  const [buddyName, setBuddyName] = useState('');
-  const [savingAssignments, setSavingAssignments] = useState(false);
-  const [credentials, setCredentials] = useState<CredentialSummary | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
-  const [reviewing, setReviewing] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    authedFetch<EmployeeProfile>(`/employee-profile/${userId}`)
-      .then((p) => {
-        setProfile(p);
-        setManagerName(p.onboarding?.manager_name ?? '');
-        setBuddyName(p.onboarding?.buddy_name ?? '');
-      })
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load profile'));
-    // Loaded with the profile rather than behind a "View credentials" click —
-    // the Joinee ID is the first thing HR needs when they open a joinee, and
-    // burying it was the whole complaint.
-    authedFetch<CredentialSummary>(`/auth/users/${userId}/credentials`)
-      .then(setCredentials)
-      .catch(() => setCredentials(null));
-  }, [authedFetch, userId]);
-
-  useEffect(load, [load]);
-
-  async function saveAssignments(e: FormEvent) {
-    e.preventDefault();
-    if (!profile?.onboarding) return;
-    setSavingAssignments(true);
-    setError(null);
-    try {
-      // Empty string is meaningful here — it clears the field, rather
-      // than leaving it untouched the way omitting the key does.
-      await authedFetch(`/onboardings/${profile.onboarding.id}/assignments`, {
-        method: 'PATCH',
-        body: { managerName, buddyName },
-      });
-      setEditingAssignments(false);
-      load();
-      onChanged();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save');
-    } finally {
-      setSavingAssignments(false);
-    }
-  }
-
-  async function review(uploadId: string, decision: 'approved' | 'rejected') {
-    setReviewing(uploadId);
-    setError(null);
-    try {
-      const note =
-        decision === 'rejected'
-          ? window.prompt('Why is this being rejected? The joinee will see this.')
-          : undefined;
-      // A rejection with no reason is refused by the API (and by a CHECK
-      // constraint underneath it), so don't send one.
-      if (decision === 'rejected' && !note) return;
-      await authedFetch(`/joinee-documents/uploads/${uploadId}/review`, {
-        method: 'POST',
-        body: { decision, ...(note ? { note } : {}) },
-      });
-      load();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save the review');
-    } finally {
-      setReviewing(null);
-    }
-  }
-
-  async function regenerate() {
-    setError(null);
-    setRegenerating(true);
-    try {
-      const res = await authedFetch<{
-        credentials: { loginId: string; temporaryPassword: string };
-      }>(`/auth/users/${userId}/regenerate-credentials`, { method: 'POST' });
-      setCredentials({
-        joineeId: res.credentials.loginId,
-        temporaryPassword: res.credentials.temporaryPassword,
-        awaitingFirstReset: true,
-        hasLoggedIn: false,
-        canRegenerate: true,
-        note: 'New temporary password — shown once. Share it with the joinee now.',
-      });
-      // Deliberately not reloading the profile here: load() re-fetches the
-      // credentials summary, whose temporaryPassword is always null, which
-      // would wipe the freshly-minted password off the screen before HR could
-      // copy it.
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not regenerate');
-    } finally {
-      setRegenerating(false);
-    }
-  }
-
-  if (!profile) {
-    return (
-      <Modal title="Employee profile" onClose={onClose}>
-        {error ? <p className="error-text">{error}</p> : <p className="muted">Loading…</p>}
-      </Modal>
-    );
-  }
-
-  const { user, onboarding, documents, tasks } = profile;
-
-  return (
-    <Modal title={user.full_name} onClose={onClose} wide>
-      {error && <p className="error-text">{error}</p>}
-
-      <section className="profile-section">
-        <h3>Details</h3>
-        <dl className="profile-grid">
-          <div>
-            <dt>Joinee ID</dt>
-            <dd>
-              <code>{user.joinee_id}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Mobile</dt>
-            <dd>{user.phone_number}</dd>
-          </div>
-          <div>
-            <dt>Personal email</dt>
-            <dd>{user.personal_email ?? <span className="muted">Not recorded</span>}</dd>
-          </div>
-          <div>
-            <dt>Department</dt>
-            <dd>{user.department_name ?? <span className="muted">None</span>}</dd>
-          </div>
-          <div>
-            <dt>Date of joining</dt>
-            <dd>{formatDate(onboarding?.start_date) ?? <span className="muted">Not onboarded</span>}</dd>
-          </div>
-          <div>
-            <dt>Account</dt>
-            <dd>
-              <span className={`status-pill status-${user.status}`}>{user.status}</span>
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      {onboarding && (
-        <section className="profile-section">
-          <h3>
-            Manager &amp; buddy{' '}
-            {!editingAssignments && (
-              <button type="button" onClick={() => setEditingAssignments(true)}>
-                Edit
-              </button>
-            )}
-          </h3>
-          {editingAssignments ? (
-            <form onSubmit={saveAssignments}>
-              <label>
-                Manager name
-                <input
-                  value={managerName}
-                  onChange={(e) => setManagerName(e.target.value)}
-                  placeholder="Leave blank to clear"
-                />
-              </label>
-              <label>
-                Buddy name
-                <input
-                  value={buddyName}
-                  onChange={(e) => setBuddyName(e.target.value)}
-                  placeholder="Leave blank to clear"
-                />
-              </label>
-              <div className="modal-actions">
-                <button type="button" onClick={() => setEditingAssignments(false)}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={savingAssignments}>
-                  {savingAssignments ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            </form>
-          ) : (
-            <dl className="profile-grid">
-              <div>
-                <dt>Manager</dt>
-                <dd>{onboarding.manager_name ?? <span className="muted">Not assigned yet</span>}</dd>
-              </div>
-              <div>
-                <dt>Buddy</dt>
-                <dd>{onboarding.buddy_name ?? <span className="muted">Not assigned yet</span>}</dd>
-              </div>
-            </dl>
-          )}
-        </section>
-      )}
-
-      <section className="profile-section">
-        <h3>Documents ({documents.length})</h3>
-        {documents.length === 0 ? (
-          <p className="muted">No documents were requested for this joinee.</p>
-        ) : (
-          <ul className="doc-list">
-            {documents.map((doc) => (
-              <li key={doc.requirement_id} className="doc-list__item">
-                <div className="doc-list__head">
-                  <strong>{doc.label}</strong>
-                  <span className={`status-pill status-${doc.status}`}>
-                    {doc.status.replace(/_/g, ' ')}
-                  </span>
-                </div>
-                {doc.upload_id ? (
-                  <>
-                    <span className="field-hint">
-                      {doc.original_filename} · uploaded {formatDate(doc.uploaded_at)}
-                    </span>
-                    {doc.review_note && (
-                      <span className="field-hint">Rejection note: {doc.review_note}</span>
-                    )}
-                    <div className="doc-list__actions">
-                      {/* Cookie-authenticated; a plain <a href> would work
-                          in principle, but openFileInline fetches the blob
-                          and hands it to a new tab so the download-vs-view
-                          decision stays with the browser's PDF viewer. */}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openFileInline(
-                            `/joinee-documents/uploads/${doc.upload_id}/file`,
-                          ).catch(() => setError('Could not open this document'))
-                        }
-                      >
-                        Preview
-                      </button>
-                      {doc.review_status === 'pending_review' && (
-                        <>
-                          <button
-                            type="button"
-                            disabled={reviewing === doc.upload_id}
-                            onClick={() => review(doc.upload_id!, 'approved')}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-danger"
-                            disabled={reviewing === doc.upload_id}
-                            onClick={() => review(doc.upload_id!, 'rejected')}
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <span className="field-hint">Not uploaded yet.</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="profile-section">
-        <h3>
-          Tasks — {tasks.requiredCompleted}/{tasks.requiredTotal} required done
-        </h3>
-        <h4 className="muted">Pending ({tasks.pending.length})</h4>
-        <ul className="task-list">
-          {tasks.pending.map((t) => (
-            <li key={t.id}>
-              {t.title}
-              {t.subtask_count > 0 && (
-                <span className="field-hint">
-                  {' '}
-                  · {t.subtask_completed_count}/{t.subtask_count} steps
-                </span>
-              )}
-              <span className={`status-pill status-${t.status}`}>{t.status}</span>
-            </li>
-          ))}
-          {tasks.pending.length === 0 && <li className="muted">Nothing outstanding.</li>}
-        </ul>
-        <h4 className="muted">Completed ({tasks.completed.length})</h4>
-        <ul className="task-list">
-          {tasks.completed.map((t) => (
-            <li key={t.id}>
-              {t.title}
-              {t.subtask_count > 0 && (
-                <span className="field-hint">
-                  {' '}
-                  · {t.subtask_completed_count}/{t.subtask_count} steps
-                </span>
-              )}
-            </li>
-          ))}
-          {tasks.completed.length === 0 && <li className="muted">Nothing completed yet.</li>}
-        </ul>
-      </section>
-
-      <section className="profile-section profile-section--creds">
-        <h3>Login credentials</h3>
-        {credentials ? (
-          <>
-            <div className="cred-row">
-              <div className="cred-field">
-                <span className="cred-label">Joinee ID</span>
-                <span className="cred-value">
-                  <code>{credentials.joineeId}</code>
-                  <CopyButton text={credentials.joineeId} />
-                </span>
-              </div>
-              <div className="cred-field">
-                <span className="cred-label">Temporary password</span>
-                <span className="cred-value">
-                  {credentials.temporaryPassword ? (
-                    <>
-                      <code className="cred-secret">{credentials.temporaryPassword}</code>
-                      <CopyButton text={credentials.temporaryPassword} />
-                    </>
-                  ) : (
-                    <span className="cred-hidden">
-                      <LockedIcon />
-                      Not retrievable
-                    </span>
-                  )}
-                </span>
-              </div>
-            </div>
-
-            {/* Not an error state — the temp password is bcrypt-hashed the moment
-                it is issued, so there is nothing to show a second time. Says so
-                plainly, with the one action that does work. */}
-            <p className="cred-note">
-              {credentials.temporaryPassword
-                ? credentials.note
-                : credentials.hasLoggedIn
-                  ? 'This joinee has already signed in and chosen their own password, so no temporary password exists. Regenerating would lock them out of the one they set.'
-                  : 'Temporary passwords are stored one-way (hashed) and cannot be shown twice. If it was lost before reaching the joinee, issue a fresh one below — the original was never used.'}
-            </p>
-
-            <div className="cred-actions">
-              <button
-                type="button"
-                className={credentials.hasLoggedIn ? '' : 'btn-solid'}
-                disabled={regenerating}
-                onClick={regenerate}
-              >
-                {regenerating ? 'Issuing…' : 'Issue a new temporary password'}
-              </button>
-              {credentials.hasLoggedIn && (
-                <span className="field-hint">Only do this if they’re locked out.</span>
-              )}
-            </div>
-          </>
-        ) : (
-          <p className="muted">Loading credentials…</p>
-        )}
-      </section>
-    </Modal>
-  );
-}
-
-interface CredentialSummary {
-  joineeId: string;
-  temporaryPassword: string | null;
-  awaitingFirstReset: boolean;
-  hasLoggedIn: boolean;
-  canRegenerate: boolean;
-  note: string;
-}
-
-function LockedIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <rect x="4" y="11" width="16" height="10" rx="2" />
-      <path d="M8 11V7a4 4 0 018 0v4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard API can be unavailable (e.g. an insecure/non-HTTPS
-      // context) — fail silently rather than block on it; the value
-      // is still shown in plain text right next to this button.
-    }
-  }
-
-  return (
-    <button type="button" onClick={copy}>
-      {copied ? 'Copied!' : 'Copy'}
-    </button>
   );
 }

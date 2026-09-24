@@ -5,8 +5,9 @@ import { useAuthedFetch } from '../api/useAuthedFetch';
 import { relativeTime } from '../lib/activity';
 import Modal from './Modal';
 
-/** The dropdown shows the latest few from the last hour; anything older is
- *  one click away under "View all". */
+/** The dropdown shows all unread notifications plus any read ones from the
+ *  last hour. Anything older and already read is one click away under
+ *  "View all". */
 /**
  * Fired when the SERVER has told this browser something changed — a new
  * notification arrived, over the stream or on the poll that backs it up.
@@ -214,10 +215,10 @@ export default function NotificationBell() {
   }
 
   const label = unread ? `Notifications, ${unread} unread` : 'Notifications';
-  // Newest first from the server, so the top few filtered to the last hour
-  // are exactly "up to five from the last hour". Re-evaluated on every poll,
-  // so a notification ages out of the dropdown within 30s of turning an hour.
-  const recent = items.filter((n) => Date.now() - Date.parse(n.created_at) < RECENT_MS);
+  // Unread notifications always show regardless of age — hiding them would
+  // leave the badge count with nothing behind it. Read ones drop out after
+  // an hour so the dropdown stays focused on recent activity.
+  const recent = items.filter((n) => !n.read_at || Date.now() - Date.parse(n.created_at) < RECENT_MS);
 
   return (
     <div className="topnav-bell" ref={wrapRef}>
@@ -250,8 +251,8 @@ export default function NotificationBell() {
           </div>
           {recent.length === 0 ? (
             <p className="topnav-bell-empty">
-              No new notifications in the last hour.
-              {items.length === 0 && " We'll let you know when something changes."}
+              No new notifications in the last hour.{' '}
+              {"We'll let you know when something changes."}
             </p>
           ) : (
             recent.map((n, i) => (
