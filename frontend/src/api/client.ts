@@ -10,6 +10,8 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localho
  * status-specific handling (e.g. treating 409 as "already done" rather
  * than a real error).
  */
+import { reloadAfterAction } from '../lib/reloadAfterAction';
+
 export class ApiError extends Error {
   constructor(
     public statusCode: number,
@@ -314,6 +316,13 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
      listener's re-read was itself an apiFetch. */
   if (!SAFE_METHODS.has(options.method ?? 'GET')) {
     window.dispatchEvent(new CustomEvent(DATA_CHANGED_EVENT, { detail: { path } }));
+    /* …and then reload the whole page, so every screen — the activity
+       log included — comes back from the server rather than from
+       whichever listeners someone remembered to wire up. The event
+       above is kept: listeners still fire, they just do not get long
+       to finish. reloadAfterAction skips the handful of paths where a
+       reload would destroy something (see NO_RELOAD). */
+    reloadAfterAction(path);
   }
 
   return data as T;
