@@ -10935,6 +10935,21 @@ li:hover .checkbox-mark {
   margin: 0;
 }
 
+/* This page opts out of the shared measure.
+
+   .app-content caps every page at 1440px so text is readable on a big
+   monitor. The laptop is not text: its lid is 50rem and scales to 1.85x as
+   it opens, which is 1480px of layout box before the 3D rotation widens the
+   painted area past it. Inside a 1440 column it sits 4px from the clip edge
+   on each side and loses its corners at full open.
+
+   :has() rather than a prop threaded through Layout — the page states its own
+   need, in the same file as the reason, and nothing else has to know. The
+   same pattern the modal backdrop already uses for its drawer. */
+.app-content:has(> .mac-tools-page) {
+  max-width: none;
+}
+
 .mac-tools-scroll {
   /* The laptop is 512px of un-scaled artboard and grows to 1.5x as it
      opens, so it needs to be free of the page's reading column. */
