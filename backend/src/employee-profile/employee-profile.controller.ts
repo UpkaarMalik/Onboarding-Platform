@@ -6,8 +6,10 @@ import {
   Param,
   ParseUUIDPipe,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
+
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -19,6 +21,14 @@ import { EmployeeProfileService } from './employee-profile.service';
 export class EmployeeProfileController {
   constructor(private readonly employeeProfile: EmployeeProfileService) {}
 
+  // Must be declared before :userId so NestJS does not treat "search" as a UUID.
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin_hr')
+  @Get('search')
+  search(@Query('q') q: string) {
+    return this.employeeProfile.search(q ?? '');
+  }
+
   // HR-only, and a fixed role rather than a data-dependent check: this
   // is the whole-company view by definition, so there is no "your own
   // profile" case for RolesGuard to be too blunt for.
@@ -27,6 +37,23 @@ export class EmployeeProfileController {
   @Get(':userId')
   getProfile(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.employeeProfile.getProfile(userId);
+  }
+
+  /** Update core joinee details: phone, personal email, department, joining date. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin_hr')
+  @Patch(':userId')
+  updateProfile(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() body: {
+      phoneNumber?: unknown;
+      personalEmail?: unknown;
+      departmentId?: unknown;
+      startDate?: unknown;
+    },
+  ) {
+    return this.employeeProfile.updateProfile(userId, body, actor.id);
   }
 
   /** Suspend or restore sign-in for one joinee. Body: { enabled: boolean }. */

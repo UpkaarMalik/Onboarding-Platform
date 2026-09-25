@@ -109,6 +109,104 @@ export class EmployeeProfileService {
     return { id: user.id, status: next, changed: true };
   }
 
+  async updateProfile(
+    userId: string,
+    body: { phoneNumber?: unknown; personalEmail?: unknown; departmentId?: unknown; startDate?: unknown },
+    actorId: string,
+  ) {
+    const { rows: userRows } = await this.db.query<{ id: string; role: string; full_name: string }>(
+      `SELECT id, role, full_name FROM users WHERE id = $1 AND deleted_at IS NULL`,
+      [userId],
+    );
+    const user = userRows[0];
+    if (!user) throw new NotFoundException('Employee not found');
+
+    const sets: string[] = [];
+    const vals: unknown[] = [userId];
+
+    if (body.phoneNumber !== undefined) {
+      if (typeof body.phoneNumber !== 'string' || !/^91\d{10}$/.test(body.phoneNumber)) {
+        throw new BadRequestException('phoneNumber must be 91 followed by 10 digits');
+      }
+      sets.push(`phone_number = $${vals.push(body.phoneNumber) + 0}`);
+    }
+    if (body.personalEmail !== undefined) {
+      if (body.personalEmail !== null && (typeof body.personalEmail !== 'string' || !body.personalEmail.includes('@'))) {
+        throw new BadRequestException('personalEmail must be a valid email or null');
+      }
+      sets.push(`personal_email = $${vals.push(body.personalEmail) + 0}`);
+    }
+    if (body.departmentId !== undefined) {
+      if (body.departmentId !== null) {
+        const { rows: deptRows } = await this.db.query(
+          `SELECT id FROM departments WHERE id = $1 AND deleted_at IS NULL`,
+          [body.departmentId],
+        );
+        if (!deptRows[0]) throw new BadRequestException('Department not found');
+      }
+      sets.push(`department_id = $${vals.push(body.departmentId) + 0}`);
+    }
+
+    if (sets.length > 0) {
+      sets.push(`updated_at = now()`);
+      await this.db.query(
+        `UPDATE users SET ${sets.join(', ')} WHERE id = $1`,
+        vals,
+      );
+    }
+
+    if (body.startDate !== undefined) {
+      if (typeof body.startDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.startDate)) {
+        throw new BadRequestException('startDate must be YYYY-MM-DD');
+      }
+      await this.db.query(
+        `UPDATE onboardings SET start_date = $2, updated_at = now() WHERE user_id = $1`,
+        [userId, body.startDate],
+      );
+    }
+
+    await this.activityLog.log({
+      actorId,
+      action: 'user.profile_updated',
+      entityType: 'user',
+      entityId: userId,
+      metadata: {
+        fields: Object.keys(body).filter((k) => (body as Record<string, unknown>)[k] !== undefined),
+      },
+    });
+
+    return { id: userId, updated: true };
+  }
+
+  async search(q: string) {
+    if (!q?.trim()) return { results: [] };
+    const like = `%${q.trim()}%`;
+    const { rows } = await this.db.query<{
+      id: string;
+      full_name: string;
+      joinee_id: string;
+      phone_number: string;
+      department: string | null;
+      role: string;
+    }>(
+      `SELECT u.id, u.full_name, u.joinee_id, u.phone_number, u.role,
+              d.name AS department
+       FROM users u
+       LEFT JOIN departments d ON d.id = u.department_id
+       WHERE u.deleted_at IS NULL
+         AND (
+           u.full_name ILIKE $1
+           OR u.joinee_id ILIKE $1
+           OR u.phone_number LIKE $1
+           OR d.name ILIKE $1
+         )
+       ORDER BY u.full_name
+       LIMIT 15`,
+      [like],
+    );
+    return { results: rows };
+  }
+
   async getProfile(userId: string) {
     const { rows: userRows } = await this.db.query(
       `SELECT
@@ -147,7 +245,8 @@ export class EmployeeProfileService {
 
     const { rows: documents } = await this.db.query(
       `SELECT
-         r.id AS requirement_id, r.status, dt.code, dt.label,
+         r.id AS requirement_id, r.status, r.document_type_id,
+         dt.code, dt.label,
          dt.display_order, dt.is_sensitive,
          up.id AS upload_id, up.original_filename, up.mime_type,
          up.size_bytes, up.created_at AS uploaded_at,

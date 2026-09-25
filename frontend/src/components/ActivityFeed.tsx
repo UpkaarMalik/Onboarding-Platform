@@ -164,9 +164,9 @@ export default function ActivityFeed({ limit = 7 }: { limit?: number }) {
       )}
 
       <ul className="activity-feed-list">
-        {rows.map((row) => (
+        {rows.map((row, i) => (
           <li key={row.id} className="activity-feed-item">
-            <span className={`activity-feed-dot is-${activityTone(row.action)}`} aria-hidden="true" />
+            <span className={`activity-feed-dot is-${activityTone(row.action)}${i === 0 ? ' is-latest' : ''}`} aria-hidden="true" />
             <span className="activity-feed-body">
               <span className="activity-feed-text">{activitySentence(row)}</span>
               <span className="activity-feed-when">{relativeTime(row.created_at)}</span>

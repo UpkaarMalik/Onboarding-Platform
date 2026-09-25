@@ -8,6 +8,11 @@ import AnimatedProgressBar from './AnimatedProgressBar';
 import BlockerLine, { type TaskBlocker } from './BlockerLine';
 import CopyButton from './CopyButton';
 import ReasonDialog from './tasks/ReasonDialog';
+import DatePickerField from './ui/DatePickerField';
+import { CustomSelect } from './CustomSelect';
+
+interface Department { id: string; name: string; }
+interface DocType { id: string; label: string; }
 
 /**
  * HR's view of one joinee: their details, their documents, their tasks, and
@@ -30,6 +35,7 @@ import ReasonDialog from './tasks/ReasonDialog';
 
 interface JoineeDocument {
   requirement_id: string;
+  document_type_id: string;
   status: 'awaiting_upload' | 'submitted' | 'approved' | 'rejected';
   label: string;
   upload_id: string | null;
@@ -68,6 +74,7 @@ interface EmployeeProfile {
     company_email: string | null;
     status: string;
     must_reset_password: boolean;
+    department_id: string | null;
     department_name: string | null;
   };
   onboarding: {
@@ -87,11 +94,6 @@ interface EmployeeProfile {
     requiredTotal: number;
     requiredCompleted: number;
   };
-}
-
-interface Department {
-  id: string;
-  name: string;
 }
 
 interface CredentialSummary {
@@ -133,6 +135,25 @@ export default function EmployeeProfileModal({
   const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
   const [blockError, setBlockError] = useState<string | null>(null);
 
+  // Details editing
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [detailPhone, setDetailPhone] = useState('');
+  const [detailEmail, setDetailEmail] = useState('');
+  const [detailDeptId, setDetailDeptId] = useState('');
+  const [detailStartDate, setDetailStartDate] = useState('');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  // Account status toggle
+  const [togglingStatus, setTogglingStatus] = useState(false);
+  const [confirmingDisable, setConfirmingDisable] = useState(false);
+
+  // Add document requirement
+  const [addingDoc, setAddingDoc] = useState(false);
+  const [allDocTypes, setAllDocTypes] = useState<DocType[]>([]);
+  const [addDocTypeId, setAddDocTypeId] = useState('');
+  const [addDocBusy, setAddDocBusy] = useState(false);
+
   const load = useCallback(() => {
     authedFetch<EmployeeProfile>(`/employee-profile/${userId}`)
       .then((p) => {
@@ -150,6 +171,59 @@ export default function EmployeeProfileModal({
   }, [authedFetch, userId]);
 
   useEffect(load, [load]);
+
+  useEffect(() => {
+    authedFetch<Department[]>('/departments').then(setDepartments).catch(() => {});
+  }, [authedFetch]);
+
+  function openDetailsEdit(p: EmployeeProfile) {
+    setDetailPhone(p.user.phone_number.startsWith('91') ? p.user.phone_number.slice(2) : p.user.phone_number);
+    setDetailEmail(p.user.personal_email ?? '');
+    setDetailDeptId(p.user.department_id ?? '');
+    setDetailStartDate(p.onboarding?.start_date ?? '');
+    setEditingDetails(true);
+  }
+
+  async function saveDetails(e: FormEvent) {
+    e.preventDefault();
+    setSavingDetails(true);
+    setError(null);
+    try {
+      await authedFetch(`/employee-profile/${userId}`, {
+        method: 'PATCH',
+        body: {
+          phoneNumber: detailPhone.length === 10 ? `91${detailPhone}` : undefined,
+          personalEmail: detailEmail || null,
+          departmentId: detailDeptId || null,
+          ...(profile?.onboarding && detailStartDate ? { startDate: detailStartDate } : {}),
+        },
+      });
+      setEditingDetails(false);
+      load();
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save details');
+    } finally {
+      setSavingDetails(false);
+    }
+  }
+
+  async function toggleStatus(enable: boolean) {
+    setTogglingStatus(true);
+    setError(null);
+    try {
+      const res = await authedFetch<{ status: string }>(`/employee-profile/${userId}/status`, {
+        method: 'PATCH',
+        body: { enabled: enable },
+      });
+      setProfile((prev) => prev ? { ...prev, user: { ...prev.user, status: res.status } } : prev);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update status');
+    } finally {
+      setTogglingStatus(false);
+    }
+  }
 
   async function saveAssignments(e: FormEvent) {
     e.preventDefault();
@@ -292,6 +366,32 @@ export default function EmployeeProfileModal({
     }
   }
 
+  function openAddDoc() {
+    setAddDocTypeId('');
+    setAddingDoc(true);
+    authedFetch<DocType[]>('/joinee-documents/types')
+      .then(setAllDocTypes)
+      .catch(() => setAllDocTypes([]));
+  }
+
+  async function addDocument() {
+    if (!addDocTypeId) return;
+    setAddDocBusy(true);
+    setError(null);
+    try {
+      await authedFetch(`/joinee-documents/users/${userId}/requirements`, {
+        method: 'POST',
+        body: { documentTypeId: addDocTypeId },
+      });
+      setAddingDoc(false);
+      load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not add document');
+    } finally {
+      setAddDocBusy(false);
+    }
+  }
+
   if (!profile) {
     return (
       <Modal title="Employee profile" onClose={onClose}>
@@ -308,6 +408,7 @@ export default function EmployeeProfileModal({
     : 0;
 
   return (
+    <>
     <Modal
       title={user.full_name}
       onClose={onClose}
@@ -331,49 +432,132 @@ export default function EmployeeProfileModal({
       <section className="profile-section">
         <div className="profile-section-head">
           <h3>Details</h3>
+          {!editingDetails && (
+            <button type="button" className="profile-head-btn" onClick={() => openDetailsEdit(profile)}>
+              Edit
+            </button>
+          )}
         </div>
-        <dl className="profile-grid">
-          <div>
-            <dt>Joinee ID</dt>
-            <dd>
-              <code>{user.joinee_id}</code>
-            </dd>
-          </div>
-          <div>
-            <dt>Mobile</dt>
-            <dd>
-              <a className="profile-link" href={`tel:+${user.phone_number}`}>
-                {formatPhone(user.phone_number)}
-              </a>
-            </dd>
-          </div>
-          <div>
-            <dt>Personal email</dt>
-            <dd>
-              {user.personal_email ? (
-                <a className="profile-link" href={`mailto:${user.personal_email}`}>
-                  {user.personal_email}
-                </a>
-              ) : (
-                <span className="muted">Not recorded</span>
+
+        {editingDetails ? (
+          <form className="profile-details-form" onSubmit={saveDetails}>
+            <div className="profile-details-grid">
+              <div className="joinee-field">
+                <span className="joinee-field__label">Mobile</span>
+                <div className="phone-input-group">
+                  <span className="phone-prefix">+91</span>
+                  <span className="phone-divider" aria-hidden="true">|</span>
+                  <input
+                    value={detailPhone.length > 5 ? `${detailPhone.slice(0, 5)} ${detailPhone.slice(5)}` : detailPhone}
+                    onChange={(e) => setDetailPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    inputMode="numeric"
+                    placeholder="98765 43210"
+                    maxLength={11}
+                  />
+                </div>
+                {detailPhone.length > 0 && detailPhone.length < 10 && (
+                  <span className="field-error">Enter all 10 digits</span>
+                )}
+              </div>
+              <div className="joinee-field">
+                <span className="joinee-field__label">Personal email</span>
+                <input
+                  className="joinee-input"
+                  type="email"
+                  value={detailEmail}
+                  onChange={(e) => setDetailEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="joinee-field">
+                <span className="joinee-field__label">Department</span>
+                <CustomSelect
+                  value={detailDeptId}
+                  onChange={setDetailDeptId}
+                  placeholder="— None —"
+                  options={[{ value: '', label: '— None —' }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+                />
+              </div>
+              {onboarding && (
+                <div className="joinee-field">
+                  <span className="joinee-field__label">Date of joining</span>
+                  <DatePickerField
+                    value={detailStartDate}
+                    onChange={setDetailStartDate}
+                    placeholder="Select a date"
+                  />
+                </div>
               )}
-            </dd>
-          </div>
-          <div>
-            <dt>Department</dt>
-            <dd>{user.department_name ?? <span className="muted">None</span>}</dd>
-          </div>
-          <div>
-            <dt>Date of joining</dt>
-            <dd>{formatDate(onboarding?.start_date) ?? <span className="muted">Not onboarded</span>}</dd>
-          </div>
-          <div>
-            <dt>Account</dt>
-            <dd>
-              <span className={`status-pill status-${user.status}`}>{user.status}</span>
-            </dd>
-          </div>
-        </dl>
+            </div>
+            <div className="profile-assign-actions">
+              <button type="button" onClick={() => setEditingDetails(false)}>Cancel</button>
+              <button type="submit" disabled={savingDetails || detailPhone.length !== 10}>
+                {savingDetails ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <dl className="profile-grid">
+            <div>
+              <dt>Joinee ID</dt>
+              <dd>
+                <code>{user.joinee_id}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Mobile</dt>
+              <dd>
+                <a className="profile-link" href={`tel:+${user.phone_number}`}>
+                  {formatPhone(user.phone_number)}
+                </a>
+              </dd>
+            </div>
+            <div>
+              <dt>Personal email</dt>
+              <dd>
+                {user.personal_email ? (
+                  <a className="profile-link" href={`mailto:${user.personal_email}`}>
+                    {user.personal_email}
+                  </a>
+                ) : (
+                  <span className="muted">Not recorded</span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Department</dt>
+              <dd>{user.department_name ?? <span className="muted">None</span>}</dd>
+            </div>
+            <div>
+              <dt>Date of joining</dt>
+              <dd>{formatDate(onboarding?.start_date) ?? <span className="muted">Not onboarded</span>}</dd>
+            </div>
+            <div>
+              <dt>Account</dt>
+              <dd>
+                <div className="profile-account-row">
+                  <span className={`status-pill status-${user.status === 'disabled' ? 'disabled' : 'active'}`}>
+                    {user.status === 'disabled' ? 'Inactive' : 'Active'}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={user.status !== 'disabled'}
+                    className={`row-switch${user.status === 'disabled' ? ' is-off' : ''}${togglingStatus ? ' is-busy' : ''}`}
+                    disabled={togglingStatus}
+                    title={user.status === 'disabled' ? 'Allow sign-in' : 'Block sign-in'}
+                    onClick={() => user.status === 'disabled' ? void toggleStatus(true) : setConfirmingDisable(true)}
+                  >
+                    <span className="row-switch-track" aria-hidden="true">
+                      <span className="row-switch-knob" />
+                    </span>
+                  </button>
+                </div>
+              </dd>
+            </div>
+          </dl>
+        )}
       </section>
 
       {onboarding && (
@@ -419,7 +603,43 @@ export default function EmployeeProfileModal({
       <section className="profile-section">
         <div className="profile-section-head">
           <h3>Documents <span className="profile-count">{documents.length}</span></h3>
+          {!addingDoc && (
+            <button type="button" className="profile-head-btn" onClick={openAddDoc}>
+              Add document
+            </button>
+          )}
         </div>
+
+        {addingDoc && (() => {
+          const assigned = new Set(documents.map((d) => d.document_type_id));
+          const available = allDocTypes.filter((t) => !assigned.has(t.id));
+          return (
+            <div className="profile-add-doc">
+              {available.length === 0 ? (
+                <p className="muted">All document types are already assigned to this joinee.</p>
+              ) : (
+                <>
+                  <CustomSelect
+                    value={addDocTypeId}
+                    onChange={setAddDocTypeId}
+                    placeholder="Select document type…"
+                    options={available.map((t) => ({ value: t.id, label: t.label }))}
+                  />
+                  <div className="profile-assign-actions">
+                    <button type="button" onClick={() => setAddingDoc(false)}>Cancel</button>
+                    <button type="button" disabled={!addDocTypeId || addDocBusy} onClick={() => void addDocument()}>
+                      {addDocBusy ? 'Adding…' : 'Add'}
+                    </button>
+                  </div>
+                </>
+              )}
+              {available.length === 0 && (
+                <button type="button" onClick={() => setAddingDoc(false)}>Close</button>
+              )}
+            </div>
+          );
+        })()}
+
         {documents.length === 0 ? (
           <p className="muted">No documents were requested for this joinee.</p>
         ) : (
@@ -704,6 +924,29 @@ export default function EmployeeProfileModal({
       )}
       </div>
     </Modal>
+
+    {confirmingDisable && (
+      <Modal title="Block sign-in?" onClose={() => setConfirmingDisable(false)}>
+        <p>
+          <strong>{user.full_name}</strong> will no longer be able to sign in with
+          their Joinee ID and password. Any active session stops working on its next request.
+        </p>
+        <p className="muted">
+          Their onboarding, tasks and documents are untouched. You can restore access at any time.
+        </p>
+        <div className="modal-actions">
+          <button type="button" onClick={() => setConfirmingDisable(false)}>Cancel</button>
+          <button
+            type="button"
+            className="btn-danger"
+            onClick={() => { setConfirmingDisable(false); void toggleStatus(false); }}
+          >
+            Block sign-in
+          </button>
+        </div>
+      </Modal>
+    )}
+    </>
   );
 }
 

@@ -63,6 +63,20 @@ export class JoineeDocumentsController {
     return this.joineeDocuments.listForUser(userId, actor);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('superadmin_hr')
+  @Post('users/:userId/requirements')
+  addRequirement(
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() body: { documentTypeId?: unknown },
+  ) {
+    if (typeof body?.documentTypeId !== 'string' || !body.documentTypeId) {
+      throw new BadRequestException('documentTypeId is required');
+    }
+    return this.joineeDocuments.addRequirement(userId, body.documentTypeId, actor.id);
+  }
+
   // The joinee uploading one requested document. Ownership is checked in
   // the service against the requirement's own user_id.
   @UseGuards(JwtAuthGuard)

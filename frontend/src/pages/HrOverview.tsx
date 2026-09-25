@@ -15,6 +15,7 @@ import Reveal from '../components/Reveal';
 import { avatarClass, deptLightClass, deptSlots, type DeptSlots } from '../lib/deptColor';
 import {
   compareRows,
+  ROSTER_PARAMS,
   SORT_OPTIONS,
   STATUS_OPTIONS,
   withParam,
@@ -144,7 +145,6 @@ export default function HrOverview({
      control through the query string — see lib/rosterQuery.ts. The roster
      owns the rows; the nav owns the controls. */
   const [params, setParams] = useSearchParams();
-  const search = params.get('q') ?? '';
   const department = params.get('dept') ?? '';
   const statusFilter = params.get('status') ?? '';
   const sort = (params.get('sort') ?? '') as RosterSort;
@@ -153,6 +153,20 @@ export default function HrOverview({
      of one piece of state, not two copies of it. */
   const setParam = (key: string, value: string) =>
     setParams(withParam(params, key, value), { replace: true });
+
+  const hasFilters = !!(department || statusFilter || sort || cardFilter);
+
+  function clearAllFilters() {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        ROSTER_PARAMS.forEach((k) => next.delete(k));
+        return next;
+      },
+      { replace: true },
+    );
+    onClearCardFilter?.();
+  }
   const [rows, setRows] = useState<OverviewRow[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   // One slot map for the page, so every row's avatar and badge agree.
@@ -232,7 +246,6 @@ export default function HrOverview({
   }, [rows]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
     let result = rows;
 
     /* The home's cards narrow this list rather than opening a panel of their
@@ -247,22 +260,18 @@ export default function HrOverview({
         result = rows.filter((r) => r.status === 'completed');
     }
 
+    const depts = department ? department.split(',').filter(Boolean) : [];
+    const statuses = statusFilter ? statusFilter.split(',').filter(Boolean) : [];
     const matched = result.filter((r) => {
-      if (department && r.department_name !== department) return false;
-      if (statusFilter && onboardingStatusTone(r.status) !== statusFilter) return false;
-      if (!q) return true;
-      return (
-        r.employee_name?.toLowerCase().includes(q) ||
-        (r.joinee_id ?? '').toLowerCase().includes(q) ||
-        (r.personal_email ?? '').toLowerCase().includes(q) ||
-        (r.department_name ?? '').toLowerCase().includes(q)
-      );
+      if (depts.length && !depts.includes(r.department_name ?? '')) return false;
+      if (statuses.length && !statuses.includes(onboardingStatusTone(r.status))) return false;
+      return true;
     });
 
     // Sorting a copy: `matched` is either `rows` itself or a fresh array, and
     // sorting in place would scramble the source list on the no-filter path.
     return sort ? [...matched].sort((a, b) => compareRows(sort, a, b)) : matched;
-  }, [rows, search, department, statusFilter, sort, activeStatFilter, cardFilter]);
+  }, [rows, department, statusFilter, sort, activeStatFilter, cardFilter]);
 
   /** Flip one joinee's sign-in access. The row is updated in place on success
    *  rather than refetching the whole list, so the page doesn't jump. */
@@ -303,7 +312,7 @@ export default function HrOverview({
   );
   useEffect(() => {
     setPage(1);
-  }, [search, department, statusFilter, sort, activeStatFilter, cardFilter]);
+  }, [department, statusFilter, sort, activeStatFilter, cardFilter]);
 
   return (
     <div className={embedded ? 'overview overview--embedded' : 'overview'}>
@@ -398,11 +407,9 @@ export default function HrOverview({
             separate bordered cards stacked on each other doing one job. */}
         <div className="roster-shell">
           <div className="roster-toolbar">
-            {embedded && (
-              <div className="roster-heading">
-                <h2>All joinees</h2>
-              </div>
-            )}
+            <div className="roster-heading">
+              {embedded && <h2>All joinees</h2>}
+            </div>
 
             {/* The search box lives in the nav; these filters are here as well
                 as there, reading and writing the same query params. */}
@@ -411,16 +418,15 @@ export default function HrOverview({
                 value={department}
                 onChange={(v) => setParam('dept', v)}
                 placeholder="All Departments"
-                options={[
-                  { value: '', label: 'All Departments' },
-                  ...departments.map((d) => ({ value: d.name, label: d.name })),
-                ]}
+                multi
+                options={departments.map((d) => ({ value: d.name, label: d.name }))}
               />
               <CustomSelect
                 value={statusFilter}
                 onChange={(v) => setParam('status', v)}
                 placeholder="All Statuses"
-                options={STATUS_OPTIONS}
+                multi
+                options={STATUS_OPTIONS.filter((o) => o.value !== '')}
               />
               <CustomSelect
                 value={sort}
@@ -429,26 +435,7 @@ export default function HrOverview({
                 options={SORT_OPTIONS}
               />
 
-              {/* What the nav's field is currently matching on, so the
-                  narrowed list explains itself on this page too. */}
-              {search && (
-                <button
-                  type="button"
-                  className="roster-filter-chip"
-                  onClick={() => setParam('q', '')}
-                  aria-label={`Clear the search for ${search}`}
-                >
-                  <span className="roster-filter-chip-dot" aria-hidden="true" />
-                  “{search}”
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                  </svg>
-                </button>
-              )}
               {cardFilter && (
-                /* Built to match the two selects beside it — same height,
-                   radius, weight and border — so it reads as a third filter
-                   rather than a badge that wandered in. */
                 <button
                   type="button"
                   className="roster-filter-chip"
@@ -459,6 +446,17 @@ export default function HrOverview({
                   {cardFilter.label}
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
                     <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            <div className="roster-toolbar-actions">
+              {hasFilters && (
+                <button type="button" className="roster-clear-all" onClick={clearAllFilters} title="Clear all filters">
+                  <svg className="roster-clear-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                    <line x1="2" y1="2" x2="12" y2="12"/>
+                    <line x1="12" y1="2" x2="2" y2="12"/>
                   </svg>
                 </button>
               )}
