@@ -84,11 +84,45 @@ export class JoineeDocumentsService {
     );
     if (existing[0]) throw new ConflictException('This document is already required for this joinee');
 
+    // Resolve the document_upload task first so we can store it on the
+    // requirement — without it, the review() approval notification falls
+    // back to bare /start-here and the employee lands on the trail with
+    // no popup open.
+    const { rows: taskRows } = await this.db.query<{ id: string }>(
+      `UPDATE onboarding_tasks ot
+          SET status                = 'pending',
+              completed_at          = NULL,
+              employee_confirmed_by = NULL,
+              employee_confirmed_at = NULL
+         FROM onboardings o
+        WHERE o.id = ot.onboarding_id
+          AND o.user_id = $1
+          AND ot.system_key = 'document_upload'
+          AND ot.status = 'completed'
+        RETURNING ot.id`,
+      [userId],
+    );
+
+    const { rows: taskFallback } = taskRows[0]
+      ? { rows: taskRows }
+      : await this.db.query<{ id: string }>(
+          `SELECT ot.id
+             FROM onboarding_tasks ot
+             JOIN onboardings o ON o.id = ot.onboarding_id
+            WHERE o.user_id = $1
+              AND ot.system_key = 'document_upload'
+            LIMIT 1`,
+          [userId],
+        );
+    const taskId = taskFallback[0]?.id ?? null;
+    const taskLink = taskId ? `/start-here?task=${taskId}` : '/start-here';
+
     const { rows } = await this.db.query<{ id: string }>(
-      `INSERT INTO joinee_document_requirements (user_id, document_type_id, status, requested_by)
-       VALUES ($1, $2, 'awaiting_upload', $3)
+      `INSERT INTO joinee_document_requirements
+         (user_id, document_type_id, status, requested_by, onboarding_task_id)
+       VALUES ($1, $2, 'awaiting_upload', $3, $4)
        RETURNING id`,
-      [userId, documentTypeId, actorId],
+      [userId, documentTypeId, actorId, taskId],
     );
 
     await this.activityLog.log({
@@ -104,7 +138,7 @@ export class JoineeDocumentsService {
       'document_requested',
       `HR has requested your ${typeRows[0].label}`,
       'Please upload it in your onboarding tasks.',
-      '/start-here',
+      taskLink,
       { actorId },
     );
 
