@@ -55,6 +55,14 @@ const NO_RELOAD = [
   '/block',
   '/complete-as-owner',
   '/blockers/',
+  // The employee ticking off their own step — the counterpart to
+  // /complete-as-owner above. EmployeeTasks calls loadAll() straight after
+  // it, so nothing goes stale, and the reload costs something specific
+  // here: the trail's mark keeps the leg it still has to fly in a ref, so
+  // that finishing a step sends it from the step just done to the next one.
+  // A remount resets that ref to the start of the trail, and the boomerang
+  // replayed the whole journey from step one on every completion.
+  '/complete-as-employee',
 ];
 
 export function shouldReloadFor(path: string): boolean {
