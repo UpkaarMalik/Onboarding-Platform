@@ -174,10 +174,15 @@ export default function TaskRoadmap({
   onSelect,
   onLocked,
   onVoyage,
+  onArrived,
 }: {
   steps: RoadmapItem[];
   currentId: string | null;
   onSelect: (id: string) => void;
+  /** The mark has come to rest at its berth — whether it flew there or was
+   *  simply placed there because there was nothing to fly. Not the same as
+   *  onVoyage(false), which also fires when the effect is torn down. */
+  onArrived?: () => void;
   /** Called when a step that has not opened yet is clicked, with the step
    *  and the one standing in its way. A locked card used to be inert, which
    *  answered "why can't I click this?" with nothing at all. */
@@ -249,6 +254,7 @@ export default function TaskRoadmap({
         states={states}
         currentIndex={currentIndex}
         onVoyage={onVoyage}
+        onArrived={onArrived}
         onReach={markReached}
       />
 
@@ -332,6 +338,15 @@ const SPIN_TURNS_PER_SEC = 2.8;
  *  Roughly the rest beat in the reference loop, where the ring holds for the
  *  first fifth of the cycle. */
 const MARK_REST_MS = 700;
+/**
+ * How far ahead of the mark a step's tick begins.
+ *
+ * The mark's own sequence — ring drawn, tick written, confetti thrown — takes
+ * about this long to reach the bang, so starting it this much early puts the
+ * bang under the boomerang as it goes over rather than half a second behind
+ * it. Matches the confetti's delay plus its own run-up in .done-mark__spark.
+ */
+const MARK_LEAD_MS = 520;
 const SPIN_MIN_TURNS = 2;
 
 /**
@@ -418,12 +433,15 @@ function RoadmapTrail({
   states,
   currentIndex,
   onVoyage,
+  onArrived,
   onReach,
 }: {
   geom: Geometry | null;
   states: VisualState[];
   currentIndex: number;
   onVoyage?: (sailing: boolean) => void;
+  /** Fired once the mark is berthed and still. */
+  onArrived?: () => void;
   /** Called with a step's index the moment the mark arrives over it — once
    *  per step, in order, without the mark stopping. This is what ticks the
    *  completed steps off one after another instead of all at once. */
@@ -434,6 +452,8 @@ function RoadmapTrail({
   // function would otherwise restart the crossing from t = 0.
   const onVoyageRef = useRef(onVoyage);
   onVoyageRef.current = onVoyage;
+  const onArrivedRef = useRef(onArrived);
+  onArrivedRef.current = onArrived;
   const onReachRef = useRef(onReach);
   onReachRef.current = onReach;
   /** The route's hops, one `d` per pair of adjacent nodes, in the order the
@@ -687,6 +707,7 @@ function RoadmapTrail({
       place(mooring.x, mooring.y);
       spinTo(0);
       setSailing(false);
+      onArrivedRef.current?.();
       if (!ledRef.current) {
         ledRef.current = true;
         follow(mooring.y);
@@ -710,6 +731,7 @@ function RoadmapTrail({
       place(end.x, end.y);
       spinTo(0);
       setSailing(false);
+      onArrivedRef.current?.();
       follow(end.y);
       return unhook;
     }
@@ -752,11 +774,17 @@ function RoadmapTrail({
     const gates: Array<{ at: number; index: number }> = [{ at: 0, index: legFromRef.current }];
     const measure = measureRef.current;
     if (measure) {
+      // The tick starts a beat BEFORE the mark gets there, so that the ring,
+      // the tick and the confetti all land as it passes rather than trailing
+      // behind it. MARK_LEAD_MS is how long the mark's own animation takes to
+      // reach its bang; converting it to a distance needs the speed, which is
+      // the route's length over its duration.
+      const lead = (len / dur) * MARK_LEAD_MS;
       let acc = 0;
       hopsRef.current.forEach((d, k) => {
         measure.setAttribute('d', d);
         acc += measure.getTotalLength();
-        gates.push({ at: acc, index: legFromRef.current + k + 1 });
+        gates.push({ at: Math.max(0, acc - lead), index: legFromRef.current + k + 1 });
       });
     }
     let nextGate = 0;
@@ -784,6 +812,7 @@ function RoadmapTrail({
         // arrival is settled explicitly rather than left to the comparison.
         while (nextGate < gates.length) onReachRef.current?.(gates[nextGate++].index);
         setSailing(false);
+        onArrivedRef.current?.();
       }
     };
 
