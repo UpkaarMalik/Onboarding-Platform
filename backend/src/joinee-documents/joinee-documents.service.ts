@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -63,6 +65,52 @@ export class JoineeDocumentsService {
   ) {}
 
   /** The checkbox grid for the Create New Joinee "Documents" step. */
+  async addRequirement(userId: string, documentTypeId: string, actorId: string) {
+    const { rows: typeRows } = await this.db.query<{ id: string; label: string }>(
+      `SELECT id, label FROM document_types WHERE id = $1 AND is_active`,
+      [documentTypeId],
+    );
+    if (!typeRows[0]) throw new NotFoundException('Document type not found');
+
+    const { rows: userRows } = await this.db.query<{ id: string }>(
+      `SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL`,
+      [userId],
+    );
+    if (!userRows[0]) throw new NotFoundException('Employee not found');
+
+    const { rows: existing } = await this.db.query(
+      `SELECT id FROM joinee_document_requirements WHERE user_id = $1 AND document_type_id = $2`,
+      [userId, documentTypeId],
+    );
+    if (existing[0]) throw new ConflictException('This document is already required for this joinee');
+
+    const { rows } = await this.db.query<{ id: string }>(
+      `INSERT INTO joinee_document_requirements (user_id, document_type_id, status, requested_by)
+       VALUES ($1, $2, 'awaiting_upload', $3)
+       RETURNING id`,
+      [userId, documentTypeId, actorId],
+    );
+
+    await this.activityLog.log({
+      actorId,
+      action: 'document.requirement_added',
+      entityType: 'user',
+      entityId: userId,
+      metadata: { documentTypeId, label: typeRows[0].label },
+    });
+
+    await this.notifications.notify(
+      userId,
+      'document_requested',
+      `HR has requested your ${typeRows[0].label}`,
+      'Please upload it in your onboarding tasks.',
+      '/start-here',
+      { actorId },
+    );
+
+    return { id: rows[0].id };
+  }
+
   async listDocumentTypes(): Promise<DocumentTypeRow[]> {
     const { rows } = await this.db.query<DocumentTypeRow>(
       `SELECT id, code, label, display_order, is_default_required, is_sensitive

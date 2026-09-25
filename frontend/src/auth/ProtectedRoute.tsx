@@ -8,7 +8,7 @@ export function ProtectedRoute({ allow }: { allow?: Array<CurrentUser['role']> }
   // reload of any protected page flashes the login screen for one
   // frame before the me-call comes back saying the browser IS signed
   // in — the cookie is on the request, we just don't know it yet.
-  if (bootstrapping) return null;
+  if (bootstrapping) return <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }} />;
 
   if (!user) {
     return <Navigate to="/login" replace />;

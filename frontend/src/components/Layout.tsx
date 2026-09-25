@@ -1,9 +1,21 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { ROSTER_PATH, rosterQueryIsActive, withParam } from '../lib/rosterQuery';
+import { useAuthedFetch } from '../api/useAuthedFetch';
+import { rosterQueryIsActive, withParam } from '../lib/rosterQuery';
+import { formatPhone } from '../lib/format';
 import NotificationBell from './NotificationBell';
 import { BrandMark, BrandWord } from './BrandLogo';
+
+interface SearchResult {
+  id: string;
+  full_name: string;
+  joinee_id: string;
+  phone_number: string;
+  department: string | null;
+  role: string;
+}
 
 interface NavItem {
   to: string;
@@ -22,7 +34,7 @@ const IC = {
   community: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.3"/><circle cx="12" cy="9" r="3" stroke="currentColor" strokeWidth="1.3"/><path d="M1 15c0-2 2-3 4-3h2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M10 15c0-2 1.5-3 3.5-3s3.5 1 3.5 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
   auditLog: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 3h12v12H3zM3 9h12M9 3v12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   tasks: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="2" width="12" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.3"/><path d="M6 6l1.5 1.5L10 5M6 10l1.5 1.5L10 9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-  search: <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+  search: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
   profile: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
   signout: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
   mac: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="3" y="3" width="12" height="9" rx="1.3" stroke="currentColor" strokeWidth="1.3"/><path d="M1.5 15h15" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
@@ -72,12 +84,17 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const authedFetch = useAuthedFetch();
 
   const [params, setParams] = useSearchParams();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [pill, setPill] = useState({ left: 0, width: 0 });
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [spotlightQuery, setSpotlightQuery] = useState('');
 
   const capsuleRef = useRef<HTMLElement>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
@@ -92,8 +109,6 @@ export default function Layout() {
   /* Only HR has a roster for these controls to narrow, so the search is
      rendered for that role alone rather than as a dead icon for everyone. */
   const canSearchRoster = user?.role === 'superadmin_hr';
-
-  const query = params.get('q') ?? '';
 
   /* One writer for all four params: it preserves everything else on the URL
      (notably `?profile=`), drops a key when it is cleared, and replaces the
@@ -126,14 +141,6 @@ export default function Layout() {
   useLayoutEffect(() => {
     if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
-
-  /* A filter set from another page would narrow a list that is not on
-     screen, so searching takes you to the roster. */
-  useEffect(() => {
-    // Carrying the search string over so a pasted filter URL is not wiped.
-    if (searchOpen && pathname !== ROSTER_PATH)
-      navigate({ pathname: ROSTER_PATH, search: window.location.search });
-  }, [searchOpen, pathname, navigate]);
 
   // Close the user menu on an outside click, on Escape, and on navigation.
   useEffect(() => {
@@ -186,30 +193,37 @@ export default function Layout() {
     navigate('/login');
   }
 
-  /* Collapsing the field does NOT clear the filter it applied.
-   *
-   * It used to, and that was a bug with two faces. The listener below fires
-   * on mousedown, so clicking a row action on the roster wiped `q` BEFORE
-   * the click landed: the list re-rendered unfiltered, the button under the
-   * pointer was replaced by a different row's, and the click reached
-   * nothing. HR saw an action that did nothing AND their search thrown
-   * away, from one press.
-   *
-   * Keeping the filter is also the right behaviour on its own terms —
-   * closing a control should not undo what it did, any more than closing
-   * the department dropdown should reset the department. The roster shows
-   * an explicit chip for the active search, and that chip is how you clear
-   * it deliberately.
-   */
   function closeSearch() {
     setSearchOpen(false);
+    setSpotlightQuery('');
+    setSearchResults([]);
+    setActiveIdx(-1);
   }
 
-  /** The search button's own X, which is a deliberate "clear this". */
-  function clearSearch() {
-    setParam('q', '');
-    setSearchOpen(false);
+  function openResult(r: SearchResult) {
+    closeSearch();
+    navigate({ pathname: '/hr', search: `?profile=${r.id}` });
   }
+
+  useEffect(() => {
+    if (!searchOpen || !spotlightQuery.trim()) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setActiveIdx(-1);
+      return;
+    }
+    setSearchLoading(true);
+    setActiveIdx(-1);
+    const t = setTimeout(() => {
+      authedFetch<{ results: SearchResult[] }>(
+        `/employee-profile/search?q=${encodeURIComponent(spotlightQuery)}`,
+      )
+        .then((d) => setSearchResults(d.results))
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearchLoading(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [spotlightQuery, searchOpen]);
 
   function trackGlare(e: React.MouseEvent<HTMLElement>) {
     const box = capsuleRef.current?.getBoundingClientRect();
@@ -244,49 +258,7 @@ export default function Layout() {
             <span ref={glareRef} className="topnav-glare" />
           </span>
 
-          {canSearchRoster && (
-            <>
-              <button
-                ref={searchBtnRef}
-                type="button"
-                className={`topnav-search-btn${rosterQueryIsActive(params) ? ' is-on' : ''}`}
-                onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-                aria-label="Search joinees"
-                aria-expanded={searchOpen}
-              >
-                {IC.search}
-              </button>
-              <span className="topnav-divider" aria-hidden="true" />
-            </>
-          )}
-
-          {searchOpen ? (
-            <div className="topnav-search" ref={searchBoxRef}>
-              <input
-                ref={searchRef}
-                type="text"
-                value={query}
-                onChange={(e) => setParam('q', e.target.value)}
-                placeholder="Search by name, ID, or department"
-                aria-label="Search joinees"
-              />
-              {/* The same round cross every popup in the app closes with,
-                  rather than this one control spelling out "Esc".
-                  This one DOES clear the filter: pressing the X on the field
-                  you typed into is the deliberate "forget this search".
-                  Clicking elsewhere, or Escape, only collapses the field. */}
-              <button
-                type="button"
-                className="modal-close"
-                onClick={clearSearch}
-                aria-label="Clear and close search"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-          ) : (
+          {(
             <div className="topnav-items" ref={itemsRef}>
               <span
                 className="topnav-pill"
@@ -314,7 +286,108 @@ export default function Layout() {
           )}
         </nav>
 
-        <NotificationBell />
+        {/* Spotlight search overlay — portalled so it covers the whole viewport */}
+        {searchOpen && createPortal(
+          <div
+            className="search-spotlight-backdrop"
+            onMouseDown={(e) => { if (e.target === e.currentTarget) closeSearch(); }}
+          >
+            <div className="search-spotlight" ref={searchBoxRef}>
+              <div className="search-spotlight-bar">
+                <svg className="search-spotlight-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  ref={searchRef}
+                  type="text"
+                  className="search-spotlight-input"
+                  value={spotlightQuery}
+                  onChange={(e) => setSpotlightQuery(e.target.value)}
+                  placeholder="Search by name, ID, mobile, or department…"
+                  aria-label="Search employees"
+                  autoComplete="off"
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setActiveIdx((i) => Math.min(i + 1, searchResults.length - 1));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setActiveIdx((i) => Math.max(i - 1, -1));
+                    } else if (e.key === 'Enter' && activeIdx >= 0 && searchResults[activeIdx]) {
+                      openResult(searchResults[activeIdx]);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="search-spotlight-esc"
+                  onClick={closeSearch}
+                  aria-label="Close search"
+                >
+                  ESC
+                </button>
+              </div>
+
+              {spotlightQuery && (
+                searchLoading ? (
+                  <div className="search-spotlight-loading">Searching…</div>
+                ) : searchResults.length > 0 ? (
+                  <ul className="search-spotlight-results" role="listbox" aria-label="Search results">
+                    {searchResults.map((r, i) => (
+                      <li
+                        key={r.id}
+                        className={`search-spotlight-result${i === activeIdx ? ' is-active' : ''}`}
+                        role="option"
+                        aria-selected={i === activeIdx}
+                        onMouseEnter={() => setActiveIdx(i)}
+                        onMouseDown={() => openResult(r)}
+                      >
+                        <span className="search-spotlight-avatar">
+                          {r.full_name.trim().charAt(0).toUpperCase()}
+                        </span>
+                        <span className="search-spotlight-result-info">
+                          <span className="search-spotlight-result-name">{highlight(r.full_name, spotlightQuery)}</span>
+                          <span className="search-spotlight-result-meta">
+                            <span className="search-spotlight-result-id">{highlight(r.joinee_id, spotlightQuery)}</span>
+                            {r.phone_number && (
+                              <span className="search-spotlight-result-phone">
+                                {highlight(formatPhone(r.phone_number) ?? r.phone_number, spotlightQuery)}
+                              </span>
+                            )}
+                          </span>
+                        </span>
+                        {r.department && (
+                          <span className="search-spotlight-result-dept">{highlight(r.department, spotlightQuery)}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="search-spotlight-empty">
+                    No employees match "<strong>{spotlightQuery}</strong>"
+                  </div>
+                )
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+
+        <div className="topnav-end">
+          {canSearchRoster && (
+            <button
+              ref={searchBtnRef}
+              type="button"
+              className="topnav-search-btn"
+              onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+              aria-label="Search joinees"
+              aria-expanded={searchOpen}
+            >
+              {IC.search}
+            </button>
+          )}
+
+          <NotificationBell />
 
         <div className="topnav-user" ref={menuRef}>
           <button
@@ -362,6 +435,7 @@ export default function Layout() {
             </div>
           )}
         </div>
+        </div>
       </header>
 
       <main className="app-main">
@@ -374,5 +448,19 @@ export default function Layout() {
         </div>
       </main>
     </div>
+  );
+}
+
+function highlight(text: string, needle: string) {
+  const n = needle.trim();
+  if (!n) return text;
+  const idx = text.toLowerCase().indexOf(n.toLowerCase());
+  if (idx < 0) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="search-highlight">{text.slice(idx, idx + n.length)}</mark>
+      {text.slice(idx + n.length)}
+    </>
   );
 }
