@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuthedFetch } from '../../api/useAuthedFetch';
 import { ApiError, API_BASE_URL, openFileInline } from '../../api/client';
 import { formatDate } from '../../lib/format';
+import { useToast, toastError } from '../Toast';
+import { SERVER_PUSH_EVENT } from '../NotificationBell';
 import type { JoineeDocumentRow } from '../../types/onboarding';
 
 const STATUS_COPY: Record<JoineeDocumentRow['status'], { label: string; hint: string }> = {
@@ -41,23 +43,61 @@ export default function DocumentChecklist({
   onParentCompleted: () => void;
 }) {
   const authedFetch = useAuthedFetch();
+  const toast = useToast();
   const [docs, setDocs] = useState<JoineeDocumentRow[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
+  /** What each document's status was the last time this panel read the
+   *  server, so a reload can tell an unchanged row from one HR has just
+   *  ruled on. A ref, not state: the rows render from `docs`, and putting
+   *  the baseline in state would mean re-rendering to record it. */
+  const lastStatus = useRef<Record<string, JoineeDocumentRow['status']> | null>(null);
 
   const load = useCallback(() => {
     authedFetch<JoineeDocumentRow[]>('/joinee-documents/mine')
-      .then(setDocs)
+      .then((next) => {
+        const before = lastStatus.current;
+        // Not on the first read: arriving at a panel where a document is
+        // already approved is not news, it is the state of the world.
+        if (before) {
+          for (const doc of next) {
+            const was = before[doc.requirement_id];
+            if (was === doc.status) continue;
+            if (doc.status === 'approved') {
+              toast({ tone: 'success', title: `${doc.label} approved`, message: 'HR has accepted this document.' });
+            } else if (doc.status === 'rejected') {
+              toast({
+                tone: 'warning',
+                title: `${doc.label} needs a new copy`,
+                message: doc.review_note ?? 'HR asked you to upload it again.',
+              });
+            }
+          }
+        }
+        lastStatus.current = Object.fromEntries(next.map((d) => [d.requirement_id, d.status]));
+        setDocs(next);
+      })
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : 'Could not load your documents'),
       );
-  }, [authedFetch]);
+  }, [authedFetch, toast]);
 
   useEffect(load, [load]);
 
+  /* HR can rule on a document while this panel is open, and the verdict is
+     the one thing here that arrives without the employee doing anything.
+     The bell already knows when the server has news; this re-reads on it so
+     the row updates and load()'s diff raises the toast. */
+  useEffect(() => {
+    const reload = () => load();
+    window.addEventListener(SERVER_PUSH_EVENT, reload);
+    return () => window.removeEventListener(SERVER_PUSH_EVENT, reload);
+  }, [load]);
+
   async function upload(requirementId: string, file: File) {
+    const label = docs?.find((d) => d.requirement_id === requirementId)?.label ?? 'Document';
     setBusyId(requirementId);
     setError(null);
     try {
@@ -84,11 +124,27 @@ export default function DocumentChecklist({
         throw new Error(body.message ?? 'Upload failed');
       }
       const result = (await res.json().catch(() => ({}))) as { taskCompleted?: boolean };
+      // The reload below rewrites the baseline, so the toast is raised here
+      // rather than left to load()'s diff — an upload the person just made
+      // is their own doing, not news from HR, and it is worded that way.
+      toast({
+        tone: 'success',
+        title: `${label} uploaded`,
+        message: 'It is with HR for review.',
+      });
       load();
       onChanged();
       if (result.taskCompleted) onParentCompleted();
     } catch (err) {
+      // Both, not either: the inline line is what you look back at while
+      // picking another file, the toast is what tells you it failed at all
+      // when the row has scrolled out of view.
       setError(err instanceof Error ? err.message : 'Upload failed');
+      toast({
+        tone: 'error',
+        title: `Couldn't upload ${label}`,
+        message: toastError(err, 'The file was not accepted. Try a PDF or image under 10 MB.'),
+      });
     } finally {
       setBusyId(null);
     }
