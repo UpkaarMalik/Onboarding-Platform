@@ -1006,9 +1006,66 @@ export class OnboardingTasksService {
       );
 
       await this.applyCompletionSideEffects(client, task, actorId);
+      await this.notifyAwaitingOtherSide(client, task, actorId, confirmedAtColumn);
 
       return task;
     });
+  }
+
+  /**
+   * One side of a dual-confirm task has signed, and the task is still open
+   * waiting on the other.
+   *
+   * applyCompletionSideEffects returns immediately unless the task is
+   * COMPLETED, which is correct for everything it does — nothing unlocks,
+   * nothing closes — but it also owns the "someone else moved your step"
+   * notification, so the half-confirmed case told nobody anything. The
+   * laptop handover is the clearest example: HR confirms they have handed
+   * the machine over, the task sits waiting on the joinee to confirm they
+   * received it, and the joinee is never told it is their turn.
+   *
+   * Addressed to the side that has NOT signed, because it is a request, not
+   * a receipt.
+   */
+  private async notifyAwaitingOtherSide(
+    queryable: Queryable,
+    task: OnboardingTaskRow,
+    actorId: string,
+    confirmedAtColumn: 'owner_confirmed_at' | 'employee_confirmed_at',
+  ): Promise<void> {
+    if (task.status === 'completed') return;
+
+    if (confirmedAtColumn === 'owner_confirmed_at') {
+      const { rows } = await queryable.query<{ employee_id: string }>(
+        `SELECT user_id AS employee_id FROM onboardings WHERE id = $1`,
+        [task.onboarding_id],
+      );
+      const employeeId = rows[0]?.employee_id;
+      if (!employeeId) return;
+      await this.notifications.notify(
+        employeeId,
+        'task_awaiting_you',
+        `${task.title} is waiting on you`,
+        'The other side has confirmed. Open the step and confirm yours to finish it.',
+        `/start-here?task=${task.id}`,
+        { actorId, client: queryable },
+      );
+      return;
+    }
+
+    // The joinee has confirmed and the owner side has not. A claimed task
+    // has exactly one person to ask; an unclaimed one has only a role, and
+    // that is the same audience the task was raised to in the first place.
+    if (task.owner_user_id) {
+      await this.notifications.notify(
+        task.owner_user_id,
+        'task_awaiting_you',
+        `${task.title} is waiting on you`,
+        'The joinee has confirmed their side.',
+        '/my-tasks',
+        { actorId, client: queryable },
+      );
+    }
   }
 
   /** The phase-2 gate itself: everything that started 'locked' at

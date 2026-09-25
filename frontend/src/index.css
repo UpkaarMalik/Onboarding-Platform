@@ -3669,7 +3669,11 @@ li:hover .checkbox-mark {
   height: 4px;
   background: var(--color-border);
   border-radius: var(--radius-pill);
-  margin: 0 18px 0.9rem;
+  /* The inset is a variable because the fill and the marker have to do
+     arithmetic with it — see the note on nodeLeft() in JourneyTrack.tsx.
+     One number, read from one place. */
+  --journey-inset: 18px;
+  margin: 0 var(--journey-inset) 0.9rem;
 }
 .journey-line-fill {
   position: absolute;
@@ -3835,6 +3839,49 @@ li:hover .checkbox-mark {
   stroke-dasharray: 20;
   stroke-dashoffset: 20;
   animation: doneMarkTick 0.22s var(--ease) 0.24s both;
+}
+/* The burst, on the beat the tick finishes. Each piece flies along its own
+   --a and stops at its own --d, so the group scatters rather than expanding
+   like a ring. transform-box: view-box puts the origin at the mark's centre,
+   which is the point everything is thrown from. */
+.done-mark__spark {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+  opacity: 0;
+  animation: doneSpark 0.66s cubic-bezier(0.16, 0.72, 0.29, 1) 0.44s both;
+}
+/* Three colours in rotation: the completion green it belongs to, and the
+   page's two ambers so the burst is confetti rather than a green splash. */
+.done-mark__spark:nth-child(3n + 1) {
+  fill: var(--color-success);
+}
+.done-mark__spark:nth-child(3n + 2) {
+  fill: var(--color-accent);
+}
+.done-mark__spark:nth-child(3n) {
+  fill: var(--color-accent-dark);
+}
+@keyframes doneSpark {
+  0% {
+    transform: rotate(var(--a)) translateY(-2px) scale(0.4);
+    opacity: 0;
+  }
+  /* Full size almost at once, and visible with it. The first version scaled
+     from 0.2 up to 0.45 — the pieces spent the whole flight at a fraction of
+     their drawn size, which at this mark's scale is under a pixel each, so
+     the burst was there in the DOM and invisible on screen. Confetti is full
+     size while it travels and only tapers as it goes. */
+  14% {
+    transform: rotate(var(--a)) translateY(-3px) scale(1.15);
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(var(--a)) translateY(calc(var(--d) * -1)) scale(0.7);
+    opacity: 0;
+  }
 }
 @keyframes doneMarkRing {
   to {
@@ -4655,12 +4702,14 @@ li:hover .checkbox-mark {
    the gate. */
 .roadmap-card-pill--done .done-mark,
 .roadmap-card-pill--done .done-mark__ring,
-.roadmap-card-pill--done .done-mark__tick {
+.roadmap-card-pill--done .done-mark__tick,
+.roadmap-card-pill--done .done-mark__spark {
   animation-play-state: paused;
 }
 .roadmap-card-pill--done.is-revealed .done-mark,
 .roadmap-card-pill--done.is-revealed .done-mark__ring,
-.roadmap-card-pill--done.is-revealed .done-mark__tick {
+.roadmap-card-pill--done.is-revealed .done-mark__tick,
+.roadmap-card-pill--done.is-revealed .done-mark__spark {
   animation-play-state: running;
 }
 /* Draws as its own card arrives rather than while the card is still
@@ -5039,7 +5088,13 @@ li:hover .checkbox-mark {
   max-height: 8rem;
   transition: max-height 0.28s var(--ease), opacity 0.2s var(--ease);
 }
-.tasks-hero--stuck .tasks-hero-row {
+.tasks-hero--stuck .tasks-hero-row,
+/* A finished onboarding folds the same things away, and for the same
+   reason: the row answers "where am I, and who do I ask", and once the
+   trail is over there is no longer a where. What is left is the sign-off,
+   which is why the hero keeps the shape it takes when it sticks rather
+   than closing up altogether — scrolling then changes nothing about it. */
+.tasks-hero--settled .tasks-hero-row {
   max-height: 0;
   opacity: 0;
 }
@@ -5058,6 +5113,20 @@ li:hover .checkbox-mark {
 .tasks-hero .journey-track {
   margin-top: 0.9rem;
   margin-bottom: 0.2rem;
+}
+/* The top margin was clearance under the greeting, and the greeting has
+   gone. Without this the sign-off sits low in a panel that is mostly air. */
+.tasks-hero--settled .journey-track {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+/* Tighter than the sticky hero's. That padding is sized for a panel with a
+   bar and a line of status in it; this one holds two lines of text, and the
+   leftover space at the bottom was pushing the panel's edge down over the
+   office guide's drawing. */
+.tasks-hero--settled {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
 }
 .tasks-hero .tasks-next {
   margin-top: 0.8rem;
@@ -5223,7 +5292,8 @@ li:hover .checkbox-mark {
    could not show through it. The shell rewrite took that padding away
    (.app-main is `padding: 0 36px` now), so the hero starts flush at the top of
    the page and there is no band left to fill. */
-.tasks-hero--stuck {
+.tasks-hero--stuck,
+.tasks-hero--settled {
   padding-top: 1.1rem;
   padding-bottom: 1.1rem;
   box-shadow: 0 14px 28px -22px rgba(58, 42, 24, 0.55);
@@ -5235,7 +5305,8 @@ li:hover .checkbox-mark {
   max-height: 22rem;
   transition: max-height 0.28s var(--ease), opacity 0.2s var(--ease);
 }
-.tasks-hero--stuck .tasks-hero-greeting {
+.tasks-hero--stuck .tasks-hero-greeting,
+.tasks-hero--settled .tasks-hero-greeting {
   max-height: 0;
   opacity: 0;
 }
@@ -8528,8 +8599,14 @@ li:hover .checkbox-mark {
   /* The pop is pure flourish and goes. Play-state is forced back to running
      so the paused-until-reached gate cannot strand a tick at its first,
      invisible frame for someone who never sees the mark fly. */
-  .roadmap-card-pill--done .done-mark {
+  .roadmap-card-pill--done .done-mark,
+  .done-mark__spark {
     animation: none !important;
+  }
+  /* The confetti is pure flourish; without its animation it must not be left
+     sitting at the mark's centre as eight coloured squares. */
+  .done-mark__spark {
+    display: none;
   }
   .roadmap-card-pill--done .done-mark__ring,
   .roadmap-card-pill--done .done-mark__tick {
@@ -12577,9 +12654,12 @@ li:hover .checkbox-mark {
   font-style: italic;
   font-weight: 600;
   color: var(--color-text);
-  /* Writes itself in from just under the bar, with the overshoot of
-     something arriving rather than something fading up. */
-  animation: journeyFinale 0.62s cubic-bezier(0.22, 1.3, 0.4, 1) both;
+  overflow: hidden;
+  /* Opens the space and writes into it in one move. The height is part of
+     the animation, not a consequence of it — mounting the text at full
+     height and fading it in made the panel snap taller and then the words
+     appear inside the jump. */
+  animation: journeyFinale 0.5s var(--ease) both;
 }
 .journey-finale__title {
   display: block;
@@ -12600,12 +12680,14 @@ li:hover .checkbox-mark {
   line-height: 1.6;
   color: var(--color-muted);
 }
-/* The meter bows out after the words have landed, taking its own height with
-   it so the sign-off settles into the space rather than sitting under a
-   ghost of the bar. max-height, not display, so the hero closes up smoothly
-   instead of jumping. */
+/* The meter leaves the moment the marker lands — no delay, and in step with
+   the greeting above it, so the panel empties in one movement rather than
+   losing its parts one at a time. 380ms is EXIT_MS in JourneyTrack.tsx; the
+   sign-off waits exactly that long, so the two never share the panel.
+   max-height, not display, so the hero closes up smoothly instead of
+   jumping. */
 .journey-track--retired .journey-meter {
-  animation: journeyRetire 0.55s var(--ease) 0.75s both;
+  animation: journeyRetire 0.38s var(--ease) both;
   overflow: hidden;
 }
 @keyframes journeyRetire {
@@ -12613,20 +12695,34 @@ li:hover .checkbox-mark {
     opacity: 1;
     max-height: 80px;
     transform: none;
+    visibility: visible;
   }
   to {
     opacity: 0;
     max-height: 0;
     transform: translate3d(0, -6px, 0);
+    /* Takes the bar out of the tree entirely at the end. A zero-height,
+       zero-opacity meter is still a meter: the marker's ping keeps ticking
+       over inside it forever, and the dots stay reachable to a screen
+       reader. visibility is animatable in steps, so it flips on the last
+       frame rather than at the start. */
+    visibility: hidden;
   }
 }
 @keyframes journeyFinale {
   from {
     opacity: 0;
-    transform: translate3d(0, 10px, 0) scale(0.94);
+    max-height: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+  /* Opacity trails the height a little, so the words arrive in a space that
+     is already open rather than unfolding with it. */
+  40% {
+    opacity: 0;
   }
   to {
     opacity: 1;
+    max-height: 9rem;
     transform: none;
   }
 }
@@ -12640,6 +12736,178 @@ li:hover .checkbox-mark {
   }
   .journey-track--retired .journey-meter {
     animation-duration: 1ms;
-    animation-delay: 0ms;
+  }
+}
+
+/* --- Onboarding send-off (OnboardingSplash.tsx) --------------------------
+   Full-window, over everything including the toasts: it is about to navigate
+   the browser, so nothing behind it is worth competing with. */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(232, 143, 48, 0.22), transparent 62%),
+    rgba(31, 25, 17, 0.5);
+  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  backdrop-filter: blur(10px) saturate(1.1);
+  animation: splashIn 0.45s var(--ease) both;
+}
+.splash__card {
+  position: relative;
+  width: min(34rem, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 2.6rem 2.4rem 2.2rem;
+  text-align: center;
+  border-radius: 26px;
+  background:
+    radial-gradient(ellipse at 18% 8%, rgba(232, 143, 48, 0.14), transparent 58%),
+    var(--glass-strong);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  box-shadow:
+    0 40px 80px -40px rgba(40, 26, 10, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  animation: splashCard 0.55s cubic-bezier(0.22, 1.2, 0.4, 1) 0.06s both;
+}
+/* Position only. The button carries .modal-close as well, which is where
+   its circle, its border and its 90-degree turn on hover come from — the
+   same ✕ as every modal in the app. */
+.splash__close {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+}
+.splash__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border: 1px solid rgba(47, 143, 91, 0.22);
+  border-radius: var(--radius-pill);
+  padding: 0.32rem 0.85rem;
+}
+/* The same italic serif the trail signs off in, so the send-off is plainly
+   the end of the same sentence rather than a different page's voice. */
+.splash__title {
+  margin: 1.1rem 0 0;
+  font-family: var(--font-heading);
+  font-style: italic;
+  font-weight: 600;
+  font-size: clamp(1.9rem, 5vw, 2.5rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+.splash__lede {
+  margin: 0.9rem auto 0;
+  max-width: 40ch;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+.splash__lede--quiet {
+  margin-top: 0.55rem;
+  font-size: 0.88rem;
+  opacity: 0.85;
+}
+.splash__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1.6rem;
+  padding: 0.8rem 1.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--gradient-accent);
+  background-origin: border-box;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  box-shadow: 0 14px 28px -14px rgba(217, 119, 6, 0.75);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
+}
+.splash__cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px -14px rgba(217, 119, 6, 0.85);
+}
+.splash__cta:focus-visible {
+  outline: 2px solid var(--color-accent-dark);
+  outline-offset: 3px;
+}
+.splash__cta-arrow {
+  transition: transform 0.18s var(--ease);
+}
+.splash__cta:hover .splash__cta-arrow {
+  transform: translateX(3px);
+}
+.splash__count {
+  margin: 1.3rem 0 0;
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+/* Tabular figures so the line does not twitch as 10 becomes 9. */
+.splash__count-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--color-accent-dark);
+}
+.splash__track {
+  display: block;
+  width: min(15rem, 100%);
+  height: 3px;
+  margin: 0.7rem auto 0;
+  border-radius: var(--radius-pill);
+  background: rgba(20, 20, 20, 0.09);
+  overflow: hidden;
+}
+.splash__track-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform-origin: left;
+  border-radius: inherit;
+  background: var(--gradient-accent);
+  background-origin: border-box;
+  animation-name: splashCountdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes splashIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes splashCard {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes splashCountdown {
+  to {
+    transform: scaleX(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The bar is the clock made visible, and a countdown you cannot see
+     running is worse than one that moves — it stays. */
+  .splash,
+  .splash__card {
+    animation: none;
   }
 }
