@@ -11,6 +11,7 @@ import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
 import DocumentChecklist from '../components/tasks/DocumentChecklist';
 import { fireConfetti } from '../lib/confetti';
 import EmployeeKnowledgeRail from '../components/EmployeeKnowledgeRail';
+import OnboardingSplash from '../components/OnboardingSplash';
 import { SERVER_PUSH_EVENT } from '../components/NotificationBell';
 import { useToast, toastError } from '../components/Toast';
 import { dueLabel, formatDate } from '../lib/format';
@@ -80,6 +81,22 @@ function progressLine(percent: number, doneCount: number): string {
 export default function EmployeeTasks() {
   const authedFetch = useAuthedFetch();
   const toast = useToast();
+  /**
+   * The onboarding has finished AND the trail has finished saying so, at
+   * which point the hero has nothing left to report: no step in play, no
+   * percentage climbing, no names to chase. It folds down to the sign-off
+   * and stays that way — the same shape it takes when it sticks, so
+   * scrolling changes nothing about it any more.
+   */
+  const [heroSettled, setHeroSettled] = useState(false);
+  /** The send-off, raised when the mark lands at the end of a finished
+   *  trail. Held with a ref alongside the state because the mark can berth
+   *  more than once — a resize re-places it — and the send-off is a thing
+   *  that happens to you once. */
+  const [splashOpen, setSplashOpen] = useState(false);
+  const splashShown = useRef(false);
+  /** Read from inside the trail's callback, which is wired up once. */
+  const allDoneRef = useRef(false);
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -305,8 +322,16 @@ export default function EmployeeTasks() {
     const ro = new ResizeObserver(sync);
     ro.observe(hero);
     if (nav) ro.observe(nav);
-    return () => ro.disconnect();
-  }, [dashboard, heroStuck]);
+    // The hero changes height by TRANSITION when it condenses or settles,
+    // and a transition's last frame is the one that matters here: measure a
+    // frame early and the rail pins to a height the hero no longer has,
+    // which puts the office guide's drawing under the hero's bottom edge.
+    hero.addEventListener('transitionend', sync);
+    return () => {
+      ro.disconnect();
+      hero.removeEventListener('transitionend', sync);
+    };
+  }, [dashboard, heroStuck, heroSettled]);
 
   /** Confetti says something good happened; the toast says WHAT, and stays
    *  long enough to read after the popup it happened in has closed. */
@@ -410,6 +435,7 @@ export default function EmployeeTasks() {
   const percent = totalSteps === 0 ? 0 : Math.round((doneSteps / totalSteps) * 100);
   const remaining = totalSteps - doneSteps;
   const allDone = totalSteps > 0 && remaining === 0;
+  allDoneRef.current = allDone;
 
   /**
    * Where the track's marker and the trail's mark come to REST, which is not
@@ -448,7 +474,12 @@ export default function EmployeeTasks() {
 
       {error && <p className="error-text">{error}</p>}
 
-      <header ref={heroRef} className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}`}>
+      <header
+        ref={heroRef}
+        className={`tasks-hero${heroStuck ? ' tasks-hero--stuck' : ''}${
+          heroSettled ? ' tasks-hero--settled' : ''
+        }`}
+      >
         {/* Count, title and the two names on one line, and all three survive
             the condense. They are what answers "where am I, and who do I
             ask" — the thing someone deep in the trail still wants — and
@@ -503,6 +534,7 @@ export default function EmployeeTasks() {
                 }
               : undefined
           }
+          onSettled={() => setHeroSettled(true)}
         />
 
         {doFirst && (
@@ -537,9 +569,23 @@ export default function EmployeeTasks() {
               steps={roadmapSteps}
               currentId={restingStepId}
               onSelect={openStep}
+              onArrived={() => {
+                // Gated on the page, not on the trail: the trail knows the
+                // mark has berthed, but only this knows whether berthing at
+                // the last step means the whole onboarding is over.
+                if (!allDoneRef.current || splashShown.current) return;
+                splashShown.current = true;
+                setSplashOpen(true);
+              }}
               onLocked={(step, blockedBy) =>
                 toast({
-                  tone: 'info',
+                  // Red, not amber: this is the one toast on the page that
+                  // answers a click by refusing it, and it has to read as a
+                  // refusal at a glance rather than as a tip.
+                  tone: 'error',
+                  // The error tone's own 7s is for a message you may have to
+                  // act on; this one you only have to read.
+                  duration: 4500,
                   title: `${step.title} hasn't opened yet`,
                   message: blockedBy
                     ? `Finish "${blockedBy.title}" first — steps open one at a time.`
@@ -551,6 +597,10 @@ export default function EmployeeTasks() {
           </section>
         )}
       </div>
+
+      {splashOpen && (
+        <OnboardingSplash name={firstName} onDismiss={() => setSplashOpen(false)} />
+      )}
 
       {activeTask && (
         <Modal
