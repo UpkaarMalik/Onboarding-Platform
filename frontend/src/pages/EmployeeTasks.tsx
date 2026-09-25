@@ -12,6 +12,7 @@ import DocumentChecklist from '../components/tasks/DocumentChecklist';
 import { fireConfetti } from '../lib/confetti';
 import EmployeeKnowledgeRail from '../components/EmployeeKnowledgeRail';
 import { SERVER_PUSH_EVENT } from '../components/NotificationBell';
+import { useToast, toastError } from '../components/Toast';
 import { dueLabel, formatDate } from '../lib/format';
 import type { DashboardResponse, PersonRef, TaskRow } from '../types/onboarding';
 
@@ -51,8 +52,34 @@ const HERO_UNCONDENSE_AT = 12;
  * exclude them, so a roadmap built from those would show a journey that starts
  * wherever the employee currently is.
  */
+/**
+ * The line under the greeting.
+ *
+ * Six bands rather than one sentence with a number in it: the same figure
+ * means quite different things at either end of an onboarding, and "27%
+ * complete" on its own reads as a progress bar spelled out rather than as
+ * anything addressed to the person reading it.
+ *
+ * The first two bands are split on the COUNT, not the percentage. A single
+ * finished task is a different moment from several, and what fraction it
+ * happens to be depends only on how many tasks HR wrote — on a short
+ * onboarding one task can be a third of the whole thing.
+ */
+function progressLine(percent: number, doneCount: number): string {
+  if (percent >= 100) return '🎉 Congratulations! Your onboarding is 100% completed. Welcome aboard for real!';
+  if (doneCount === 0) return 'Your journey starts here. Complete your first task to get the ball rolling.';
+  if (percent >= 75)
+    return `Almost there! Your onboarding is ${percent}% completed. Just a few steps left to wrap up.`;
+  if (percent >= 50)
+    return `Great momentum! Your onboarding is ${percent}% completed. You're past the halfway mark, keep it going!`;
+  if (doneCount >= 2)
+    return `Nice start! Your onboarding is ${percent}% completed. You're picking up speed!`;
+  return `You're on your way! Your onboarding is ${percent}% completed. One step at a time.`;
+}
+
 export default function EmployeeTasks() {
   const authedFetch = useAuthedFetch();
+  const toast = useToast();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
@@ -281,24 +308,41 @@ export default function EmployeeTasks() {
     return () => ro.disconnect();
   }, [dashboard, heroStuck]);
 
+  /** Confetti says something good happened; the toast says WHAT, and stays
+   *  long enough to read after the popup it happened in has closed. */
+  function announceDone(title: string) {
+    fireConfetti();
+    toast({
+      tone: 'success',
+      title: `${title} — done`,
+      message: 'Your trail has moved on to the next step.',
+    });
+  }
+
   /** A checklist finished the task for us — same celebration and cleanup as
    *  pressing "Mark done", since a completed task drops out of the actionable
    *  buckets and the open popup would otherwise show stale state. */
   async function finishTaskFromChecklist() {
-    fireConfetti();
+    announceDone(activeTask?.title ?? 'Task');
     setActiveTask(null);
     await loadAll();
   }
 
   async function completeTask(taskId: string) {
     setCompleting(true);
+    const title = activeTask?.title ?? 'Task';
     try {
       await authedFetch(`/onboarding-tasks/${taskId}/complete-as-employee`, { method: 'POST' });
-      fireConfetti();
+      announceDone(title);
       setActiveTask(null);
       await loadAll();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong');
+      toast({
+        tone: 'error',
+        title: `Couldn't complete ${title}`,
+        message: toastError(err, 'Something went wrong. Try again in a moment.'),
+      });
     } finally {
       setCompleting(false);
     }
@@ -367,6 +411,23 @@ export default function EmployeeTasks() {
   const remaining = totalSteps - doneSteps;
   const allDone = totalSteps > 0 && remaining === 0;
 
+  /**
+   * Where the track's marker and the trail's mark come to REST, which is not
+   * the same question as which step is open.
+   *
+   * With every step finished there is no open step, and both of them were
+   * falling back to "none" — which the track reads as index -1 and the trail
+   * reads as berth 0. So the moment the last task was ticked off, the marker
+   * snapped back to step one and the boomerang flew to the top of the trail:
+   * the journey reading as not yet started at the exact moment it finished.
+   * Finished means resting on the LAST step.
+   *
+   * Passing it as the trail's `currentId` cannot mislabel that step as active,
+   * because visualState checks `completed` before it checks the current id.
+   */
+  const restingStepId =
+    currentStepId ?? (allDone ? roadmapSteps[roadmapSteps.length - 1]?.id ?? null : null);
+
   const activeIsDocuments = activeTask?.system_key === 'document_upload';
   const activeHasSubtasks = (activeTask?.subtask_count ?? 0) > 0;
   const activeIsChecklistDriven = activeIsDocuments || activeHasSubtasks;
@@ -394,10 +455,10 @@ export default function EmployeeTasks() {
             folding the names away with the greeting was why they were never
             seen at all. */}
         <div className="tasks-hero-row">
-          <span className="eyebrow">
-            <span className="tasks-eyebrow-dot" />
-            {doneSteps} of {totalSteps} steps done
-          </span>
+          {/* Empty first cell, as on the right: the row is `1fr auto 1fr` and
+              the title is centred on the middle one, so a missing outer cell
+              would slide the title across rather than close up. */}
+          <span aria-hidden="true" />
 
           <h1 className="tasks-title">
             {allDone ? 'You’re all set, ' : 'Your trail, '}
@@ -420,11 +481,7 @@ export default function EmployeeTasks() {
             which is the one part worth trading for trail once the hero
             sticks. */}
         <div className="tasks-hero-greeting">
-          <p className="tasks-lede">
-            {allDone
-              ? 'Every step on your onboarding is complete. Look back through the trail any time.'
-              : `Your onboarding is ${percent}% complete — ${remaining} step${remaining === 1 ? '' : 's'} to go.`}
-          </p>
+          <p className="tasks-lede">{progressLine(percent, doneSteps)}</p>
         </div>
 
         {/* One node per task rather than the five onboarding stages, so the
@@ -437,18 +494,29 @@ export default function EmployeeTasks() {
             label: `${i + 1}. ${s.title}`,
             done: s.status === 'completed',
           }))}
-          currentKey={currentStepId ?? ''}
+          currentKey={restingStepId ?? ''}
+          finale={
+            allDone
+              ? {
+                  title: `You’re all set, ${firstName}.`,
+                  note: 'Every step of your onboarding is behind you — the trail stays here whenever you’d like to look back.',
+                }
+              : undefined
+          }
         />
 
         {doFirst && (
           <div className="tasks-next">
-            <span className="tasks-live-dot" aria-hidden="true" />
-            <span className="tasks-next-text">
-              Up next: <strong>{doFirst.title}</strong>
-              {dueLabel(doFirst.due_date, doFirst.status) && (
-                <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
-              )}
+            <span className="tasks-next-lead">
+              <span className="tasks-live-dot" aria-hidden="true" />
+              <span className="tasks-next-text">
+                Up next: <strong>{doFirst.title}</strong>
+                {dueLabel(doFirst.due_date, doFirst.status) && (
+                  <span className="muted"> · {dueLabel(doFirst.due_date, doFirst.status)}</span>
+                )}
+              </span>
             </span>
+
             <button type="button" className="btn-solid btn-sm" onClick={() => openStep(doFirst.id)}>
               Open
             </button>
@@ -467,8 +535,17 @@ export default function EmployeeTasks() {
           <section className="tasks-trail">
             <TaskRoadmap
               steps={roadmapSteps}
-              currentId={currentStepId}
+              currentId={restingStepId}
               onSelect={openStep}
+              onLocked={(step, blockedBy) =>
+                toast({
+                  tone: 'info',
+                  title: `${step.title} hasn't opened yet`,
+                  message: blockedBy
+                    ? `Finish "${blockedBy.title}" first — steps open one at a time.`
+                    : 'Steps open one at a time, as you finish the one before.',
+                })
+              }
               onVoyage={onVoyage}
             />
           </section>

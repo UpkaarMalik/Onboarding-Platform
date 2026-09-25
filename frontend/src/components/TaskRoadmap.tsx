@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { dueLabel } from '../lib/format';
 import { MARK_BOOMERANG_PATH, MARK_RADIUS } from '../lib/andMark';
 import uploadArt from '../assets/task-upload.png';
@@ -8,6 +8,7 @@ import managerArt from '../assets/task-manager.png';
 import buddyArt from '../assets/task-buddy.png';
 import accessArt from '../assets/task-access.png';
 import BlockerLine, { type TaskBlocker } from './BlockerLine';
+import DoneMark from './DoneMark';
 
 export interface RoadmapItem {
   id: string;
@@ -171,11 +172,16 @@ export default function TaskRoadmap({
   steps,
   currentId,
   onSelect,
+  onLocked,
   onVoyage,
 }: {
   steps: RoadmapItem[];
   currentId: string | null;
   onSelect: (id: string) => void;
+  /** Called when a step that has not opened yet is clicked, with the step
+   *  and the one standing in its way. A locked card used to be inert, which
+   *  answered "why can't I click this?" with nothing at all. */
+  onLocked?: (step: RoadmapItem, blockedBy: RoadmapItem | null) => void;
   /** Called with true when the mark casts off and false when it ties up.
    *  The page around the trail needs to know, because for as long as this is
    *  true the scroll position belongs to the voyage — see the note on the tow
@@ -184,6 +190,18 @@ export default function TaskRoadmap({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [geom, setGeom] = useState<Geometry | null>(null);
+  /**
+   * How far down the trail the mark has got, as a step index.
+   *
+   * A completed step's tick does not draw itself on mount any more — it waits
+   * for the mark to reach that step and then draws, so a trail with five
+   * steps behind it ticks them off one after another in the order they were
+   * finished, in time with the thing flying over them. -1 is "the mark has
+   * not started", which is the correct state for the frame before the voyage
+   * begins: nothing has been reached yet.
+   */
+  const [reached, setReached] = useState(-1);
+  const markReached = useCallback((i: number) => setReached((r) => Math.max(r, i)), []);
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -231,6 +249,7 @@ export default function TaskRoadmap({
         states={states}
         currentIndex={currentIndex}
         onVoyage={onVoyage}
+        onReach={markReached}
       />
 
       {steps.map((step, i) => {
@@ -240,7 +259,15 @@ export default function TaskRoadmap({
         const side: 'left' | 'right' = i % 2 === 0 ? 'left' : 'right';
 
         const card = (
-          <RoadmapCard step={step} state={state} index={i} onSelect={onSelect} final={isFinal} />
+          <RoadmapCard
+            step={step}
+            state={state}
+            index={i}
+            onSelect={onSelect}
+            onLocked={onLocked ? () => onLocked(step, steps[i - 1] ?? null) : undefined}
+            revealed={i <= reached}
+            final={isFinal}
+          />
         );
         const node = (
           <span className={`roadmap-node roadmap-node--${state}${isFinal ? ' roadmap-node--final' : ''}`} data-roadmap-node="">
@@ -391,17 +418,33 @@ function RoadmapTrail({
   states,
   currentIndex,
   onVoyage,
+  onReach,
 }: {
   geom: Geometry | null;
   states: VisualState[];
   currentIndex: number;
   onVoyage?: (sailing: boolean) => void;
+  /** Called with a step's index the moment the mark arrives over it — once
+   *  per step, in order, without the mark stopping. This is what ticks the
+   *  completed steps off one after another instead of all at once. */
+  onReach?: (index: number) => void;
 }) {
   // Mirrored into a ref so the voyage effect can announce itself without
   // taking the callback as a dependency: a parent that re-creates the
   // function would otherwise restart the crossing from t = 0.
   const onVoyageRef = useRef(onVoyage);
   onVoyageRef.current = onVoyage;
+  const onReachRef = useRef(onReach);
+  onReachRef.current = onReach;
+  /** The route's hops, one `d` per pair of adjacent nodes, in the order the
+   *  mark flies them. The effect measures each in turn to learn the arc
+   *  length at which the mark is over each node. */
+  const hopsRef = useRef<string[]>([]);
+  /** Index of the node the route starts from, which the hops count on from. */
+  const legFromRef = useRef(0);
+  /** A path that is never drawn and never even sized — it exists only to be
+   *  handed a `d` and asked how long it is. */
+  const measureRef = useRef<SVGPathElement>(null);
   // Which leg the boat still has to sail. This is held rather than derived,
   // because it depends on where the boat already IS: on the first render it
   // sails the whole route walked so far, and from then on only the leg it has
@@ -467,12 +510,12 @@ function RoadmapTrail({
       // ONE continuous path: a single M followed by curves that each pick up
       // where the last left off. segmentPath emits its own M, which would give
       // the route as many subpaths as it has legs.
+      const hops = legPts.slice(0, -1).map((pt, k) => segmentPath(pt, legPts[k + 1]));
+      hopsRef.current = hops;
+      legFromRef.current = leg.from;
       route =
         `M${legPts[0].x},${legPts[0].y} ` +
-        legPts
-          .slice(0, -1)
-          .map((pt, k) => segmentPath(pt, legPts[k + 1]).replace(/^M[^C]*/, ''))
-          .join(' ');
+        hops.map((d) => d.replace(/^M[^C]*/, '')).join(' ');
     }
   }
 
@@ -636,6 +679,11 @@ function RoadmapTrail({
      *  first time, take the page there too. */
     const moor = () => {
       if (!mooring) return unhook;
+      // Nothing to fly, so nothing to wait for: every step the mark is
+      // already past shows its tick straight away. Without this a reload
+      // that lands the mark at its berth would leave every completed step
+      // blank, waiting for a voyage that is not going to happen.
+      onReachRef.current?.(states.length);
       place(mooring.x, mooring.y);
       spinTo(0);
       setSailing(false);
@@ -658,6 +706,7 @@ function RoadmapTrail({
 
     const end = path.getPointAtLength(len);
     if (reduced) {
+      onReachRef.current?.(states.length);
       place(end.x, end.y);
       spinTo(0);
       setSailing(false);
@@ -689,12 +738,40 @@ function RoadmapTrail({
     let started = 0;
     let raf = 0;
 
+    /**
+     * Where along the route each node sits, as an arc length, paired with the
+     * step index it belongs to.
+     *
+     * Measured hop by hop off a throwaway path rather than by sampling the
+     * route for near-misses: the arc length of a hop is exact and cheap, and
+     * a distance test would fire late on a long curve and twice on a short
+     * one. The first entry is length 0 — the step the mark casts off FROM is
+     * reached the moment it starts, which is what makes the first tick land
+     * with the departure rather than a hop later.
+     */
+    const gates: Array<{ at: number; index: number }> = [{ at: 0, index: legFromRef.current }];
+    const measure = measureRef.current;
+    if (measure) {
+      let acc = 0;
+      hopsRef.current.forEach((d, k) => {
+        measure.setAttribute('d', d);
+        acc += measure.getTotalLength();
+        gates.push({ at: acc, index: legFromRef.current + k + 1 });
+      });
+    }
+    let nextGate = 0;
+
     const tick = (now: number) => {
       if (!started) started = now;
       const t = Math.min(1, (now - started) / dur);
       // ease-in-out
       const eased = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
-      const p = path.getPointAtLength(eased * len);
+      const travelled = eased * len;
+      while (nextGate < gates.length && travelled >= gates[nextGate].at) {
+        onReachRef.current?.(gates[nextGate].index);
+        nextGate++;
+      }
+      const p = path.getPointAtLength(travelled);
       place(p.x, p.y);
       // The spin runs on its own ease — the flick — while the position runs on
       // the travel's. They share only the clock, and both land exactly on 1,
@@ -702,7 +779,12 @@ function RoadmapTrail({
       spinTo(spinEase(t) * 360 * turns);
       follow(p.y);
       if (t < 1) raf = requestAnimationFrame(tick);
-      else setSailing(false);
+      else {
+        // The last gate can sit a rounding error past the measured total, so
+        // arrival is settled explicitly rather than left to the comparison.
+        while (nextGate < gates.length) onReachRef.current?.(gates[nextGate++].index);
+        setSailing(false);
+      }
     };
 
     const first = path.getPointAtLength(0);
@@ -725,7 +807,7 @@ function RoadmapTrail({
     };
     // mooring is a fresh object every render, so its coordinates are the deps:
     // a resize has to re-place a boat that is already tied up.
-  }, [route, reduced, mooring?.x, mooring?.y]);
+  }, [route, reduced, mooring?.x, mooring?.y, states.length]);
 
   if (!ready || !geom) return null;
 
@@ -759,6 +841,9 @@ function RoadmapTrail({
 
       {/* The route: never painted, only measured. */}
       {route && <path ref={routeRef} className="roadmap-route" d={route} />}
+      {/* A scratch path, handed one hop at a time so the voyage can learn
+          where along the route each step sits. Never has a d of its own. */}
+      <path ref={measureRef} className="roadmap-route" />
 
       {/* Moored or under way, the boat is always on the trail, and its position
           comes from the effect above rather than from an attribute here — one
@@ -787,8 +872,8 @@ function stepArt(step: RoadmapItem): { src: string; width: number } | null {
   // word the manager rule looks for, but keeping the narrower match first
   // means a future "buddy's manager" style title cannot be caught by the
   // wrong one.
-  if (t.includes('buddy')) return { src: buddyArt, width: 96 };
-  if (t.includes('manager') || t.includes('reporting')) return { src: managerArt, width: 118 };
+  if (t.includes('buddy')) return { src: buddyArt, width: 118 };
+  if (t.includes('manager') || t.includes('reporting')) return { src: managerArt, width: 100 };
   if (t.includes('entry') || t.includes('exit') || t.includes('access')) {
     return { src: accessArt, width: 110 };
   }
@@ -808,19 +893,29 @@ function RoadmapCard({
   state,
   index,
   onSelect,
+  onLocked,
+  revealed,
   final,
 }: {
   step: RoadmapItem;
   state: VisualState;
   index: number;
   onSelect: (id: string) => void;
+  onLocked?: () => void;
+  /** The mark has reached this step, so its tick may draw. */
+  revealed?: boolean;
   final?: boolean;
 }) {
   // A locked step is one the employee hasn't reached yet: steps open one at a
   // time, so inviting a click on a later one would promise something the
   // journey doesn't allow.
   const clickable = state !== 'upcoming';
-  const Tag = clickable ? 'button' : 'div';
+  // It still takes the click, though — and answers it. A card that does
+  // nothing at all when you press it reads as broken, not as locked, and the
+  // lock line under it is easy to miss on a card you have already decided to
+  // open. The cursor says it won't open; the toast says what will open it.
+  const pressable = clickable || !!onLocked;
+  const Tag = pressable ? 'button' : 'div';
 
   const total = step.subtask_count ?? 0;
   const done = step.subtask_completed_count ?? 0;
@@ -829,12 +924,12 @@ function RoadmapCard({
 
   return (
     <Tag
-      type={clickable ? 'button' : undefined}
+      type={pressable ? 'button' : undefined}
       className={`roadmap-card roadmap-card--${state}${final ? ' roadmap-card--final' : ''}${art ? ' roadmap-card--art' : ''}`}
       /* The art's width drives the card's padding on that side, so one
          number keeps the picture and the space it needs in step. */
       style={art ? ({ ['--art-w' as string]: `${art.width}px` } as React.CSSProperties) : undefined}
-      onClick={clickable ? () => onSelect(step.id) : undefined}
+      onClick={clickable ? () => onSelect(step.id) : onLocked}
     >
       {/* Decorative: empty alt and aria-hidden, the title says what the step
           is. Sits on the card's OUTER edge — the side the text is not
@@ -846,9 +941,24 @@ function RoadmapCard({
           Step {String(index + 1).padStart(2, '0')}
           {state === 'active' && <span className="roadmap-card-step-live"> · Active</span>}
         </span>
-        <span className={`roadmap-card-pill roadmap-card-pill--${state}`}>
-          {state === 'done' && <CheckIcon />}
-          {final && state !== 'done' ? 'Goal checkpoint' : STATE_LABEL[state]}
+        {/* Done is the mark on its own — the word "Done" next to a tick says
+            the same thing twice, and the tick is the half people read. The
+            label stays for screen readers, which get nothing from the SVG. */}
+        <span
+          className={`roadmap-card-pill roadmap-card-pill--${state}${
+            state === 'done' && revealed ? ' is-revealed' : ''
+          }`}
+        >
+          {state === 'done' ? (
+            <>
+              <DoneMark />
+              <span className="visually-hidden">{STATE_LABEL.done}</span>
+            </>
+          ) : final ? (
+            'Goal checkpoint'
+          ) : (
+            STATE_LABEL[state]
+          )}
         </span>
       </div>
 
@@ -862,13 +972,6 @@ function RoadmapCard({
         <span className={`roadmap-card-due${state !== 'done' && step.status !== 'locked' ? '' : ' is-quiet'}`}>
           {state === 'done' ? 'Completed' : dueLabel(step.due_date, step.status)}
         </span>
-
-        {isDocuments && (
-          <span className="roadmap-chip roadmap-chip--docs">
-            <DocIcon />
-            Paperwork
-          </span>
-        )}
 
         {total > 0 && (
           <span className="roadmap-chip">
@@ -900,19 +1003,6 @@ function RoadmapCard({
         </span>
       )}
     </Tag>
-  );
-}
-
-function DocIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path
-        d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M14 2v6h6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
