@@ -8,9 +8,11 @@ import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
 import LoadError from '../components/LoadError';
 import HrOverview, { CreateJoineeWizard, CustomSelect, type RosterFilter } from './HrOverview';
+import { NumberTicker } from '../components/ui/number-ticker';
 import { ROSTER_PARAMS } from '../lib/rosterQuery';
 import { deptArt } from '../lib/deptArt';
 import badgeLanyard from '../assets/badge-lanyard.png';
+import noUpcomingJoinees from '../assets/no-upcoming-joinees.png';
 import PageHero from '../components/ui/PageHero';
 import ActivityFeed from '../components/ActivityFeed';
 import DepartmentDonut from '../components/DepartmentDonut';
@@ -447,7 +449,14 @@ export default function HrDashboard() {
               </div>
             </div>
             {pipelineRows.length === 0 ? (
-              <p className="home-events-empty">No joinees are due to start right now.</p>
+              <div className="home-events-empty home-events-empty--illustration">
+                <img
+                  src={noUpcomingJoinees}
+                  alt="No upcoming joinees"
+                  className="home-events-empty-art"
+                />
+                <p>No joinees are due to start right now.</p>
+              </div>
             ) : (
               <EventsRail rows={pipelineRows} slots={slots} onPick={(id) => setProfileUserId(id)} />
             )}
@@ -506,7 +515,7 @@ export default function HrDashboard() {
                   <span className="home-card-fx home-card-line" aria-hidden="true" />
                   <span className={`home-card-icon ${c.tone}`} aria-hidden="true">{c.icon}</span>
                   <span className="home-card-text">
-                    <span className="home-card-value">{c.value}</span>
+                    <span className="home-card-value"><NumberTicker value={c.value} className="home-card-value-ticker" /></span>
                     <span className="home-card-label">{c.label}</span>
                     <span className="home-card-sub">{c.sub}</span>
                   </span>

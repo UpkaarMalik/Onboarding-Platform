@@ -67,7 +67,7 @@ interface Notification {
    with a deeper amber wash down the right side for depth. Built from plain
    shapes; the colours are the ones .topnav-avatar and the CTAs already use. */
 const BELL = (
-  <svg className="topnav-bell-icon" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+  <svg className="topnav-bell-icon" width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">
     <defs>
       <linearGradient id="bell-fill" x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stopColor="#fbbf24" />
