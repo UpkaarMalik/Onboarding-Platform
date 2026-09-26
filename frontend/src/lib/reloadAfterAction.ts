@@ -63,6 +63,18 @@ const NO_RELOAD = [
   // A remount resets that ref to the start of the trail, and the boomerang
   // replayed the whole journey from step one on every completion.
   '/complete-as-employee',
+  // Ticking one item of a task's checklist, which is the same action as
+  // /complete-as-employee above at a smaller grain and costs strictly more
+  // when reloaded: the checklist lives inside an open popup, so a reload
+  // does not merely reset the boomerang's leg — it shuts the popup the
+  // person is working through, after every single tick.
+  //
+  // This sat unnoticed because no seeded template had subtasks until
+  // migration 0034, so nothing ever called these endpoints.
+  //
+  // SubtaskCards reloads its own list and calls onChanged() straight after,
+  // so nothing here goes stale.
+  '/subtasks/',
 ];
 
 export function shouldReloadFor(path: string): boolean {

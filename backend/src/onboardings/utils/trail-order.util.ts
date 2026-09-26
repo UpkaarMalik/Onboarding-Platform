@@ -75,11 +75,19 @@ export function orderForTrail<T extends TrailTask>(tasks: T[]): T[] {
  *                                           JoineeDocumentsService).
  *   Stage 1  Read the docs                — both open together, and the
  *            Company email & laptop         handover is HR's to close.
- *   Stage 2  Everything else              — one at a time, in band order.
+ *   Stage 2  Everything else              — all open at once, in any order.
  *
- * Stage 1 is the only parallel one. The employee can read while IT sorts the
- * hardware; neither waits on the other. Everywhere else the gate is
- * sequential, because "step by step" is what the rest of the journey is.
+ * Only the first stage is a true gate now. The paperwork genuinely blocks
+ * everything — there is no company email to install anything against until it
+ * clears — and the reading and the handover are a pair that do not wait on
+ * each other.
+ *
+ * Past the handover the order stopped being ours to impose. Installing an
+ * editor, meeting a manager and getting a door badge have no dependency
+ * between them; sequencing them only decided which one somebody was allowed
+ * to do on an afternoon when another was the one actually available. Stage 2
+ * is therefore parallel: the trail still NUMBERS the steps in band order, so
+ * it reads as a journey, but every one of them is open.
  *
  * This is the ONLY definition of which tasks are open. The trail renders from
  * it and the completion endpoints refuse from it, so the UI can never offer a
@@ -89,7 +97,7 @@ export function orderForTrail<T extends TrailTask>(tasks: T[]): T[] {
 const BAND_STAGE = [0, 1, 1, 2, 2] as const;
 
 /** The stages where every unfinished task is open at once, not just the first. */
-const PARALLEL_STAGES = new Set<number>([1]);
+const PARALLEL_STAGES = new Set<number>([1, 2]);
 
 function stageOf(task: TrailTask): number {
   return BAND_STAGE[trailBand(task)] ?? BAND_STAGE[BAND_STAGE.length - 1];

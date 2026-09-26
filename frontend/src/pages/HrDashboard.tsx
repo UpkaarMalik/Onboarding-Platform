@@ -7,7 +7,7 @@ import { formatDate, todayIso, daysAgoIso, greeting } from '../lib/format';
 import Modal from '../components/Modal';
 import Reveal from '../components/Reveal';
 import LoadError from '../components/LoadError';
-import HrOverview, { CreateJoineeWizard, CustomSelect, type RosterFilter } from './HrOverview';
+import HrOverview, { CreateJoineeWizard, CustomSelect, cleanFullName, type RosterFilter } from './HrOverview';
 import { NumberTicker } from '../components/ui/number-ticker';
 import { ROSTER_PARAMS } from '../lib/rosterQuery';
 import { deptArt } from '../lib/deptArt';
@@ -1138,7 +1138,7 @@ function AddJoinerModal({
       <form onSubmit={submit}>
         <label>
           Full name
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+          <input value={fullName} onChange={(e) => setFullName(cleanFullName(e.target.value))} required />
         </label>
         <label>
           Mobile number
@@ -1283,7 +1283,7 @@ function AddTaskOwnerModal({
       <form onSubmit={submit}>
         <label>
           Full name
-          <input value={fullName} onChange={(e) => setFullName(e.target.value)} required />
+          <input value={fullName} onChange={(e) => setFullName(cleanFullName(e.target.value))} required />
         </label>
         <label>
           Phone number

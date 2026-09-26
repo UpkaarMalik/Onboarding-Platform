@@ -7,8 +7,10 @@ import Modal from '../components/Modal';
 import JourneyTrack from '../components/JourneyTrack';
 import TaskRoadmap, { type RoadmapItem } from '../components/TaskRoadmap';
 import BlockerLine from '../components/BlockerLine';
-import SubtaskChecklist from '../components/tasks/SubtaskChecklist';
+import SubtaskCards from '../components/tasks/SubtaskCards';
 import DocumentChecklist from '../components/tasks/DocumentChecklist';
+import TaskGuideView from '../components/tasks/TaskGuide';
+import { taskGuideFor } from '../data/taskGuides';
 import { fireConfetti } from '../lib/confetti';
 import EmployeeKnowledgeRail from '../components/EmployeeKnowledgeRail';
 import OnboardingSplash from '../components/OnboardingSplash';
@@ -164,6 +166,37 @@ export default function EmployeeTasks() {
     const reload = () => void loadAll();
     window.addEventListener(SERVER_PUSH_EVENT, reload);
     return () => window.removeEventListener(SERVER_PUSH_EVENT, reload);
+  }, [loadAll]);
+
+  /**
+   * The same re-read, on the window regaining focus.
+   *
+   * SERVER_PUSH_EVENT above is the instant path, but it only reaches this
+   * page when the notification bell re-reads and finds a newer row — which
+   * happens on its stream ping, its 30s poll, or a hidden→visible flip. The
+   * case none of those cover is two windows open SIDE BY SIDE: approve a
+   * document in one, watch the trail in the other, and the trail's window
+   * never goes hidden, so nothing fires until the poll. That is the
+   * "HR approved but the mark didn't sail until I refreshed" report — the
+   * step had completed on the server, but this page was still holding the
+   * pre-approval state, so currentIndex never advanced and the mark never
+   * cast off.
+   *
+   * `focus` fires whenever the window comes back to the front, hidden or not,
+   * so returning to the trail always re-reads. Throttled so a flurry of
+   * focus events (some browsers fire several) is one fetch, and loadAll is a
+   * plain GET so a redundant one is cheap either way.
+   */
+  useEffect(() => {
+    let last = 0;
+    const onFocus = () => {
+      const now = Date.now();
+      if (now - last < 1500) return;
+      last = now;
+      void loadAll();
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, [loadAll]);
 
   /**
@@ -457,6 +490,10 @@ export default function EmployeeTasks() {
   const activeIsDocuments = activeTask?.system_key === 'document_upload';
   const activeHasSubtasks = (activeTask?.subtask_count ?? 0) > 0;
   const activeIsChecklistDriven = activeIsDocuments || activeHasSubtasks;
+  /* The written guide for this task, when there is one. Documents are the one
+     exception: that popup is already a full upload grid, and a guide above it
+     would push the thing the person came to do below the fold. */
+  const activeGuide = activeTask && !activeIsDocuments ? taskGuideFor(activeTask.title) : null;
   /* Closed by someone other than the joinee — they can see it and see what it
      is waiting on, but they cannot tick it. */
   const activeIsOwnerClosed = activeTask?.completion_mode === 'owner';
@@ -587,9 +624,13 @@ export default function EmployeeTasks() {
                   // act on; this one you only have to read.
                   duration: 4500,
                   title: `${step.title} hasn't opened yet`,
+                  /* No longer "one at a time": everything past the laptop
+                     handover opens together. What is still gated is the
+                     paperwork and the handover, so the message names the
+                     thing in the way rather than describing a sequence. */
                   message: blockedBy
-                    ? `Finish "${blockedBy.title}" first — steps open one at a time.`
-                    : 'Steps open one at a time, as you finish the one before.',
+                    ? `Finish "${blockedBy.title}" first — the rest opens up after that.`
+                    : 'This opens once the steps before it are done.',
                 })
               }
               onVoyage={onVoyage}
@@ -605,7 +646,9 @@ export default function EmployeeTasks() {
       {activeTask && (
         <Modal
           title={activeTask.title}
-          size={activeIsChecklistDriven ? 'xl' : 'default'}
+          /* A guide needs more than the 420px default — its steps wrap to
+             three lines each at that width and the download cards stack. */
+          size={activeIsChecklistDriven ? 'xl' : activeGuide ? 'wide' : 'default'}
           busy={checklistBusy || completing}
           subtitle={
             activeTask.status === 'completed'
@@ -648,7 +691,12 @@ export default function EmployeeTasks() {
             </>
           }
         >
-          {activeTask.description && <p className="modal-lede">{activeTask.description}</p>}
+          {/* The guide opens with its own summary, which says what the
+              description says and then some — printing both is the same
+              sentence twice. */}
+          {!activeGuide && activeTask.description && (
+            <p className="modal-lede">{activeTask.description}</p>
+          )}
           {/* Before the detail grid: if this task is stuck, that is the
               answer to why the popup was opened at all. */}
           {activeTask.blocker && <BlockerLine blocker={activeTask.blocker} />}
@@ -680,6 +728,8 @@ export default function EmployeeTasks() {
             )}
           </dl>
 
+          {activeGuide && <TaskGuideView guide={activeGuide} />}
+
           {activeIsDocuments ? (
             <DocumentChecklist
               onChanged={() => {
@@ -690,7 +740,7 @@ export default function EmployeeTasks() {
             />
           ) : (
             activeHasSubtasks && (
-              <SubtaskChecklist
+              <SubtaskCards
                 taskId={activeTask.id}
                 onChanged={() => void loadAll()}
                 onParentCompleted={finishTaskFromChecklist}

@@ -7,6 +7,7 @@ import laptopArt from '../assets/task-laptop.png';
 import managerArt from '../assets/task-manager.png';
 import buddyArt from '../assets/task-buddy.png';
 import accessArt from '../assets/task-access.png';
+import installArt from '../assets/task-install.png';
 import BlockerLine, { type TaskBlocker } from './BlockerLine';
 import DoneMark from './DoneMark';
 
@@ -897,6 +898,9 @@ function stepArt(step: RoadmapItem): { src: string; width: number } | null {
   // the folder is, so they need more pixels to read at the same visual size.
   if (t.includes('laptop') || t.includes('macbook')) return { src: laptopArt, width: 112 };
   if (t.includes('read the doc') || t.includes('handbook')) return { src: docsArt, width: 104 };
+  // After the laptop rule, so "Company email & laptop handover" keeps its own
+  // drawing rather than being claimed by a looser word.
+  if (t.includes('install')) return { src: installArt, width: 104 };
   // Buddy before manager: "Meet your onboarding buddy" contains neither
   // word the manager rule looks for, but keeping the narrower match first
   // means a future "buddy's manager" style title cannot be caught by the

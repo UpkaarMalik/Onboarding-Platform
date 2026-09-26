@@ -4516,6 +4516,789 @@ li:hover .checkbox-mark {
 }
 
 /* ============================================================
+   Task guide — the written body of a task popup
+   ============================================================
+   Everything below renders data/taskGuides.ts. The popup used to be a
+   sentence and a four-cell detail grid, which told someone a task existed
+   without telling them how to do it. */
+.task-guide {
+  margin-top: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+}
+.task-guide__summary {
+  margin: 0;
+  font-size: 0.97rem;
+  line-height: 1.65;
+  color: var(--color-text);
+  /* The amber rule is what stops this reading as just a first paragraph. */
+  padding-left: 0.9rem;
+  border-left: 3px solid var(--color-accent);
+}
+/* A bare `section` picks up the global card treatment (white, bordered,
+   padded — see the `section, .stat-tile, …` rule). Inside a popup that is
+   already a card, that nests a box in a box for every band. Neutralised here
+   rather than by switching the element to a div, so the bands keep their
+   semantics and the override is visible to whoever reads this next. */
+.task-guide__section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* The downloads band is the exception: it earns a surface because it is a
+   set of targets rather than prose. */
+.task-guide__section--panel {
+  padding: 0.95rem 1rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface-alt);
+}
+.task-guide__heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.task-guide__heading svg {
+  width: 15px;
+  height: 15px;
+  color: var(--color-accent);
+  flex-shrink: 0;
+}
+
+/* --- Steps --------------------------------------------------------- */
+.task-guide__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.task-guide__step {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.85rem;
+  padding: 0.6rem 0.2rem 0.75rem 0;
+  animation: fadeInUp 0.32s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+/* The rail joining one number to the next, drawn from the number's own
+   column so it stays aligned whatever the step's text does. Not on the last
+   step: a line leaving the final number implies a step that isn't there. */
+.task-guide__step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 2.1rem;
+  bottom: -0.15rem;
+  width: 2px;
+  border-radius: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--color-border),
+    rgba(236, 227, 211, 0.25)
+  );
+}
+.task-guide__step-num {
+  position: relative;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--gradient-accent);
+  box-shadow: 0 3px 8px -2px rgba(226, 125, 48, 0.5);
+  flex-shrink: 0;
+}
+.task-guide__step-body {
+  min-width: 0;
+  padding-top: 0.15rem;
+}
+.task-guide__step-title {
+  display: block;
+  font-size: 0.93rem;
+  font-weight: 650;
+  line-height: 1.4;
+  color: var(--color-text);
+}
+.task-guide__step-detail {
+  margin: 0.3rem 0 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--color-muted);
+}
+
+/* --- Download links ------------------------------------------------ */
+.task-guide__links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.6rem;
+}
+.task-guide__link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.8rem 0.7rem 0.95rem;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.18s var(--ease), border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+.task-guide__link:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-accent);
+  box-shadow: 0 10px 22px -12px rgba(226, 125, 48, 0.55);
+}
+.task-guide__link-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.task-guide__link-text strong {
+  font-size: 0.88rem;
+  font-weight: 650;
+}
+.task-guide__link-note {
+  font-size: 0.74rem;
+  color: var(--color-muted);
+}
+.task-guide__link-arrow {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--color-accent);
+  background: var(--color-surface-alt);
+  transition: background 0.18s var(--ease), color 0.18s var(--ease);
+}
+.task-guide__link-arrow svg {
+  width: 14px;
+  height: 14px;
+}
+.task-guide__link:hover .task-guide__link-arrow {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+/* --- Closing tip ---------------------------------------------------- */
+.task-guide__tip {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 14px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+}
+.task-guide__tip p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--color-text);
+}
+.task-guide__tip-mark {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+.task-guide__tip-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-guide__step {
+    animation: none;
+  }
+}
+
+/* ============================================================
+   Profile — the signed-in person's own record
+   ============================================================
+   Scoped under .profile-me throughout, and NOT under .profile-page: that
+   class belongs to HR's EmployeeProfileModal, whose own block further down
+   this file redefines .profile-page, .profile-avatar and .profile-grid.
+   Sharing the name meant the later block quietly won — this page was being
+   laid out by the drawer's rules. The root class here is its own, and the
+   two selectors that still collide are qualified by it.
+
+   Centred down the middle: one person's record is a short document, not a
+   dashboard, and a 54rem column pinned to the left of a wide window reads
+   as a page that failed to load the rest of itself. */
+.profile-me {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 54rem;
+  margin-inline: auto;
+  padding-top: var(--space-2);
+  text-align: center;
+}
+/* The name card carries the least information per pixel on the page, so it
+   is the one that gives room back: the avatar, the padding and the gaps are
+   all smaller than they were. That is what buys the whole record a single
+   screen — four cards you scroll through is four cards you compare from
+   memory. */
+.profile-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background:
+    radial-gradient(420px 220px at 50% 0%, rgba(240, 166, 83, 0.2), transparent 70%),
+    var(--panel-warm);
+  box-shadow: var(--pane-shadow);
+}
+.profile-me .profile-avatar {
+  flex-shrink: 0;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--gradient-accent);
+  box-shadow: 0 10px 22px -10px rgba(217, 119, 6, 0.7);
+}
+.profile-hero-text {
+  min-width: 0;
+}
+.profile-hero-text h1 {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+/* The chip, the joinee id and the department are three separate facts, so
+   they get room to read as three: 0.5rem ran them together into one string.
+   The dot between the last two is a hairline divider, not punctuation. */
+.profile-hero-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+.profile-meta-dot {
+  color: var(--color-muted-soft, #b9ab99);
+  /* Pulls the dot to the midpoint of the 0.75rem gaps either side of it,
+     so it divides the two facts instead of belonging to one of them. */
+  margin: 0 -0.3rem;
+}
+.profile-chip {
+  padding: 0.15rem 0.6rem;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-accent-dark);
+}
+
+.profile-card {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: var(--color-surface);
+  box-shadow: 0 2px 10px -8px rgba(26, 22, 17, 0.3);
+}
+.profile-card h2 {
+  margin: 0 0 var(--space-2);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  font-family: var(--font-body);
+}
+/* 150px, not 190: both detail cards hold exactly four pairs, and at 190 the
+   fourth wrapped onto a row of its own — two near-empty rows were most of
+   what made this page taller than the window. */
+.profile-me .profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+}
+/* Each pair on its own tile. Stated here rather than inherited: HR's block
+   further down sets exactly this on .profile-grid > div, and this page was
+   picking it up by accident — it looks right, so it is written down. */
+.profile-me .profile-grid > div {
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--color-surface-alt);
+}
+.profile-me .profile-grid dt {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.profile-me .profile-grid dd {
+  margin: 0.25rem 0 0;
+  font-size: 0.95rem;
+  /* Long values (a personal email) wrap inside their own column instead of
+     widening it and pulling the row off centre. */
+  overflow-wrap: anywhere;
+}
+
+/* --- Onboarding progress ------------------------------------------- */
+.profile-progress-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.profile-progress-head h2 {
+  margin: 0;
+}
+.profile-progress-count {
+  font-size: 1.1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent-dark);
+}
+.profile-progress-count .muted {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.profile-track {
+  display: block;
+  height: 8px;
+  margin: 0.55rem 0 0;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+.profile-track-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gradient-accent);
+  transition: width 0.5s var(--ease);
+}
+.profile-progress-note {
+  margin: 0.45rem 0 0;
+  font-size: 0.83rem;
+}
+
+/* --- The edit form -------------------------------------------------- */
+/* Narrower than the card and centred in it: two short fields stretched the
+   full width of a 54rem card look like a form that is missing most of
+   itself, and they no longer line up with the values they replace. */
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 24rem;
+  margin-inline: auto;
+  text-align: left;
+}
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.profile-field > span:first-child {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.profile-field input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+.profile-field input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(232, 143, 48, 0.18);
+}
+/* The +91 sits inside the field's border so the prefix and the digits
+   read as one control rather than as a label beside a box. */
+.profile-phone-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.profile-phone-input:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(232, 143, 48, 0.18);
+}
+.profile-phone-prefix {
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--color-muted);
+}
+.profile-phone-input input {
+  border: 0;
+  border-radius: 0 12px 12px 0;
+  padding-left: 0;
+  letter-spacing: 0.04em;
+}
+.profile-phone-input input:focus {
+  box-shadow: none;
+}
+.profile-form-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.profile-hr-note {
+  margin-top: var(--space-3);
+}
+
+/* ============================================================
+   Subtask cards — a task's checklist, one card per item
+   ============================================================
+   Used by the install task and the reading task, where each item is a small
+   job with its own instructions rather than a line you tick. */
+.subcards {
+  margin-top: 1.4rem;
+}
+.subcards-list {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.subcard {
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  overflow: hidden;
+  transition: border-color 0.18s var(--ease), box-shadow 0.18s var(--ease),
+    background 0.18s var(--ease);
+  animation: fadeInUp 0.3s var(--ease) both;
+  animation-delay: calc(var(--row, 0) * 45ms);
+}
+.subcard:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 10px 22px -14px rgba(226, 125, 48, 0.5);
+}
+.subcard.is-open {
+  border-color: var(--color-accent);
+  box-shadow: 0 14px 30px -18px rgba(226, 125, 48, 0.55);
+}
+.subcard.is-done {
+  background: #e4f0eacc;
+  border-color: #a9d6bf;
+}
+.subcard.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.subcard-face {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+}
+
+/* --- Status marker (was the checkbox) ------------------------------
+   Reflects state only; completing is the action button on the right. Shows
+   the item's icon while pending, a filled check once done. */
+.subcard-status {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+.subcard-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--color-surface-alt);
+  font-size: 1.15rem;
+}
+.subcard-status.is-done {
+  border-radius: 11px;
+  background: var(--color-success);
+  color: #fff;
+}
+.subcard-status.is-done svg {
+  width: 18px;
+  height: 18px;
+}
+.subcard.is-done .subcard-icon {
+  background: rgba(255, 255, 255, 0.7);
+}
+.subcard-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+.subcard-title {
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--color-text);
+}
+.subcard.is-done .subcard-title {
+  color: var(--color-success-ink);
+}
+.subcard-desc {
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--color-muted);
+}
+.subcard-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--color-accent-dark);
+  cursor: pointer;
+  transition: background 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.subcard-toggle:hover {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+}
+.subcard-toggle svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s var(--ease);
+}
+.subcard.is-open .subcard-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* --- The completion action (was the checkbox) ----------------------
+   The primary way to complete a card now, sitting beside How. Amber solid so
+   it reads as the thing to do; the quiz variant is a touch louder because it
+   opens a whole step. */
+.subcard-action {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: var(--gradient-accent);
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 6px 14px -8px rgba(217, 119, 6, 0.75);
+  transition: transform 0.15s var(--ease), box-shadow 0.15s var(--ease), background 0.15s var(--ease);
+}
+.subcard-action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px -8px rgba(217, 119, 6, 0.85);
+}
+.subcard-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* Done: quiet, outlined, green — a confirmation and an undo, not a call to
+   action any more. */
+.subcard-action.is-done {
+  background: none;
+  color: var(--color-success-ink, #1f7a4d);
+  border-color: rgba(47, 143, 91, 0.4);
+  box-shadow: none;
+}
+.subcard-action.is-done:hover:not(:disabled) {
+  transform: none;
+  background: var(--color-success-bg, #e9f6ee);
+}
+.subcard-action.is-done svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* --- What opens underneath ------------------------------------------ */
+.subcard-body {
+  padding: 0 0.9rem 0.95rem 3.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  animation: subcardOpen 0.22s var(--ease) both;
+}
+@keyframes subcardOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.subcard-summary {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--color-muted);
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--color-accent);
+}
+.subcard-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.subcard-steps li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.6rem;
+  align-items: start;
+}
+.subcard-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--gradient-accent);
+}
+.subcard-steps li > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.subcard-steps strong {
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+.subcard-steps li span span {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+.subcard-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.85rem;
+  transition: border-color 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.subcard-link:hover {
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+.subcard-link > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.subcard-link strong {
+  font-weight: 650;
+}
+.subcard-link-note {
+  font-size: 0.73rem;
+  color: var(--color-muted);
+}
+.subcard-link svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+/* The one that goes to a page we own reads as the primary action, because
+   for a policy card it is the whole point of opening the card. */
+.subcard-link--internal {
+  justify-content: flex-start;
+  gap: 0.4rem;
+  font-weight: 650;
+  color: #fff;
+  background: var(--gradient-accent);
+  border-color: transparent;
+}
+.subcard-link--internal svg {
+  color: #fff;
+}
+.subcard-tip {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .subcard,
+  .subcard-body {
+    animation: none;
+  }
+}
+
+/* ============================================================
    The serpentine task trail
    ============================================================ */
 .roadmap {
@@ -4723,9 +5506,11 @@ li:hover .checkbox-mark {
 }
 /* Green, and enough of it to read as done at a glance from across the trail —
    the old tint was a 0.46-alpha wash that was indistinguishable from the
-   plain card beside it. Opaque like the base card, for the same reason. */
+   plain card beside it. One flat tone rather than a ramp: the gradient ran
+   from #e9f6ee to #d6eee1, so a card's top-left and bottom-right read as two
+   different greens and no two cards on the trail matched each other. */
 .roadmap-card--done {
-  background: linear-gradient(115deg, #e9f6ee 0%, #d6eee1 100%);
+  background: #e4f0eacc;
   border-color: #a9d6bf;
 }
 .roadmap-card--done .roadmap-card-title {
@@ -5209,16 +5994,37 @@ li:hover .checkbox-mark {
   /* Full width, matching the trail block below it. The progress panel used to
      be capped at 34rem, which left it visibly narrower than the journey it
      described. */
-  /* Its own amber glow, over an OPAQUE base rather than glass. As a pane it
-     sat still while the trail scrolled under it, and its backdrop-filter
-     sampled whatever passed beneath — the completed cards are green, so a
-     green cloud drifted across the bar on every scroll. Nothing to sample
-     now; the glow stays, the reflection goes. */
+  /* Glass: its own amber glow over a translucent twin of --panel-warm, so the
+     white-into-orange ramp survives at lower alpha.
+
+     This panel was opaque for a reason worth restating, because it constrains
+     the numbers here. The hero sticks while the trail scrolls underneath, so
+     its backdrop-filter samples whatever passes beneath it — and completed
+     cards are green, which used to drag a green cloud across the bar on every
+     scroll. Two things keep that from coming back:
+
+     - No saturate at all. The global --glass-blur is saturate(190%), which is
+       what turned a faint sampled green into a visible one; panels that use it
+       sit over a static background, so they never pay for it. Blur alone gives
+       the depth without amplifying what it picked up. (There is no
+       saturate(100%) in the filter below because that is the identity — it
+       would read as a setting while doing nothing.)
+     - alpha stays high (0.8 at the left, where the trail's cards actually
+       pass). Below about 0.6 the green reappears however little saturate
+       there is. */
   background:
     radial-gradient(420px 220px at 88% 0%, rgba(240, 166, 83, 0.20), transparent 70%),
-    var(--panel-warm);
-  border: 1px solid var(--color-border);
+    linear-gradient(
+      115deg,
+      rgba(255, 255, 255, 0.8) 0%,
+      rgba(255, 248, 242, 0.66) 46%,
+      rgba(255, 237, 222, 0.7) 100%
+    );
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-line);
   border-radius: var(--radius-lg);
+  box-shadow: var(--glass-shadow);
   padding: 1rem 1.5rem 1.1rem;
   text-align: center;
   animation: fadeInUp 0.35s var(--ease);
@@ -5447,7 +6253,12 @@ li:hover .checkbox-mark {
 .tasks-hero--settled {
   padding-top: 1.1rem;
   padding-bottom: 1.1rem;
-  box-shadow: 0 14px 28px -22px rgba(58, 42, 24, 0.55);
+  /* The cast deepens once it is pinned, but the inset top edge has to be
+     carried over rather than replaced — it is the cue that reads as glass,
+     and this is the state where the hero is actually floating over moving
+     content and most needs it. */
+  box-shadow: 0 14px 28px -22px rgba(58, 42, 24, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 /* Collapsed by max-height, not display: none, so the greeting slides away
    instead of the trail jumping up by the height of a heading. */
@@ -6657,6 +7468,98 @@ li:hover .checkbox-mark {
 .doc-list__actions button {
   padding: 6px 14px;
   font-size: var(--text-sm);
+}
+/* The active Preview button, while its panel is open. */
+.doc-list__actions button.is-active {
+  border-color: var(--color-accent);
+  color: var(--color-accent-dark);
+}
+/* The line under a pending doc telling HR why Approve is disabled. */
+.doc-list__gate {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-accent-dark);
+}
+
+/* --- In-page document preview (HR review) ---------------------------
+   An overlay ABOVE the profile modal (z 400), so HR reads the file where
+   they are rather than in a new tab, then approves. */
+.doc-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 460;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  background: rgba(31, 25, 17, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: fadeIn 0.2s var(--ease);
+}
+.doc-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(920px, 100%);
+  height: min(88vh, 100%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 40px 80px -40px rgba(20, 20, 20, 0.6);
+}
+.doc-preview__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.doc-preview__title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.doc-preview__title strong {
+  font-size: 0.95rem;
+}
+.doc-preview__title .muted {
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Fills the panel below the bar. The chequer is the neutral ground a PDF or
+   a transparent PNG reads cleanly against. */
+.doc-preview__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  background:
+    repeating-conic-gradient(#f1ede6 0% 25%, #e7e1d6 0% 50%) 50% / 22px 22px;
+}
+.doc-preview__frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.doc-preview__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.doc-preview__msg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 2rem;
+  text-align: center;
 }
 
 /* Tasks: one grid per row, so every title, pill and action column lines up
@@ -8127,14 +9030,26 @@ li:hover .checkbox-mark {
   min-height: 100vh;
 }
 
+/* The header is a <section>, so the app-wide `section` rule gives it a flat
+   white card. This is the sign-in panel instead: the same 115deg white-to-
+   amber ramp the login card and the employee hero use (--panel-warm), an
+   amber glow anchored top-right, and glass. The bottom border and margin go
+   — it is a filled panel now, not a ruled heading. */
 .dp-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 1.25rem;
-  border-bottom: 1px solid #e9e3d5;
+  padding: 1.4rem 1.6rem;
   margin-bottom: 1.5rem;
+  border: 1px solid var(--glass-line);
+  border-radius: 20px;
+  background:
+    radial-gradient(460px 220px at 92% -10%, rgba(240, 166, 83, 0.28), transparent 70%),
+    var(--panel-warm);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
   animation: fadeInUp 0.4s var(--ease);
 }
 .dp-header-left {
@@ -8214,32 +9129,6 @@ li:hover .checkbox-mark {
   font-size: 1.1rem;
   font-weight: 400;
   line-height: 1;
-}
-.dp-settings-btn {
-  background: #fff;
-  color: #1a1a1a;
-  border: 1px solid #ddd;
-  width: 48px;
-  height: 48px;
-  padding: 0;
-  border-radius: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: inherit;
-  transition: all 0.3s ease;
-}
-.dp-settings-btn:hover {
-  background: #fef7ec;
-  border-color: #e8930c;
-  box-shadow: 0 6px 20px rgba(232,147,12,0.2);
-}
-.dp-settings-btn:hover svg {
-  transform: rotate(45deg);
-}
-.dp-settings-btn svg {
-  transition: transform 0.3s ease;
 }
 
 /* Toolbar: tabs + search */
@@ -8326,36 +9215,152 @@ li:hover .checkbox-mark {
 }
 
 /* Card grid — 2 columns like the design */
+/* Three across, stated rather than derived: auto-fit with a minimum gave
+   FOUR on a wide window, because nothing stops it fitting more once the
+   cards are this narrow. The step downs are explicit for the same reason. */
 .dp-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.25rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
 }
-@media (max-width: 800px) {
+@media (max-width: 1150px) {
   .dp-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .dp-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 /* Card */
+/* Glass. The page behind is the app's warm dotted cream, so a translucent
+   white with a blur picks that up and the card stops being a flat white
+   rectangle on it. The bright top edge is what reads as glass rather than
+   as a card someone made see-through — an inner highlight along the lit
+   side is most of the effect. */
+/* The sign-in CARD's own glass, not the warm hero panel. That amber ramp
+   read as muddy behind six cards at once; this is the clean, bright frosted
+   white the login form sits on — a near-white translucent gradient over a
+   heavy blur, with the page's cream showing through just enough to warm it.
+   The header keeps the amber wash so the page still has one warm anchor at
+   the top; the cards below it stay light. */
 .dp-card {
-  background: white;
-  border: 1px solid #e8e4dc;
+  position: relative;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.58));
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
   border-radius: 16px;
-  padding: 1.25rem;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  gap: 0.55rem;
+  box-shadow:
+    0 18px 40px -28px rgba(60, 40, 15, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
   transition: transform 0.2s ease,
               box-shadow 0.2s ease,
               border-color 0.2s ease;
   animation: slideUp 0.4s cubic-bezier(0.25,0.46,0.45,0.94) backwards;
 }
+/* --- Card art ------------------------------------------------------
+   A square picture down the right-hand side. The card becomes a grid with
+   a fixed second column, rather than the art being absolutely positioned:
+   a fixed column means the text actually gives the width up, so nothing
+   ends up running underneath the picture at a narrow card width.
+
+   grid-row 1 / -1 spans it past however many rows the left column happens
+   to have, so a policy with a longer description does not push it out of
+   line with its neighbours. */
+/* Everything but the art, as one grid item — see the note below on why the
+   children cannot be placed individually. */
+.dp-card-main {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+/* The art in its own column: full colour, unframed, sitting straight on the
+   card. It was briefly a greyed, multiplied watermark behind the text — the
+   treatment the trail's task cards use — which is a different idea: there
+   the drawing is background, here it is the card's picture and is meant to
+   be looked at. No border, no tinted box and no filter, so the source art
+   reads as itself.
+
+   The card becomes a two-column grid. BOTH the row and the column are
+   stated on each child, and both are load-bearing:
+   Column, because the art is rendered FIRST in the markup — it is
+   decorative and aria-hidden, so it should not sit between the title and
+   the buttons in the reading order — and left to DOM order it took the 1fr
+   column and squeezed the text into the narrow one.
+   Row, because grid auto-placement is sparse: having put the art at row 1
+   column 2, the cursor is past column 1 for that row, so the text landed on
+   a NEW row underneath the picture rather than beside it. */
+.dp-card--art {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  grid-template-rows: auto;
+  gap: 0;
+  column-gap: 0.9rem;
+  align-items: center;
+}
+.dp-card-art {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  aspect-ratio: 1;
+  pointer-events: none;
+  user-select: none;
+}
+/* contain, not cover: these are whole objects — a stack of notes, a folder,
+   a sticky note — and cropping one to fill a square cuts its edges off. */
+.dp-card-art img {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  /* Belt and braces with the mask below, which now carries the corners of
+     the travel photograph away on its own. Kept because the radius is what
+     holds the shape if a browser drops the mask. */
+  border-radius: 10px;
+  /* Mostly desaturated, with a little colour left in — grayscale(0.78)
+     keeps about a fifth of the original, so the money reads faintly green
+     and the folder faintly manila without any of them shouting. The
+     contrast bump stops the lighter drawings going flat at this low
+     saturation. Held back in opacity too, so the art belongs to the glass
+     rather than sitting on top of it as a sticker. */
+  filter: grayscale(0.78) contrast(1.08);
+  opacity: 0.9;
+  /* A gradient fade at the edges. Radial and centred slightly up-right, so
+     the body of each drawing stays solid and only its outer edge softens —
+     a straight linear fade would take a bite out of whichever side it ran
+     from. It also does the most work on the travel picture, which is a
+     photograph with hard edges and no alpha of its own to soften them. */
+  -webkit-mask-image: radial-gradient(86% 86% at 56% 42%, #000 42%, rgba(0, 0, 0, 0.55) 70%, transparent 94%);
+  mask-image: radial-gradient(86% 86% at 56% 42%, #000 42%, rgba(0, 0, 0, 0.55) 70%, transparent 94%);
+  transition: transform 0.35s var(--ease), opacity 0.35s var(--ease), filter 0.35s var(--ease);
+}
+.dp-card--art:hover .dp-card-art img {
+  opacity: 1;
+  filter: grayscale(0.55) contrast(1.08);
+}
+.dp-card--art:hover .dp-card-art img {
+  transform: scale(1.05);
+}
+
 .dp-card:hover {
   transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(232,147,12,0.12);
-  border-color: #e8930c;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.68));
+  box-shadow:
+    0 26px 52px -26px rgba(60, 40, 15, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 1);
+  border-color: rgba(232, 147, 12, 0.45);
 }
 .dp-card-top {
   display: flex;
@@ -8399,28 +9404,65 @@ li:hover .checkbox-mark {
   color: #999;
   font-weight: 500;
 }
+/* HR's edit button, top-right of each card.
+   The shape change IS the interaction — rounded-xl relaxing to rounded-3xl
+   over 300ms, which is the pasted Tailwind written out (p-2.5, h-6 w-6 icon,
+   white stroke, colour darkening on hover).
+   Written as CSS rather than as Tailwind classes because tailwind.config.js
+   only scans components/ui, MacBook* and MacTools.tsx — classes put on this
+   page compile to nothing. Adding this file to `content` would pull the
+   whole page into Tailwind's build for one button.
+   The yellow is the app's own accent rather than yellow-500: every other
+   control on this page is that amber, and a second, greener yellow beside
+   them would read as a different system. */
 .dp-card-edit-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: #fef7ec;
-  border: 1px solid #f5d4a0;
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s ease;
+  padding: 0.35rem;
+  /* Tinted glass, like the Read and Download buttons below it. The amber is
+     carried by the stroke rather than by a solid fill, so at this size it
+     stays a quiet affordance on the card instead of a second, brighter
+     button competing with the two real ones. */
+  border: 1px solid rgba(232, 147, 12, 0.35);
+  border-radius: 0.6rem;
+  background: rgba(232, 147, 12, 0.16);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  backdrop-filter: saturate(140%) blur(8px);
+  color: var(--color-accent-dark);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: all 0.3s var(--ease);
 }
+/* The shape change is still the interaction — rounded-xl relaxing to
+   rounded-3xl — just at a size that suits a corner control. */
 .dp-card-edit-btn:hover {
-  background: #fdecc8;
-  border-color: #e8930c;
+  border-radius: 1.2rem;
+  background: rgba(232, 147, 12, 0.32);
+  border-color: rgba(232, 147, 12, 0.6);
+  color: #8a5207;
 }
+.dp-card-edit-btn:focus-visible {
+  outline: 2px solid var(--color-accent-dark);
+  outline-offset: 2px;
+}
+.dp-card-edit-btn svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  display: block;
+}
+/* Smaller now that a picture shares the row with it: the description is
+   support for the title, not the thing being read. */
 .dp-card-desc {
   margin: 0;
   color: #777;
-  font-size: 0.75rem;
-  line-height: 1.5;
+  font-size: 0.72rem;
+  line-height: 1.55;
 }
 .dp-card-meta {
   display: flex;
@@ -8448,29 +9490,54 @@ li:hover .checkbox-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
-  padding: 0.6rem 0.5rem;
-  font-size: 0.8rem;
-  font-weight: 600;
+  gap: 0.35rem;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 650;
   font-family: inherit;
   border-radius: 20px;
   cursor: pointer;
   transition: background 0.15s, transform 0.15s;
   border: none;
 }
+/* Tinted glass rather than solid fills: an alpha that lets the card
+   through, with their own blur so they sit ON the glass instead of punching
+   two opaque holes in it.
+
+   Both are warm now. Download used to be a blue-grey navy (#1e2a3a), which
+   was the one cold colour anywhere on this page — against cream paper,
+   amber and greyscale art it read as borrowed from another product. It is
+   the same deep brown the policy letterhead sets its ink in, so the pair
+   are two weights of one palette instead of two palettes.
+
+   The text stays white on both; at these alphas the tint still carries it,
+   which is why the amber is 0.82 and not lower. */
 .dp-btn--read {
-  background: #e8930c;
+  background: rgba(232, 147, 12, 0.82);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.45);
   color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 .dp-btn--read:hover {
-  background: #d4790a;
+  background: rgba(212, 121, 10, 0.94);
 }
+/* A deep teal, the page's one cool accent, so Read and Download are plainly
+   two different actions rather than two shades of the same amber. Teal sits
+   opposite amber on the wheel, which is what makes the pair read as primary
+   + secondary; it is warmed slightly (more green than blue) so it still
+   belongs beside the cream rather than against it. */
 .dp-btn--download {
-  background: #1e2a3a;
+  background: rgba(15, 118, 110, 0.9);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   color: white;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 .dp-btn--download:hover {
-  background: #2a3a4e;
+  background: rgba(11, 99, 92, 1);
 }
 .dp-btn:disabled {
   opacity: 0.6;
@@ -8496,6 +9563,14 @@ li:hover .checkbox-mark {
   border-radius: 50%;
   display: inline-block;
 }
+/* Taken-down policy: grey text, grey dot — plainly not live, without the
+   alarm of red, since 'unavailable' is a deliberate HR state and not a fault. */
+.dp-card-footer--off {
+  color: #a29b8f;
+}
+.dp-card-footer--off .dp-card-status-dot {
+  background: #c4bcae;
+}
 
 .dp-empty {
   grid-column: 1 / -1;
@@ -8510,58 +9585,6 @@ li:hover .checkbox-mark {
 }
 
 /* Department-Specific Section (bottom) */
-.dp-dept-section {
-  margin-top: 1.25rem;
-  background: #fff;
-  border: 1px solid #eee;
-  border-radius: 14px;
-  padding: 1.25rem 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.dp-dept-section:hover {
-  box-shadow: 0 6px 20px rgba(232,147,12,0.1);
-  border-color: #e8930c;
-  transform: translateY(-2px);
-}
-.dp-dept-left {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-.dp-dept-icon {
-  width: 48px;
-  height: 48px;
-  background: #fef7ec;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.dp-dept-title {
-  font-weight: 600;
-  font-size: 0.94rem;
-}
-.dp-dept-subtitle {
-  color: #777;
-  font-size: 0.82rem;
-  margin-top: 0.15rem;
-}
-.dp-dept-link {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #e8930c;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  white-space: nowrap;
-  cursor: pointer;
-}
 
 /* ---- Modal ---- */
 .dp-modal-overlay {
@@ -8615,49 +9638,285 @@ li:hover .checkbox-mark {
   align-items: center;
   flex-shrink: 0;
 }
-.dp-highlight-btn {
-  background: #fef7ec;
-  border: 1.5px solid #f5d4a0;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  cursor: pointer;
+/* --- The policy, dressed as a document ------------------------------ */
+/* Warm paper rather than the app's white card, so opening a policy feels
+   like being handed a document instead of opening another panel. */
+/* Only the BODY scrolls, not the whole panel. .dp-modal scrolls itself and
+   is not positioned, so the close button — absolute, top right — resolved
+   against the viewport and floated outside the card entirely; positioning
+   .dp-modal instead would have fixed that but left the button scrolling
+   away with the text. Moving the scroll inward gives the ✕ a corner to sit
+   in and keeps it reachable at any scroll position, which is what every
+   other modal in the app already does. */
+.dp-doc {
+  position: relative;
   display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(760px 320px at 15% -8%, rgba(255, 255, 255, 0.9), transparent 62%),
+    linear-gradient(165deg, #fffdf9 0%, #fdf8f0 60%, #faf3e8 100%);
+}
+.dp-doc-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Placement only. The button carries .modal-close as well, which is where
+   its circle, its border and its quarter turn on hover come from — the same
+   ✕ as every other modal in the app. It floats over the letterhead, which
+   has no header bar of its own: a title strip above a letterhead would be
+   two headings. */
+.dp-doc-close {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  z-index: 2;
+}
+.dp-doc-body {
+  padding: var(--space-5) clamp(1.25rem, 4vw, 3rem) var(--space-5);
+}
+
+/* --- Letterhead ----------------------------------------------------- */
+.dp-doc-head {
+  text-align: center;
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid rgba(190, 162, 128, 0.45);
+}
+.dp-doc-brand {
+  display: inline-flex;
   align-items: center;
+  gap: 0.5rem;
+}
+/* overflow visible: BrandMark's viewBox is its measured extent and the
+   boomerang overhangs the disc, so a clipping box shaves its tip. */
+.dp-doc-mark {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.dp-doc-word {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #2c2519;
+}
+.dp-doc-word-accent {
+  color: var(--color-accent-dark);
+}
+.dp-doc-issuer {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #a08a6c;
+}
+/* The serif the rest of the app signs off in, so a policy reads as the
+   company's own document and not as a page of UI copy. */
+.dp-doc-title {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: #2c2519;
+}
+/* Three facts, hairlines between rather than a box around: they are one
+   thought about one document. */
+.dp-doc-meta {
+  display: flex;
   justify-content: center;
-  transition: all 0.15s ease;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.6rem;
+  margin: var(--space-3) 0 0;
 }
-.dp-highlight-btn:hover {
-  background: #fdecc8;
-  border-color: #e8930c;
+.dp-doc-meta > div {
+  position: relative;
+  padding: 0 0.8rem;
 }
-.dp-highlight-btn--on {
-  background: #ffe066;
-  border-color: #e8930c;
+.dp-doc-meta > div + div::before {
+  content: '';
+  position: absolute;
+  left: -0.8rem;
+  top: 10%;
+  bottom: 10%;
+  width: 1px;
+  background: rgba(190, 162, 128, 0.5);
 }
-.dp-highlight-label {
+.dp-doc-meta dt {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #a08a6c;
+}
+.dp-doc-meta dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.86rem;
+  font-weight: 650;
+  color: #4a3f31;
+}
+
+/* --- Clauses -------------------------------------------------------- */
+/* The numbers live in the heading text, so the rule down the left is the
+   only thing marking a clause and it can stay quiet. */
+.dp-doc-section {
+  position: relative;
+  padding: 0.15rem 0 0.15rem 1rem;
+  margin-bottom: var(--space-4);
+  border-left: 2px solid rgba(232, 147, 12, 0.3);
+  background: none;
+  transition: border-color 0.2s var(--ease);
+}
+.dp-doc-section:hover {
+  border-left-color: var(--color-accent);
+}
+.dp-doc-section .dp-modal-section-heading {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  color: #2c2519;
+}
+.dp-doc-section .dp-modal-section-text {
+  font-size: 0.93rem;
+  line-height: 1.75;
+  color: #5a4d3d;
+}
+
+/* --- Colophon ------------------------------------------------------- */
+.dp-doc-foot {
+  margin-top: var(--space-5);
+  text-align: center;
+}
+.dp-doc-foot-rule {
+  display: block;
+  width: 3rem;
+  height: 1px;
+  margin: 0 auto var(--space-3);
+  background: rgba(190, 162, 128, 0.6);
+}
+.dp-doc-foot p {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: #9a8874;
+}
+
+/* --- Edit policy panel (HR) ---------------------------------------- */
+/* Reuses .dp-modal's shell so it is plainly the same surface as the policy
+   reader, just narrower — this is a short form, not a document. */
+.dp-edit {
+  max-width: 34rem;
+}
+.dp-edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+.dp-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.dp-edit-field > span:first-child {
   font-size: 0.68rem;
-  color: #e8930c;
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-muted);
 }
-.dp-modal-close {
-  background: #f5f4f2;
-  border: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  cursor: pointer;
+.dp-edit-field input[type='text'],
+.dp-edit-field select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: var(--color-text);
+}
+.dp-edit-field input[type='text']:focus,
+.dp-edit-field select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(232, 143, 48, 0.18);
+}
+/* Says what the control above it does to who can see the policy. This is
+   the one field on the form with a consequence that is not obvious from its
+   label, so it is the one field that explains itself. */
+.dp-edit-hint {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+.dp-edit-file {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 1.1rem;
-  color: #555;
-  transition: all 0.15s ease;
-  line-height: 1;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
-.dp-modal-close:hover {
-  background: #eee;
+/* The filename, or what happens if you pick nothing. An empty space here
+   reads as a control that failed rather than as "no change". */
+.dp-edit-filename {
+  min-width: 0;
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
 }
+.dp-edit-clear {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-accent-dark);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.dp-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+/* Pushes Cancel and Save to the right while Delete stays left. */
+.dp-edit-actions-spacer {
+  flex: 1;
+}
+/* Quiet danger: a text button, not a filled red one. Delete should be
+   reachable but never the loudest thing on the panel — the filled control is
+   Save. It warms to a danger tint only on hover, so the intent is confirmed
+   by the reach rather than shouted at rest. */
+.dp-edit-delete {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--color-danger);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.dp-edit-delete:hover:not(:disabled) {
+  background: var(--color-danger-bg);
+  border-color: rgba(201, 74, 60, 0.35);
+}
+.dp-edit-delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .dp-modal-body {
   display: flex;
   flex-direction: column;
@@ -8668,15 +9927,6 @@ li:hover .checkbox-mark {
   border-radius: 12px;
   margin-bottom: 0.25rem;
   transition: background 0.2s ease;
-}
-.dp-modal-section--clickable {
-  cursor: pointer;
-}
-.dp-modal-section--clickable:hover {
-  background: rgba(255,224,102,0.15);
-}
-.dp-modal-section--highlighted {
-  background: rgba(255,224,102,0.3) !important;
 }
 .dp-modal-section-heading {
   margin: 0 0 0.35rem;
@@ -8695,9 +9945,13 @@ li:hover .checkbox-mark {
   padding: 2rem 1rem;
   color: #777;
 }
+/* The modal's CTA opted out of the card buttons' new smaller size: it is
+   the only control on an otherwise empty panel and has room to be itself. */
 .dp-modal-fallback .dp-btn {
   max-width: 200px;
   margin: 1rem auto 0;
+  padding: 0.6rem 1rem;
+  font-size: 0.8rem;
 }
 
 /* =========================================================
@@ -8734,10 +9988,6 @@ li:hover .checkbox-mark {
   }
   .dp-search-wrap {
     width: 100%;
-  }
-  .dp-dept-section {
-    flex-direction: column;
-    align-items: flex-start;
   }
   .dp-modal {
     padding: 1.5rem;
@@ -11229,10 +12479,16 @@ li:hover .checkbox-mark {
     rgba(255, 240, 218, 0.36) 100%
   );
   /* The opaque twin of --pane, for panels that cannot be glass because
-     something coloured scrolls underneath them. Sampled off the HR
-     dashboard's panels so the two pages read as one theme rather than one
-     warm and one bleached. */
-  --panel-warm: linear-gradient(115deg, #fdf6e9 0%, #fbf0dd 48%, #fdecd4 100%);
+     something coloured scrolls underneath them. The office-guide rail is the
+     only one left — the hero went back to glass and carries its own
+     translucent copy of this ramp.
+
+     White into orange, with no yellow in the ramp. The previous mix started
+     at #fdf6e9 and ran through #fbf0dd, both of which sit on the yellow side
+     of cream — and because the ramp is 115deg, that yellow end landed on the
+     panel's LEFT, opposite the hero's orange glow. The panel read as two
+     different warms meeting in the middle rather than as one. */
+  --panel-warm: linear-gradient(115deg, #ffffff 0%, #fff8f2 46%, #ffedde 100%);
   /* The top-edge catch-light. This is the strongest single cue that a
      surface is glass rather than paper — without it a translucent card
      just reads as a washed-out one. */
@@ -12073,55 +13329,246 @@ li:hover .checkbox-mark {
   color: var(--color-ink, #171a1f);
 }
 
-/* The same tips as ordinary cards. Only shown where the laptop is not:
-   otherwise the screen and the grid say the same thing twice, and the
-   panel travelling down out of the lid lands on top of the cards. */
-.mac-tools-fallback {
+.mac-tools-eyebrow {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  padding: 0.22rem 0.62rem;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-accent-dark);
+}
+
+/* The readable copy of the tips, grouped by what they are for.
+
+   This used to be display:none above 900px on the grounds that it repeated
+   the laptop. It does repeat it — but the laptop is a thing to watch, at a
+   type size chosen by the lid's scale rather than by reading, and someone
+   who came here to look up a shortcut needs somewhere to actually read one.
+   The clearance below the machine is what keeps the panel travelling out of
+   the lid from landing on these cards. */
+/* Hidden wherever the laptop is shown — the screen carries the tips now and
+   the same cards repeated underneath were a second copy of it.
+   NOT deleted, because the media query at the end of this section hides the
+   laptop below 900px and for prefers-reduced-motion; there the sheet comes
+   back and is the only thing carrying the tips at all. */
+.mac-tools-sheet {
   display: none;
-  margin-top: var(--space-5);
+  flex-direction: column;
+  gap: var(--space-5);
+  margin-top: var(--space-6);
+}
+.mac-tools-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.mac-tools-group-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--color-border), transparent);
+}
+.mac-tools-group-count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  text-align: center;
+  color: var(--color-accent-dark);
 }
 .mac-tools-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
+  gap: var(--space-3);
 }
 
 /* --- Cards -------------------------------------------------------- */
 .mac-tool-card {
   display: flex;
-  gap: 0.55rem;
+  gap: 0.8rem;
   align-items: flex-start;
-  padding: 0.5rem 0.62rem;
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(20, 22, 26, 0.09);
+  padding: 0.95rem 1rem;
+  border-radius: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 2px 8px -6px rgba(26, 22, 17, 0.25);
+  transition: transform 0.18s var(--ease), border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+.mac-tool-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-accent);
+  box-shadow: 0 14px 28px -18px rgba(226, 125, 48, 0.55);
 }
 .mac-tool-icon {
-  font-size: 1.05rem;
+  font-size: 1.3rem;
   line-height: 1.2;
   flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--color-surface-alt);
+}
+.mac-tool-body {
+  min-width: 0;
+  flex: 1;
+}
+/* Title and caps share a line, with the caps pushed to the end. They wrap
+   to their own line rather than squeezing the title when both are long. */
+.mac-tool-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 .mac-tool-card strong {
-  display: block;
-  font-size: 0.82rem;
-  color: #171a1f;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--color-text);
 }
 .mac-tool-card p {
-  margin: 0.15rem 0 0;
+  margin: 0.35rem 0 0;
+  font-size: 0.83rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+.mac-tool-gesture {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.45rem !important;
+  font-size: 0.76rem !important;
+  color: var(--color-accent-dark) !important;
+}
+.mac-tool-gesture-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* --- Key caps ------------------------------------------------------ */
+.keycaps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  flex-shrink: 0;
+}
+.keycaps__slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+}
+.keycaps__plus {
+  font-size: 0.65rem;
+  color: var(--color-muted-soft);
+}
+.keycap {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.36rem;
+  border-radius: 6px;
+  font-family: var(--font-body);
   font-size: 0.72rem;
-  line-height: 1.38;
-  color: #4a5059;
+  font-weight: 650;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: linear-gradient(180deg, #ffffff, #f4efe6);
+  border: 1px solid var(--color-border);
+  /* The bottom edge is what makes it a key rather than a chip. */
+  box-shadow: 0 1.5px 0 var(--color-border), 0 2px 3px -1px rgba(26, 22, 17, 0.12);
+}
+/* Inside the laptop screen, which is drawn at its own scale and on its own
+   neutral glass, not the page's cream. Sized up with the rest of the card
+   type — caps smaller than the title they sit beside read as a footnote
+   rather than as the shortcut, which is the thing people came for. */
+.keycaps--sm .keycap {
+  min-width: 1.45rem;
+  padding: 0.08rem 0.32rem;
+  font-size: 0.76rem;
+  border-radius: 5px;
+  background: linear-gradient(180deg, #ffffff, #eeeef3);
+  border-color: rgba(120, 120, 140, 0.34);
+  box-shadow: 0 1.5px 0 rgba(120, 120, 140, 0.3);
+}
+.keycaps--sm .keycaps__plus {
+  font-size: 0.66rem;
+}
+
+/* --- The laptop screen's own surface -------------------------------- */
+/* Neutral on purpose. Glass needs something behind it or it has nothing to
+   be glass against, so this is not the flat #f4f4f7 it started as — but the
+   depth comes from light and shade only, with no accent in it. The screen is
+   a Mac's desktop; the app's orange belongs on the card you hover, not on
+   the machine's own wallpaper. */
+.mac-screen-surface {
+  background:
+    radial-gradient(880px 420px at 14% -12%, rgba(255, 255, 255, 0.95), transparent 64%),
+    radial-gradient(760px 430px at 92% 112%, rgba(214, 214, 226, 0.55), transparent 70%),
+    linear-gradient(140deg, #fafafc 0%, #f1f1f5 55%, #e9e9f0 100%);
+}
+/* Translucent, but deliberately NOT backdrop-filtered.
+   These eight cards sit inside the lid, which framer-motion scales and
+   translates on every scroll frame, and a backdrop blur in a subtree like
+   that has to re-blur its backdrop each frame at the scaled resolution —
+   eight times over. That was the stutter as the laptop opened.
+   Nothing is lost by dropping it: what sits behind these cards is a smooth
+   gradient with no detail in it, so blurring it produces the same pixels.
+   Screenshots with and against were indistinguishable. If a patterned or
+   photographic surface ever goes behind them, this is the trade to revisit —
+   and to measure, not assume. */
+.mac-screen-card {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    0 12px 28px -20px rgba(28, 28, 40, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  transition:
+    flex-basis 0.3s var(--ease),
+    background 0.3s var(--ease),
+    border-color 0.3s var(--ease),
+    box-shadow 0.3s var(--ease);
+}
+/* Hovered, the card stops being glass and becomes the login page's own
+   panel: the same 115deg white-to-amber ramp, an accent edge, and a warm
+   lift under it. This is the ONLY themed thing on the screen, which is the
+   point of keeping the surface behind it neutral — the app's colour arrives
+   with the tip you are reading and leaves with it. */
+.mac-screen-card:hover {
+  background: linear-gradient(115deg, #ffffff 0%, #fff8f2 46%, #ffedde 100%);
+  border-color: rgba(232, 143, 48, 0.55);
+  box-shadow:
+    0 16px 32px -16px rgba(217, 119, 6, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
 }
 
 /* Narrow screens: the laptop is 512px wide before it scales, and the
    component's own scale-[0.35] shrinks the type past reading size. Drop
-   it and let the cards below carry the tips. */
+   it and let the cards below carry the tips on their own. */
 @media (max-width: 900px), (prefers-reduced-motion: reduce) {
   .mac-tools-scroll {
     display: none;
   }
-  .mac-tools-fallback {
-    display: block;
+  /* The one place the sheet still renders. Without this the page would be a
+     heading over nothing here, since the laptop above is hidden. */
+  .mac-tools-sheet {
+    display: flex;
     margin-top: 0;
   }
 }
@@ -13225,22 +14672,177 @@ li:hover .checkbox-mark {
   backdrop-filter: blur(10px) saturate(1.1);
   animation: splashIn 0.45s var(--ease) both;
 }
+/* A printed card, not a dialog: warm paper, a soft grain, barely any
+   radius. The palette is the reference's own — ink brown, dusty rose, sage
+   — rather than the app's amber, because this is the one screen that is
+   meant to feel like something handed to you rather than rendered. */
 .splash__card {
   position: relative;
-  width: min(34rem, 100%);
+  width: min(41rem, 100%);
   max-height: 100%;
   overflow: auto;
-  padding: 2.6rem 2.4rem 2.2rem;
+  padding: 4rem 3.4rem 3rem;
   text-align: center;
-  border-radius: 26px;
+  border-radius: 6px;
   background:
-    radial-gradient(ellipse at 18% 8%, rgba(232, 143, 48, 0.14), transparent 58%),
-    var(--glass-strong);
-  border: 1px solid rgba(255, 255, 255, 0.82);
+    radial-gradient(ellipse at 22% 6%, rgba(255, 255, 255, 0.75), transparent 60%),
+    linear-gradient(160deg, #fbf7f1 0%, #f8f2ea 55%, #f5eee4 100%);
+  border: 1px solid rgba(201, 180, 154, 0.5);
   box-shadow:
     0 40px 80px -40px rgba(40, 26, 10, 0.7),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  animation: splashCard 0.55s cubic-bezier(0.22, 1.2, 0.4, 1) 0.06s both;
+  /* Rises out of the envelope rather than appearing. z-index 2 puts it above
+     the envelope's back and open flap, and below its front panel — which is
+     the entire illusion. */
+  position: relative;
+  z-index: 2;
+  animation: splashCardOut 1s cubic-bezier(0.22, 1, 0.3, 1) 0.68s both;
+}
+
+/* --- The envelope --------------------------------------------------- */
+/* The stage exists to give the envelope something to be absolutely
+   positioned against that is exactly the card's own box, so the envelope is
+   sized and placed in proportion to the card at any viewport. */
+.splash__stage {
+  position: relative;
+  width: min(41rem, 100%);
+  max-height: 100%;
+  display: flex;
+  justify-content: center;
+  perspective: 1400px;
+}
+.splash__stage > .splash__card {
+  width: 100%;
+}
+/* Anchored to the bottom of the stage: the card starts low, inside it, and
+   travels up and out. Gone by 2.1s, so it never blocks the close button. */
+.splash__envelope {
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  /* Height as a share of the STAGE, not an aspect ratio off the width. The
+     stage is the card, and the card gets shorter on short screens while its
+     width does not change — an aspect-ratio envelope then stayed the same
+     size while the card shrank around it, and its opening flap swung up past
+     the top of the card. Tied to the height, it scales with whatever the
+     card is doing. */
+  width: 72%;
+  height: 44%;
+  transform: translateX(-50%);
+  transform-style: preserve-3d;
+  pointer-events: none;
+  /* Its own compositing layer, so the exit below is a composited transform
+     and opacity rather than a repaint of two large gradient panels, a
+     clip-path and a 3D-rotated flap on every frame. */
+  will-change: transform, opacity;
+  animation: splashEnvGo 0.9s cubic-bezier(0.4, 0, 0.75, 0.2) 1.62s both;
+}
+/* Back panel and flap behind the card; pocket in front of it. */
+.splash__envelope--back {
+  z-index: 1;
+}
+.splash__envelope--front {
+  z-index: 3;
+}
+.splash__env-back,
+.splash__env-front,
+.splash__env-flap {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: linear-gradient(160deg, #f3e8d6 0%, #ecdcc4 60%, #e5d2b6 100%);
+  box-shadow: 0 30px 60px -34px rgba(60, 40, 14, 0.75);
+}
+/* The pocket, painted OVER the card. The notch is what an envelope's front
+   edge actually looks like, and it is also what hides the card's bottom
+   edge while it is still inside. */
+.splash__env-front {
+  clip-path: polygon(0 0, 50% 34%, 100% 0, 100% 100%, 0 100%);
+  background: linear-gradient(150deg, #f6eddd 0%, #eee0cb 55%, #e7d6bd 100%);
+  box-shadow: 0 -8px 18px -14px rgba(60, 40, 14, 0.5);
+}
+/* Opens backwards over the top edge. It lives in the BACK layer, so the
+   card passes in front of it on the way out and not behind. */
+.splash__env-flap {
+  height: 58%;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  transform-origin: top center;
+  background: linear-gradient(170deg, #f0e2cc 0%, #e6d4b8 100%);
+  animation: splashEnvFlap 0.72s cubic-bezier(0.5, 0, 0.2, 1) 0.18s both;
+}
+
+@keyframes splashEnvFlap {
+  from {
+    transform: rotateX(0deg);
+  }
+  to {
+    transform: rotateX(-174deg);
+  }
+}
+@keyframes splashCardOut {
+  /* Tucked down inside the pocket and small enough that only its top edge
+     shows above the envelope's notch. */
+  from {
+    transform: translateY(18%) scale(0.4);
+  }
+  to {
+    transform: translateY(0) scale(1);
+  }
+}
+/* The envelope is set down rather than dissolved.
+   It used to fade in place over 0.65s, which meant the front pocket spent
+   most of that time as a beige veil lying across the card's own text — the
+   fade was the thing you noticed, and it read as a stutter rather than as a
+   movement. Now it falls: it travels most of its distance while still
+   opaque, and only gives up its last of its opacity once it is clear of the
+   words. Accelerating rather than easing out, because something being set
+   down gathers speed. */
+@keyframes splashEnvGo {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(78%) scale(0.95);
+  }
+}
+/* The ruled frame, inset from the paper edge. Its own element rather than a
+   second border on the card, because it has to sit INSIDE the paper with a
+   margin of paper showing all round it. */
+.splash__frame {
+  position: absolute;
+  inset: 18px;
+  border: 1px solid rgba(190, 162, 128, 0.55);
+  border-radius: 2px;
+  pointer-events: none;
+}
+/* Above the branch and the sheen, both of which cover the whole card. */
+.splash__inner {
+  position: relative;
+  z-index: 1;
+}
+/* A single slow sheen travelling across the card, once. It is the whole
+   difference between a card that is lit and one that is merely pale — and
+   it runs once rather than looping, because a permanent shimmer on a
+   dialog that is counting down reads as a loading state. */
+.splash__card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.55) 48%,
+    transparent 58%
+  );
+  transform: translateX(-100%);
+  animation: splashSheen 1.5s cubic-bezier(0.3, 0, 0.2, 1) 1.75s both;
 }
 /* Position only. The button carries .modal-close as well, which is where
    its circle, its border and its 90-degree turn on hover come from — the
@@ -13249,56 +14851,163 @@ li:hover .checkbox-mark {
   position: absolute;
   top: 0.9rem;
   right: 0.9rem;
+  /* Over the sheen, which covers the whole card. */
+  z-index: 2;
 }
-.splash__eyebrow {
-  display: inline-flex;
+
+/* --- The card's furniture: the mark, script, rule, branch ----------- */
+/* Where the reference has a small heart above the word. Bigger than that
+   heart was, because a logo has detail in it and a 30px disc turns the
+   boomerang into a smudge — but still small enough to read as a crest on
+   stationery rather than as a header. `overflow: visible` because the mark's
+   viewBox is its measured extent and the boomerang overhangs the disc. */
+.splash__mark {
+  display: block;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+/* The word itself, in the reference's calligraphic script. Great Vibes has
+   a very small x-height for its point size, so this is set far larger than
+   a heading normally would be and the line-height pulled well under 1. */
+.splash__script {
+  margin: 0.85rem 0 0;
+  font-family: 'Great Vibes', 'Playfair Display', cursive;
+  font-weight: 400;
+  font-size: clamp(3.3rem, 12vw, 5.6rem);
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  color: #46382d;
+}
+/* The name on its own line under the word, the way the reference stacks
+   "Thank" over "You". Smaller, so the greeting still leads. */
+.splash__script-name {
+  display: block;
+  margin-top: -0.1em;
+  font-size: 0.62em;
+  color: #6b5a4a;
+}
+
+/* A rule broken by a single dot, straight from the reference. */
+.splash__rule {
+  display: flex;
   align-items: center;
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--color-success);
-  background: var(--color-success-bg);
-  border: 1px solid rgba(47, 143, 91, 0.22);
-  border-radius: var(--radius-pill);
-  padding: 0.32rem 0.85rem;
+  justify-content: center;
+  gap: 0.6rem;
+  width: min(19rem, 66%);
+  margin: 1.8rem auto 0;
 }
-/* The same italic serif the trail signs off in, so the send-off is plainly
-   the end of the same sentence rather than a different page's voice. */
-.splash__title {
-  margin: 1.1rem 0 0;
+.splash__rule::before,
+.splash__rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(190, 162, 128, 0.75);
+}
+.splash__rule i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #b6987a;
+}
+
+/* Three short lines. Serif, generously leaded, deliberately narrow: the
+   line breaks are authored in the markup because the shape of the block is
+   part of the design. */
+.splash__note {
+  margin: 1.5rem 0 0;
   font-family: var(--font-heading);
-  font-style: italic;
-  font-weight: 600;
-  font-size: clamp(1.9rem, 5vw, 2.5rem);
+  font-size: 1.2rem;
+  line-height: 1.9;
+  color: #5c4d3f;
+}
+/* The rose line in script, the reference's "It truly means a lot." */
+.splash__flourish {
+  margin: 1.15rem 0 0;
+  font-family: 'Great Vibes', 'Playfair Display', cursive;
+  font-size: 2rem;
   line-height: 1.2;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
+  color: #c08175;
 }
-.splash__lede {
-  margin: 0.9rem auto 0;
-  max-width: 40ch;
-  font-size: 0.95rem;
-  line-height: 1.7;
-  color: var(--color-muted);
+
+/* The branch down the right edge. Bottom-anchored and allowed to run off
+   the paper, which is what stops it reading as a placed illustration.
+   Behind the text (z-index 0 against .splash__inner's 1) and untouchable,
+   so a long name overlapping it costs nothing. */
+.splash__branch-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
 }
-.splash__lede--quiet {
-  margin-top: 0.55rem;
-  font-size: 0.88rem;
+/* Pushed down and out, so the top of the sprig clears the script. The tail
+   of "Congratulations" swings a long way right, and a leaf crossing it made
+   both harder to read; the branch now starts below the rule instead. It is
+   clipped by .splash__branch-clip, so what goes past the paper edge simply
+   is not drawn. */
+.splash__branch {
+  position: absolute;
+  right: -78px;
+  bottom: -96px;
+  width: 62%;
+  max-width: 340px;
+  height: auto;
+  pointer-events: none;
   opacity: 0.85;
 }
+.splash__stem {
+  stroke: #b3a189;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.splash__leaf {
+  fill: #c3cdb6;
+  opacity: 0.85;
+}
+.splash__leaf--pale {
+  fill: #d5dcca;
+}
+.splash__leaf-rib {
+  stroke: rgba(150, 140, 115, 0.45);
+  stroke-width: 1;
+}
+
+@keyframes splashSheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash__card::before {
+    display: none;
+  }
+  /* No envelope at all: the whole point of it is the movement, and a static
+     envelope sitting behind the card is just a shape in the way. */
+  .splash__envelope {
+    display: none;
+  }
+  .splash__card {
+    animation: none;
+  }
+}
+/* The one place the app's own amber is allowed on this card. Everything
+   above it is the greeting; this is the button, and it should look like the
+   app's primary button rather than like part of the stationery. */
 .splash__cta {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  margin-top: 1.6rem;
-  padding: 0.8rem 1.5rem;
+  gap: 0.6rem;
+  margin-top: 2rem;
+  padding: 0.9rem 1.8rem;
   border-radius: var(--radius-pill);
   background: var(--gradient-accent);
   background-origin: border-box;
   color: #fff;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 1.02rem;
   text-decoration: none;
   box-shadow: 0 14px 28px -14px rgba(217, 119, 6, 0.75);
   transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease);
@@ -13318,9 +15027,9 @@ li:hover .checkbox-mark {
   transform: translateX(3px);
 }
 .splash__count {
-  margin: 1.3rem 0 0;
-  font-size: 0.8rem;
-  color: var(--color-muted);
+  margin: 1.25rem 0 0;
+  font-size: 0.83rem;
+  color: #8a7866;
 }
 /* Tabular figures so the line does not twitch as 10 becomes 9. */
 .splash__count-num {
@@ -13330,11 +15039,11 @@ li:hover .checkbox-mark {
 }
 .splash__track {
   display: block;
-  width: min(15rem, 100%);
+  width: min(18rem, 100%);
   height: 3px;
-  margin: 0.7rem auto 0;
+  margin: 0.8rem auto 0;
   border-radius: var(--radius-pill);
-  background: rgba(20, 20, 20, 0.09);
+  background: rgba(150, 120, 85, 0.18);
   overflow: hidden;
 }
 .splash__track-fill {
@@ -13349,22 +15058,49 @@ li:hover .checkbox-mark {
   animation-timing-function: linear;
   animation-fill-mode: forwards;
 }
+/* Short windows. The card is sized for a full-height screen, and at 700px
+   tall the full-size version overflows by about 40px — which turns it into a
+   scrolling panel with its own close button pushed off the top edge. A card
+   you have to scroll is not a card, so on short viewports it stands down:
+   less padding, a smaller hand, tighter leading. Nothing is dropped. */
+@media (max-height: 820px) {
+  .splash__card {
+    padding: 2.6rem 3rem 2.2rem;
+  }
+  .splash__mark {
+    width: 48px;
+    height: 48px;
+  }
+  .splash__script {
+    margin-top: 0.7rem;
+    font-size: clamp(2.7rem, 7.5vh, 4.2rem);
+  }
+  .splash__rule {
+    margin-top: 1.25rem;
+  }
+  .splash__note {
+    margin-top: 1.1rem;
+    font-size: 1.08rem;
+    line-height: 1.75;
+  }
+  .splash__flourish {
+    margin-top: 0.85rem;
+    font-size: 1.7rem;
+  }
+  .splash__cta {
+    margin-top: 1.4rem;
+  }
+  .splash__count {
+    margin-top: 0.9rem;
+  }
+}
+
 @keyframes splashIn {
   from {
     opacity: 0;
   }
   to {
     opacity: 1;
-  }
-}
-@keyframes splashCard {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 18px, 0) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 @keyframes splashCountdown {
@@ -13378,5 +15114,284 @@ li:hover .checkbox-mark {
   .splash,
   .splash__card {
     animation: none;
+  }
+}
+
+/* ============================================================
+   Policy comprehension quiz (PolicyQuiz.tsx)
+   ============================================================
+   Raised over the task modal when an employee ticks a policy off "Read the
+   docs". Its own overlay above that modal (z 460), same layering idea as the
+   HR document preview. */
+.quiz-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 460;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(232, 143, 48, 0.2), transparent 62%),
+    rgba(31, 25, 17, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.2s var(--ease);
+}
+.quiz {
+  display: flex;
+  flex-direction: column;
+  width: min(40rem, 100%);
+  max-height: 92vh;
+  border-radius: 22px;
+  overflow: hidden;
+  background:
+    radial-gradient(560px 260px at 14% -8%, rgba(255, 255, 255, 0.85), transparent 60%),
+    var(--panel-warm);
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 40px 80px -40px rgba(40, 26, 10, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  animation: splashCard 0.5s cubic-bezier(0.22, 1.1, 0.4, 1) both;
+}
+
+/* --- Head --- */
+.quiz__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.4rem 1.5rem 1rem;
+  flex-shrink: 0;
+}
+.quiz__eyebrow {
+  display: inline-block;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--color-accent-dark);
+}
+.quiz__title {
+  margin: 0.3rem 0 0;
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+}
+.quiz__sub {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.quiz__testing {
+  margin: 0 1.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: var(--color-warning-bg, #fff4e0);
+  border: 1px dashed rgba(200, 140, 40, 0.5);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #9a6a1a;
+}
+
+/* --- Progress dots --- */
+.quiz__dots {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.9rem 1.5rem 0.2rem;
+}
+.quiz__dot {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(120, 100, 70, 0.18);
+  transition: background 0.2s var(--ease);
+}
+.quiz__dot.is-filled {
+  background: var(--color-accent);
+}
+.quiz__dot.is-right {
+  background: var(--color-success, #2f8f5b);
+}
+.quiz__dot.is-wrong {
+  background: var(--color-danger, #c94a3c);
+}
+
+/* --- Questions (scrolls) --- */
+.quiz__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.6rem 1.5rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+.quiz__q {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.quiz__q-prompt {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0;
+  font-size: 0.98rem;
+  font-weight: 650;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+.quiz__q-num {
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  transform: translateY(1px);
+}
+.quiz__options {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.6rem;
+}
+.quiz__opt {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.6);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease), transform 0.1s var(--ease);
+}
+.quiz__opt:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.85);
+}
+.quiz__opt:active:not(:disabled) {
+  transform: scale(0.995);
+}
+.quiz__opt:disabled {
+  cursor: default;
+}
+/* The radio mark on the left of each option. */
+.quiz__opt-mark {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  transition: all 0.15s var(--ease);
+}
+.quiz__opt.is-chosen {
+  border-color: var(--color-accent);
+  background: rgba(232, 147, 12, 0.1);
+}
+.quiz__opt.is-chosen .quiz__opt-mark {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+.quiz__opt-label {
+  flex: 1;
+}
+/* The testing reveal tag. */
+.quiz__opt-hint {
+  flex-shrink: 0;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-success, #2f8f5b);
+  border: 1px dashed rgba(47, 143, 91, 0.5);
+  border-radius: 6px;
+  padding: 0.1rem 0.35rem;
+}
+/* Graded states, after submit. */
+.quiz__opt.is-correct {
+  border-color: var(--color-success, #2f8f5b);
+  background: rgba(47, 143, 91, 0.12);
+}
+.quiz__opt.is-correct .quiz__opt-mark {
+  border-color: var(--color-success, #2f8f5b);
+  background: var(--color-success, #2f8f5b);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+.quiz__opt.is-incorrect {
+  border-color: var(--color-danger, #c94a3c);
+  background: rgba(201, 74, 60, 0.1);
+}
+.quiz__opt.is-incorrect .quiz__opt-mark {
+  border-color: var(--color-danger, #c94a3c);
+  background: var(--color-danger, #c94a3c);
+  box-shadow: inset 0 0 0 3px #fff;
+}
+
+/* --- Foot --- */
+.quiz__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem 1.3rem;
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.quiz__progress {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+}
+.quiz__result {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+}
+.quiz__score {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  font-family: var(--font-heading);
+  font-weight: 800;
+}
+.quiz__score strong {
+  font-size: 1.9rem;
+  line-height: 1;
+}
+.quiz__result.is-pass .quiz__score strong {
+  color: var(--color-success, #2f8f5b);
+}
+.quiz__result.is-fail .quiz__score strong {
+  color: var(--color-danger, #c94a3c);
+}
+.quiz__score span {
+  font-size: 0.9rem;
+  color: var(--color-muted);
+}
+.quiz__result-msg {
+  flex: 1;
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+.quiz__result .btn-solid {
+  flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+  .quiz__result {
+    flex-wrap: wrap;
   }
 }

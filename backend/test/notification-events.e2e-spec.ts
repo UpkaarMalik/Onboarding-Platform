@@ -187,11 +187,24 @@ describe('Notification events (e2e)', () => {
     await post(`/joinee-documents/uploads/${up[0].id}/review`, creds.hr)
       .send({ decision: 'approved' })
       .expect(201);
+    /* Every one of these deep-links to the task it is about — see the
+       comment above the requirement insert in JoineeDocumentsService: a bare
+       /start-here lands the employee on the trail with no popup open, which
+       is the whole reason the task id is carried on the requirement.
+
+       Asserted as the exact id rather than "contains ?task=" because the id
+       is the part that can be wrong: the two document notifications must
+       both point at the UPLOAD task, while each "a new step is ready" points
+       at its own. A looser matcher would pass on all four pointing
+       anywhere. */
+    const handover = await taskId('Company email & laptop handover');
+    const readDocs = await taskId('Read the docs');
+    const upload = await taskId('Upload your documents');
     expect(await newFor('joinee')).toEqual([
-      { kind: 'task_available', title: 'A new step is ready: Company email & laptop handover', body: null, link: '/start-here' },
-      { kind: 'task_available', title: 'A new step is ready: Read the docs', body: null, link: '/start-here' },
-      { kind: 'task_completed', title: 'Upload your documents is complete', body: null, link: '/start-here' },
-      { kind: 'document_approved', title: 'Your Aadhaar Card was approved', body: null, link: '/start-here' },
+      { kind: 'task_available', title: 'A new step is ready: Company email & laptop handover', body: null, link: `/start-here?task=${handover}` },
+      { kind: 'task_available', title: 'A new step is ready: Read the docs', body: null, link: `/start-here?task=${readDocs}` },
+      { kind: 'task_completed', title: 'Upload your documents is complete', body: null, link: `/start-here?task=${upload}` },
+      { kind: 'document_approved', title: 'Your Aadhaar Card was approved', body: null, link: `/start-here?task=${upload}` },
     ]);
     await mark();
 
@@ -199,7 +212,6 @@ describe('Notification events (e2e)', () => {
 
     // 4. HR blocks and resolves the handover: the joinee hears both; HR,
     //    who did it, hears nothing.
-    const handover = await taskId('Company email & laptop handover');
     const blocked = await post(`/onboarding-tasks/${handover}/block`, creds.hr)
       .send({ reason: 'Laptop stock arrives Friday' })
       .expect(201);
@@ -215,7 +227,7 @@ describe('Notification events (e2e)', () => {
     //    still open beside it) but is still news to the joinee.
     await post(`/onboarding-tasks/${handover}/complete-as-owner`, creds.hr).expect(201);
     expect(await newFor('joinee')).toEqual([
-      { kind: 'task_completed', title: 'Company email & laptop handover is complete', body: null, link: '/start-here' },
+      { kind: 'task_completed', title: 'Company email & laptop handover is complete', body: null, link: `/start-here?task=${handover}` },
     ]);
     await mark();
 
@@ -226,11 +238,12 @@ describe('Notification events (e2e)', () => {
     await mark();
 
     // 7. A task owner blocking something is news to HR as well.
-    await post(`/onboarding-tasks/${await taskId('Meet your reporting manager')}/block`, creds.owner)
+    const managerTask = await taskId('Meet your reporting manager');
+    await post(`/onboarding-tasks/${managerTask}/block`, creds.owner)
       .send({ reason: 'Manager is on leave this week' })
       .expect(201);
     expect(await newFor('joinee')).toEqual([
-      expect.objectContaining({ kind: 'task_blocked', title: 'Meet your reporting manager is blocked', link: '/start-here' }),
+      expect.objectContaining({ kind: 'task_blocked', title: 'Meet your reporting manager is blocked', link: `/start-here?task=${managerTask}` }),
     ]);
     expect(await newFor('hr')).toEqual([
       expect.objectContaining({ kind: 'task_blocked_by_owner', title: `Meet your reporting manager for ${JOINEE} is blocked`, link: `/hr?profile=${ids.joinee}` }),

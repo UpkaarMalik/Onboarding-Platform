@@ -411,14 +411,11 @@ export default function Layout() {
 
           {menuOpen && (
             <div className="topnav-menu" role="menu">
-              {/* There is no /profile route yet, so this is inert rather than
-                  a click that quietly goes nowhere. */}
               <button
                 type="button"
                 className="topnav-menu-item"
                 role="menuitem"
-                aria-disabled="true"
-                title="Profile page not built yet"
+                onClick={() => navigate('/profile')}
               >
                 {IC.profile}
                 Profile
