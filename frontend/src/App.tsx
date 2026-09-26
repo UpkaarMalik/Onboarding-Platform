@@ -16,6 +16,7 @@ import TaskOwnerDashboard from './pages/TaskOwnerDashboard';
 import Documents from './pages/Documents';
 import Benefits from './pages/Benefits';
 import MacTools from './pages/MacTools';
+import Profile from './pages/Profile';
 import AuditLog from './pages/AuditLog';
 // PARKED-FEATURE: diary, community, gallery
 //
@@ -77,6 +78,10 @@ export default function App() {
                   <Route path="/audit-log" element={<AuditLog />} />
                 </Route>
 
+                {/* Every role has a profile, so this sits outside the
+                    role-scoped groups above alongside the other shared
+                    pages. */}
+                <Route path="/profile" element={<Profile />} />
                 <Route path="/benefits" element={<Benefits />} />
                 <Route path="/documents" element={<Documents />} />
                 <Route path="/mac-tools" element={<MacTools />} />

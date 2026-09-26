@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import PersonSelect, { useEligiblePeople } from './PersonSelect';
 import { useAuthedFetch } from '../api/useAuthedFetch';
-import { ApiError, openFileInline } from '../api/client';
+import { ApiError, fetchFileObjectUrl } from '../api/client';
 import { formatDate, formatPhone, todayIso } from '../lib/format';
 import Modal from './Modal';
 import AnimatedProgressBar from './AnimatedProgressBar';
@@ -125,6 +125,18 @@ export default function EmployeeProfileModal({
   const [credentials, setCredentials] = useState<CredentialSummary | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [reviewing, setReviewing] = useState<string | null>(null);
+  /* The in-page document preview, and which uploads HR has already opened.
+     Approve is gated on the second: HR should not sign off on a file sight
+     unseen, so the button stays disabled until the upload's id is in here. */
+  const [preview, setPreview] = useState<{
+    uploadId: string;
+    label: string;
+    filename: string | null;
+    url: string;
+    type: string;
+    loading: boolean;
+  } | null>(null);
+  const [previewedIds, setPreviewedIds] = useState<Set<string>>(new Set());
   /* Which upload is mid-rejection, and which task is mid-block/resolve. Held
      as the row itself, not a boolean, so the dialog can name what it is
      about — the thing a window.prompt could never do. */
@@ -171,6 +183,14 @@ export default function EmployeeProfileModal({
   }, [authedFetch, userId]);
 
   useEffect(load, [load]);
+
+  // The preview blob outlives its component otherwise — revoke on unmount.
+  useEffect(() => () => {
+    setPreview((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
 
   useEffect(() => {
     authedFetch<Department[]>('/departments').then(setDepartments).catch(() => {});
@@ -258,6 +278,47 @@ export default function EmployeeProfileModal({
    * where the old `if (!note) return` turned that into the button silently
    * doing nothing.
    */
+  /** Opens the file in an in-page panel and marks it previewed. The object
+   *  URL is created up front (loading) so the panel can show a spinner while
+   *  the blob arrives, and the previous one is revoked so opening several in
+   *  a row does not pile up blobs. */
+  async function openPreview(doc: JoineeDocument) {
+    if (!doc.upload_id) return;
+    setError(null);
+    setPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return {
+        uploadId: doc.upload_id!,
+        label: doc.label,
+        filename: doc.original_filename,
+        url: '',
+        type: '',
+        loading: true,
+      };
+    });
+    try {
+      const { url, type } = await fetchFileObjectUrl(
+        `/joinee-documents/uploads/${doc.upload_id}/file`,
+      );
+      setPreview((prev) =>
+        prev && prev.uploadId === doc.upload_id ? { ...prev, url, type, loading: false } : prev,
+      );
+      // Marked previewed only once the bytes actually arrived — a failed
+      // fetch must not unlock Approve.
+      setPreviewedIds((prev) => new Set(prev).add(doc.upload_id!));
+    } catch {
+      setPreview(null);
+      setError('Could not open this document');
+    }
+  }
+
+  function closePreview() {
+    setPreview((prev) => {
+      if (prev?.url) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }
+
   async function review(uploadId: string, decision: 'approved' | 'rejected', note?: string) {
     setReviewing(uploadId);
     setError(null);
@@ -664,25 +725,30 @@ export default function EmployeeProfileModal({
                       <span className="field-hint">Rejection note: {doc.review_note}</span>
                     )}
                     <div className="doc-list__actions">
-                      {/* Cookie-authenticated; a plain <a href> would work
-                          in principle, but openFileInline fetches the blob
-                          and hands it to a new tab so the download-vs-view
-                          decision stays with the browser's PDF viewer. */}
+                      {/* Opens the file in a panel over this modal rather than
+                          a new tab, so the decision is made with the document
+                          in front of HR. Marks it previewed, which is what
+                          unlocks Approve below. */}
                       <button
                         type="button"
-                        onClick={() =>
-                          openFileInline(
-                            `/joinee-documents/uploads/${doc.upload_id}/file`,
-                          ).catch(() => setError('Could not open this document'))
-                        }
+                        className={preview?.uploadId === doc.upload_id ? 'is-active' : undefined}
+                        onClick={() => void openPreview(doc)}
                       >
-                        Preview
+                        {previewedIds.has(doc.upload_id!) ? 'Preview again' : 'Preview'}
                       </button>
                       {doc.review_status === 'pending_review' && (
                         <>
+                          {/* Gated on a preview: HR cannot approve a file they
+                              have not opened. The title says why while it is
+                              disabled, so it does not read as simply broken. */}
                           <button
                             type="button"
-                            disabled={reviewing === doc.upload_id}
+                            disabled={reviewing === doc.upload_id || !previewedIds.has(doc.upload_id!)}
+                            title={
+                              previewedIds.has(doc.upload_id!)
+                                ? undefined
+                                : 'Preview the document before approving'
+                            }
                             onClick={() => review(doc.upload_id!, 'approved')}
                           >
                             Approve
@@ -698,6 +764,12 @@ export default function EmployeeProfileModal({
                         </>
                       )}
                     </div>
+                    {doc.review_status === 'pending_review' &&
+                      !previewedIds.has(doc.upload_id!) && (
+                        <span className="field-hint doc-list__gate">
+                          Preview the document to enable Approve.
+                        </span>
+                      )}
                   </>
                 ) : (
                   <span className="field-hint">Not uploaded yet.</span>
@@ -867,6 +939,50 @@ export default function EmployeeProfileModal({
           <p className="muted">Loading credentials…</p>
         )}
       </section>
+
+      {/* The in-page document preview. An overlay over this modal — the same
+          idea as the policy reader on the Documents page — so HR reads the
+          file where they are, then approves. PDFs go in an <iframe>, images
+          in an <img>; anything else (a stray .docx) the browser cannot show
+          inline falls back to opening in a new tab. */}
+      {preview && (
+        <div className="doc-preview-overlay" onClick={closePreview}>
+          <div className="doc-preview" onClick={(e) => e.stopPropagation()}>
+            <div className="doc-preview__bar">
+              <div className="doc-preview__title">
+                <strong>{preview.label}</strong>
+                {preview.filename && <span className="muted">{preview.filename}</span>}
+              </div>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={closePreview}
+                aria-label="Close preview"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <div className="doc-preview__body">
+              {preview.loading ? (
+                <p className="muted doc-preview__msg">Loading document…</p>
+              ) : preview.type.startsWith('image/') ? (
+                <img src={preview.url} alt={preview.label} className="doc-preview__img" />
+              ) : preview.type === 'application/pdf' ? (
+                <iframe src={preview.url} title={preview.label} className="doc-preview__frame" />
+              ) : (
+                <div className="doc-preview__msg">
+                  <p className="muted">This file type can’t be shown here.</p>
+                  <a href={preview.url} target="_blank" rel="noopener noreferrer" className="btn-solid btn-sm">
+                    Open in a new tab
+                  </a>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* The three "say why" dialogs. All the same component: this is one
           form with two booleans, not three forms that would drift. */}

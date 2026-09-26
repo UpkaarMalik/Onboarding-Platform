@@ -1320,10 +1320,24 @@ export function CreateJoineeWizard({
  * removing it would make typing the space between two names impossible.
  */
 export function cleanFullName(raw: string): string {
-  return raw
-    .replace(/[^\p{L}\p{M}\s]/gu, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/^\s+/, '');
+  return (
+    raw
+      // Letters, combining marks and spaces only — no digits or punctuation.
+      .replace(/[^\p{L}\p{M}\s]/gu, '')
+      .replace(/\s{2,}/g, ' ')
+      .replace(/^\s+/, '')
+      // Title-case every word: first letter up, the rest down, however it was
+      // typed — so "arjun KAPOOR" and "ARJUN kapoor" both land as "Arjun
+      // Kapoor". Applied on each keystroke, which is why the rest of the word
+      // is lowercased rather than left alone: without that, a capital typed
+      // mid-word would stick. The trade is that intentional inner capitals
+      // (McDonald, DeSouza) are flattened to Mcdonald / Desouza — acceptable
+      // for a joinee form, where the common case is someone typing casually.
+      .replace(
+        /\p{L}[\p{L}\p{M}]*/gu,
+        (word) => word[0].toLocaleUpperCase() + word.slice(1).toLocaleLowerCase(),
+      )
+  );
 }
 
 /**

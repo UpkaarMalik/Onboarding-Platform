@@ -2,9 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
+import * as cookieParser from 'cookie-parser';
 
 import { AppModule } from '../src/app.module';
 import { TokenService } from '../src/auth/tokens/token.service';
+import { SessionsService } from '../src/auth/sessions/sessions.service';
 import { DatabaseService } from '../src/database/database.service';
 
 // Same fallback env pattern as the other e2e suites.
@@ -22,13 +24,13 @@ process.env.TOTP_ISSUER ??= 'Onboarding Platform';
 /**
  * Day 3's three closing acceptance tests:
  *
- * 1. Checkpoint:
- *    Both the task owner and employee must independently confirm
- *    before the checkpoint becomes completed.
+ * 1. Dual confirmation:
+ *    A 'dual' task needs both the owner and the employee to confirm
+ *    before it completes. No template produces one since migration 0028
+ *    made every task single-sided, so the test builds the row itself —
+ *    applyDualConfirmation still runs for every pre-0028 row.
  *
- * 2. Notes:
- *    A SuperAdmin reading another user's note gets 403 and never
- *    receives the private note content.
+ * 2. Notes: REMOVED — there is no notes module any more.
  *
  * 3. Entitlements:
  *    Two concurrent claims against the final entitlement unit result
@@ -47,13 +49,28 @@ describe('Day 3 acceptance tests (e2e)', () => {
   // activity_logs.actor_id REFERENCES users(id), so a fabricated
   // UUID inside a JWT can cause a foreign-key violation.
   let testSuperadminId: string;
-  let superadminToken: string;
+  let sessions: SessionsService;
+
+  /** Bearer token plus the CSRF value bound to the same session row.
+   *  Writes need both: CsrfGuard is global and runs before auth. */
+  interface Creds {
+    token: string;
+    csrf: string;
+  }
+
+  let superadmin: Creds;
+
+  /* The suite's own superadmin used a fixed '+10000000001', so a run whose
+     teardown did not finish left a row that failed every later run on the
+     phone_number unique constraint. */
+  const stamp = Date.now();
+  /** Bounds the notification sweep in afterAll to this run. */
+  const suiteStartedAt = new Date();
 
   let engineeringDeptId: string;
 
   const createdUserIds: string[] = [];
   const createdOnboardingIds: string[] = [];
-  const createdNoteIds: string[] = [];
   const createdEntitlementIds: string[] = [];
 
   beforeAll(async () => {
@@ -62,6 +79,9 @@ describe('Day 3 acceptance tests (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    // main.ts registers this; createNestApplication() does not. Without it
+    // req.cookies is undefined and CsrfGuard 403s every write.
+    app.use(cookieParser());
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -75,6 +95,7 @@ describe('Day 3 acceptance tests (e2e)', () => {
 
     db = moduleRef.get(DatabaseService);
     tokens = moduleRef.get(TokenService);
+    sessions = moduleRef.get(SessionsService);
 
     // ------------------------------------------------------------
     // Create a REAL SuperAdmin specifically for this test suite.
@@ -106,7 +127,7 @@ describe('Day 3 acceptance tests (e2e)', () => {
       )
       VALUES (
         'Day 3 Test SuperAdmin',
-        '+10000000001',
+        $2,
         NULL,
         false,
         false,
@@ -116,7 +137,7 @@ describe('Day 3 acceptance tests (e2e)', () => {
         'active'
       )
       RETURNING id`,
-      [passwordHash],
+      [passwordHash, `+1${String(stamp).slice(-10)}`],
     );
 
     if (!adminRows[0]) {
@@ -127,11 +148,9 @@ describe('Day 3 acceptance tests (e2e)', () => {
 
     testSuperadminId = adminRows[0].id;
 
-    // Generate JWT using the REAL database user ID.
-    superadminToken = tokens.signAccessToken({
-      id: testSuperadminId,
-      role: 'superadmin_hr',
-    });
+    // A real session, not just a signed token: JwtStrategy re-reads the
+    // user_sessions row on every request (migration 0029).
+    superadmin = await signIn(testSuperadminId, 'superadmin_hr');
 
     // ------------------------------------------------------------
     // Find Engineering department.
@@ -184,6 +203,16 @@ describe('Day 3 acceptance tests (e2e)', () => {
     // ------------------------------------------------------------
 
     if (createdOnboardingIds.length) {
+      // Subtasks before tasks: templates seed checklist items as of
+      // migration 0034 and onboarding_subtasks has no cascade.
+      await db.query(
+        `DELETE FROM onboarding_subtasks
+          WHERE onboarding_task_id IN (
+            SELECT id FROM onboarding_tasks
+             WHERE onboarding_id = ANY($1::uuid[]))`,
+        [createdOnboardingIds],
+      );
+
       await db.query(
         `DELETE FROM onboarding_tasks
          WHERE onboarding_id = ANY($1::uuid[])`,
@@ -194,18 +223,6 @@ describe('Day 3 acceptance tests (e2e)', () => {
         `DELETE FROM onboardings
          WHERE id = ANY($1::uuid[])`,
         [createdOnboardingIds],
-      );
-    }
-
-    // ------------------------------------------------------------
-    // Delete notes.
-    // ------------------------------------------------------------
-
-    if (createdNoteIds.length) {
-      await db.query(
-        `DELETE FROM notes
-         WHERE id = ANY($1::uuid[])`,
-        [createdNoteIds],
       );
     }
 
@@ -231,6 +248,27 @@ describe('Day 3 acceptance tests (e2e)', () => {
     // Delete users created by the tests.
     // ------------------------------------------------------------
 
+    const allUserIds = [...createdUserIds, testSuperadminId].filter(Boolean);
+
+    // Notifications reference users (migration 0032, newer than this
+    // suite). They are fanned out to HR as well as to the joinee, so the
+    // second clause catches the ones addressed to real HR accounts that
+    // merely NAME a user this suite created.
+    await db.query(
+      `DELETE FROM notifications
+        WHERE user_id = ANY($1::uuid[])
+           OR (created_at >= $2 AND EXISTS (
+                 SELECT 1 FROM users u
+                  WHERE u.id = ANY($1::uuid[])
+                    AND notifications.title LIKE '%' || u.full_name || '%'))`,
+      [allUserIds, suiteStartedAt],
+    );
+
+    await db.query(
+      `DELETE FROM user_sessions WHERE user_id = ANY($1::uuid[])`,
+      [allUserIds],
+    );
+
     if (createdUserIds.length) {
       await db.query(
         `DELETE FROM users
@@ -255,20 +293,54 @@ describe('Day 3 acceptance tests (e2e)', () => {
   });
 
   // ============================================================
-  // Helper: create a real user through the API
+  // Helpers
   // ============================================================
+
+  /**
+   * A real session, because a signed token alone is no longer a
+   * credential: JwtStrategy re-reads the user_sessions row on EVERY
+   * request, so a fabricated `sid` is rejected outright. The CSRF value
+   * comes from the same call because CsrfGuard binds the header to that
+   * session's stored hash.
+   */
+  async function signIn(userId: string, role: string): Promise<Creds> {
+    const { sessionId, csrfToken } = await sessions.createSession(
+      userId,
+      'day3-acceptance-e2e',
+    );
+    return {
+      token: tokens.signAccessToken(
+        { id: userId, role, department_id: null } as any,
+        sessionId,
+      ),
+      csrf: csrfToken,
+    };
+  }
+
+  /** Authenticated write — token and CSRF pair in one place. */
+  function authedPost(path: string, who: Creds) {
+    return request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${who.token}`)
+      .set('Cookie', [`csrf_token=${who.csrf}`])
+      .set('X-CSRF-Token', who.csrf);
+  }
 
   async function createUser(
     fullName: string,
     role: 'employee' | 'task_owner',
     departmentId?: string,
   ) {
-    const res = await request(app.getHttpServer())
-      .post('/auth/users')
-      .set('Authorization', `Bearer ${superadminToken}`)
+    const res = await authedPost('/auth/users', superadmin)
       .send({
         fullName,
-        phoneNumber: '+10000000002',
+        /* Was a single fixed '+10000000002' for every user this suite
+           creates, so the second call in any run collided on the
+           phone_number unique constraint. Never noticed because the
+           suite has not compiled since the session change. */
+        phoneNumber: `+1${String(stamp).slice(-6)}${String(
+          2000 + createdUserIds.length,
+        ).padStart(4, '0')}`,
         role,
         ...(departmentId ? { departmentId } : {}),
       });
@@ -305,12 +377,7 @@ describe('Day 3 acceptance tests (e2e)', () => {
         engineeringDeptId,
       );
 
-      const onboardingRes = await request(app.getHttpServer())
-        .post('/onboardings')
-        .set(
-          'Authorization',
-          `Bearer ${superadminToken}`,
-        )
+      const onboardingRes = await authedPost('/onboardings', superadmin)
         .send({
           userId: employeeId,
           startDate: '2026-09-07',
@@ -336,15 +403,34 @@ describe('Day 3 acceptance tests (e2e)', () => {
         'task_owner',
       );
 
-      const ownerToken = tokens.signAccessToken({
-        id: taskOwnerId,
-        role: 'task_owner',
-      });
+      /*
+       * The dual-confirm shape has to be MADE, because no template
+       * produces it any more.
+       *
+       * Migration 0028 (single_sided_task_completion) pinned
+       * completionMode to @IsIn(['employee']) in every DTO, and 0031
+       * handed the checkpoint to HR as a single-sided 'owner' task. So
+       * this onboarding's checkpoint is superadmin_hr/owner: a
+       * task_owner calling complete-as-owner on it is a 403, and even HR
+       * calling it would close the task outright rather than wait for a
+       * second confirmation.
+       *
+       * applyDualConfirmation is still live code and still runs for every
+       * pre-0028 row, of which this database has many, so the rule is
+       * worth keeping under test — the fixture is just no longer
+       * something the API will build for us.
+       */
+      await db.query(
+        `UPDATE onboarding_tasks
+            SET completion_mode = 'dual', owner_role = 'task_owner',
+                owner_user_id = NULL
+          WHERE id = $1`,
+        [checkpointTask!.id],
+      );
 
-      const empToken = tokens.signAccessToken({
-        id: employeeId,
-        role: 'employee',
-      });
+      const ownerToken = await signIn(taskOwnerId, 'task_owner');
+
+      const empToken = await signIn(employeeId, 'employee');
 
       // ----------------------------------------------------------
       // Owner confirms alone.
@@ -352,17 +438,10 @@ describe('Day 3 acceptance tests (e2e)', () => {
       // This must NOT complete the checkpoint.
       // ----------------------------------------------------------
 
-      const ownerRes = await request(
-        app.getHttpServer(),
-      )
-        .post(
-          `/onboarding-tasks/${checkpointTask!.id}/complete-as-owner`,
-        )
-        .set(
-          'Authorization',
-          `Bearer ${ownerToken}`,
-        )
-        .send();
+      const ownerRes = await authedPost(
+        `/onboarding-tasks/${checkpointTask!.id}/complete-as-owner`,
+        ownerToken,
+      ).send();
 
       expect(ownerRes.status).toBe(201);
       expect(ownerRes.body.status).not.toBe(
@@ -387,17 +466,10 @@ describe('Day 3 acceptance tests (e2e)', () => {
       // NOW both sides have confirmed, so it should complete.
       // ----------------------------------------------------------
 
-      const empRes = await request(
-        app.getHttpServer(),
-      )
-        .post(
-          `/onboarding-tasks/${checkpointTask!.id}/complete-as-employee`,
-        )
-        .set(
-          'Authorization',
-          `Bearer ${empToken}`,
-        )
-        .send();
+      const empRes = await authedPost(
+        `/onboarding-tasks/${checkpointTask!.id}/complete-as-employee`,
+        empToken,
+      ).send();
 
       expect(empRes.status).toBe(201);
       expect(empRes.body.status).toBe(
@@ -430,96 +502,15 @@ describe('Day 3 acceptance tests (e2e)', () => {
   );
 
   // ============================================================
-  // TEST 2
-  // SuperAdmin cannot read another user's private note.
+  // TEST 2 — REMOVED
+  //
+  // This asserted that a SuperAdmin reading another user's private note
+  // gets 403 rather than the content. There is no notes module in src/ any
+  // more — the feature was removed — so every request here 404s and the
+  // privacy boundary it guarded no longer exists. Deleted rather than
+  // skipped: a skipped test for a deleted feature reads as coverage
+  // somebody still owes.
   // ============================================================
-
-  it(
-    "a SuperAdmin gets 403 reading another user's notes, not 404 or the content",
-    async () => {
-      const noteOwnerId =
-        await createEmployee(
-          'Notes Test Employee',
-        );
-
-      const ownerToken =
-        tokens.signAccessToken({
-          id: noteOwnerId,
-          role: 'employee',
-        });
-
-      const createRes = await request(
-        app.getHttpServer(),
-      )
-        .post('/notes')
-        .set(
-          'Authorization',
-          `Bearer ${ownerToken}`,
-        )
-        .send({
-          content: 'this is private',
-        });
-
-      expect(createRes.status).toBe(201);
-
-      const noteId =
-        createRes.body.id as string;
-
-      createdNoteIds.push(noteId);
-
-      // ----------------------------------------------------------
-      // SuperAdmin attempts to read another user's note.
-      // ----------------------------------------------------------
-
-      const adminReadRes =
-        await request(app.getHttpServer())
-          .get(`/notes/${noteId}`)
-          .set(
-            'Authorization',
-            `Bearer ${superadminToken}`,
-          );
-
-      expect(adminReadRes.status).toBe(403);
-
-      expect(
-        JSON.stringify(adminReadRes.body),
-      ).not.toContain('this is private');
-
-      // ----------------------------------------------------------
-      // A genuinely nonexistent note should still return 404.
-      // ----------------------------------------------------------
-
-      const missingRes =
-        await request(app.getHttpServer())
-          .get(
-            '/notes/00000000-0000-0000-0000-000000000000',
-          )
-          .set(
-            'Authorization',
-            `Bearer ${superadminToken}`,
-          );
-
-      expect(missingRes.status).toBe(404);
-
-      // ----------------------------------------------------------
-      // The actual owner can read their own note.
-      // ----------------------------------------------------------
-
-      const ownRes =
-        await request(app.getHttpServer())
-          .get(`/notes/${noteId}`)
-          .set(
-            'Authorization',
-            `Bearer ${ownerToken}`,
-          );
-
-      expect(ownRes.status).toBe(200);
-      expect(ownRes.body.content).toBe(
-        'this is private',
-      );
-    },
-  );
-
   // ============================================================
   // TEST 3
   // Two concurrent claims against one remaining entitlement.
@@ -529,14 +520,13 @@ describe('Day 3 acceptance tests (e2e)', () => {
     'two concurrent claims on the last entitlement unit — only one succeeds',
     async () => {
       const createRes =
-        await request(app.getHttpServer())
-          .post('/entitlements')
-          .set(
-            'Authorization',
-            `Bearer ${superadminToken}`,
-          )
+        await authedPost('/entitlements', superadmin)
           .send({
             name: 'Last Sports Kit',
+            // Required since migration 0029 added categories to
+            // entitlements; the DTO is @IsIn(['device','insurance','perks'])
+            // and omitting it is a 400.
+            category: 'perks',
             scope: 'company_wide',
             totalQuantity: 1,
           });
@@ -561,38 +551,22 @@ describe('Day 3 acceptance tests (e2e)', () => {
         );
 
       const tokenX =
-        tokens.signAccessToken({
-          id: userXId,
-          role: 'employee',
-        });
+        await signIn(userXId, 'employee');
 
       const tokenY =
-        tokens.signAccessToken({
-          id: userYId,
-          role: 'employee',
-        });
+        await signIn(userYId, 'employee');
 
       const [resX, resY] =
         await Promise.all([
-          request(app.getHttpServer())
-            .post(
-              `/entitlements/${entitlementId}/claim`,
-            )
-            .set(
-              'Authorization',
-              `Bearer ${tokenX}`,
-            )
-            .send(),
+          authedPost(
+            `/entitlements/${entitlementId}/claim`,
+            tokenX,
+          ).send(),
 
-          request(app.getHttpServer())
-            .post(
-              `/entitlements/${entitlementId}/claim`,
-            )
-            .set(
-              'Authorization',
-              `Bearer ${tokenY}`,
-            )
-            .send(),
+          authedPost(
+            `/entitlements/${entitlementId}/claim`,
+            tokenY,
+          ).send(),
         ]);
 
       const statuses = [

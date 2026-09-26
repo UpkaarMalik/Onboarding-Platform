@@ -23,7 +23,7 @@ process.env.TOTP_ISSUER ??= 'Onboarding Platform';
  *
  *   1. Nothing opens until HR has APPROVED every document.
  *   2. Then TWO things open at once: Read the docs, and the laptop handover.
- *   3. Then the rest, one at a time.
+ *   3. Then the rest, all at once and in whatever order suits.
  *
  * Driven against the real task titles the templates produce, because the
  * bands that decide the stages match on those titles — a test with invented
@@ -116,7 +116,7 @@ describe('Onboarding flow gate (e2e)', () => {
     expect(open.some((t) => /install/i.test(t))).toBe(false);
   });
 
-  it('then releases the rest one at a time', () => {
+  it('then releases the whole remainder at once', () => {
     const stageTwoDone = fresh().map((t) =>
       t.system_key === 'document_upload' ||
       /read the docs/i.test(t.title) ||
@@ -125,8 +125,15 @@ describe('Onboarding flow gate (e2e)', () => {
         : t,
     );
     const open = openTitles(stageTwoDone);
-    // "Step by step" — exactly one, not the whole remainder at once.
-    expect(open).toHaveLength(1);
+    const unfinished = stageTwoDone.filter((t) => t.status !== 'completed');
+
+    // Past the handover there is no dependency left between the remaining
+    // tasks, so every one of them is open and the employee picks the order.
+    // This asserted exactly one until the gate was opened up; more than one
+    // is the point of the change, so a length of 1 here would mean stage 2
+    // had slipped back to sequential.
+    expect(open.length).toBeGreaterThan(1);
+    expect(open).toHaveLength(unfinished.length);
   });
 
   it('refuses to call a later task open, which is what the completion guard asks', () => {

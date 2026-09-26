@@ -1,8 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
+import * as cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module';
 import { TokenService } from '../src/auth/tokens/token.service';
+import { SessionsService } from '../src/auth/sessions/sessions.service';
 import { DatabaseService } from '../src/database/database.service';
 
 // Same fallback env pattern as rbac.e2e-spec.ts.
@@ -30,6 +32,11 @@ describe('Template immutability (e2e)', () => {
 
   let superadminToken: string;
   let superadminId: string;
+  /* The session the token belongs to, and the CSRF value issued with it.
+     JwtStrategy re-reads the session row on every request and CsrfGuard
+     binds the header to that same row, so neither can be faked. */
+  let superadminSessionId: string;
+  let superadminCsrf: string;
 
   let engineeringDeptId: string;
   let originalActiveTemplateId: string;
@@ -38,6 +45,13 @@ describe('Template immutability (e2e)', () => {
   let createdUserId: string | undefined;
   let createdOnboardingId: string | undefined;
 
+  /* The joinee this suite creates was a fixed '+10000000001', so a run
+     whose teardown did not finish left a row that made every later run
+     fail on the phone_number unique constraint — a stale row, reported as
+     a broken test. Stamped, each run gets its own. */
+  const stamp = Date.now();
+  const testPhone = `+1${String(stamp).slice(-10)}`;
+
   beforeAll(async () => {
     const moduleRef: TestingModule =
       await Test.createTestingModule({
@@ -45,6 +59,10 @@ describe('Template immutability (e2e)', () => {
       }).compile();
 
     app = moduleRef.createNestApplication();
+    // main.ts registers this; createNestApplication() does not. Without it
+    // req.cookies is undefined, the global CsrfGuard reads an empty cookie
+    // and every write here 403s before reaching the handler.
+    app.use(cookieParser());
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -90,11 +108,16 @@ describe('Template immutability (e2e)', () => {
 
     superadminId = adminRows[0].id;
 
-    // Sign the token using the REAL database user ID.
-    superadminToken = tokens.signAccessToken({
-      id: superadminId,
-      role: 'superadmin_hr',
-    });
+    // Sign the token using the REAL database user ID, against a REAL
+    // session: a signed token is no longer a credential on its own.
+    const sessions = moduleRef.get(SessionsService);
+    const issued = await sessions.createSession(superadminId, 'template-immutability-e2e');
+    superadminSessionId = issued.sessionId;
+    superadminCsrf = issued.csrfToken;
+    superadminToken = tokens.signAccessToken(
+      { id: superadminId, role: 'superadmin_hr', department_id: null } as any,
+      superadminSessionId,
+    );
 
     // ------------------------------------------------------------
     // Find Engineering department
@@ -144,6 +167,18 @@ describe('Template immutability (e2e)', () => {
     // ------------------------------------------------------------
 
     if (createdOnboardingId) {
+      // Subtasks before tasks. Templates seed checklist items as of
+      // migration 0034 (the install task and the reading task both carry
+      // them), and onboarding_subtasks references onboarding_tasks with
+      // no cascade — so deleting the tasks first fails the FK and leaves
+      // the whole teardown half-done.
+      await db.query(
+        `DELETE FROM onboarding_subtasks
+          WHERE onboarding_task_id IN (
+            SELECT id FROM onboarding_tasks WHERE onboarding_id = $1)`,
+        [createdOnboardingId],
+      );
+
       await db.query(
         `DELETE FROM onboarding_tasks
          WHERE onboarding_id = $1`,
@@ -203,6 +238,14 @@ describe('Template immutability (e2e)', () => {
       );
     }
 
+    // The session was opened on a REAL superadmin account that outlives
+    // this suite, so it is removed by id rather than by user — deleting
+    // every session for that user would sign the person out of their own
+    // browser.
+    if (superadminSessionId) {
+      await db.query(`DELETE FROM user_sessions WHERE id = $1`, [superadminSessionId]);
+    }
+
     if (app) {
       await app.close();
     }
@@ -218,9 +261,11 @@ describe('Template immutability (e2e)', () => {
       const createUserRes = await request(app.getHttpServer())
         .post('/auth/users')
         .set('Authorization', `Bearer ${superadminToken}`)
+        .set('Cookie', [`csrf_token=${superadminCsrf}`])
+        .set('X-CSRF-Token', superadminCsrf)
         .send({
-          fullName: 'Template Immutability Test',
-          phoneNumber: '+10000000001',
+          fullName: `Template Immutability Test ${stamp}`,
+          phoneNumber: testPhone,
           role: 'employee',
           departmentId: engineeringDeptId,
         });
@@ -240,6 +285,8 @@ describe('Template immutability (e2e)', () => {
       const createOnboardingRes = await request(app.getHttpServer())
         .post('/onboardings')
         .set('Authorization', `Bearer ${superadminToken}`)
+        .set('Cookie', [`csrf_token=${superadminCsrf}`])
+        .set('X-CSRF-Token', superadminCsrf)
         .send({
           userId: createdUserId,
           startDate: '2026-09-07',
@@ -268,6 +315,8 @@ describe('Template immutability (e2e)', () => {
           `/templates/${originalActiveTemplateId}/versions`,
         )
         .set('Authorization', `Bearer ${superadminToken}`)
+        .set('Cookie', [`csrf_token=${superadminCsrf}`])
+        .set('X-CSRF-Token', superadminCsrf)
         .send({
           tasks: [
             {
@@ -275,7 +324,12 @@ describe('Template immutability (e2e)', () => {
                 'COMPLETELY DIFFERENT TASK — must never reach the existing joiner',
               ownerRole: 'task_owner',
               dueOffsetDays: 0,
-              completionMode: 'dual',
+              // Was 'dual', which the DTO has refused since migration 0028
+              // (@IsIn(['employee']) on completionMode) — a template may not
+              // author a task the joinee cannot close. What this suite is
+              // actually about is that editing a template leaves existing
+              // onboardings alone, and any valid mode serves that equally.
+              completionMode: 'employee',
               isCheckpoint: true,
             },
           ],
@@ -306,23 +360,42 @@ describe('Template immutability (e2e)', () => {
 
       expect(tasksAfter).toHaveLength(tasksBefore.length);
 
-      tasksAfter.forEach((after, i) => {
-        const before = tasksBefore[i];
+      /* Matched by ID rather than by position.
+       *
+       * These two lists are ordered by different things and always were:
+       * `tasksBefore` is the API's response, which comes back in TRAIL
+       * order (see orderForTrail — paperwork, reading, kit, installs, the
+       * rest), while `tasksAfter` is a raw query ordered by due_date. A
+       * positional comparison was therefore asserting that those two
+       * orderings agree, which is not what this suite is about and is not
+       * true once several tasks share a due date.
+       *
+       * Keying on the id tests the thing that actually matters, and tests
+       * it harder: every task that existed before still exists, unchanged,
+       * and none has been added or swapped. */
+      expect(new Set(tasksAfter.map((t) => t.id))).toEqual(
+        new Set(tasksBefore.map((t) => t.id)),
+      );
 
-        expect(after.id).toBe(before.id);
-        expect(after.title).toBe(before.title);
+      const afterById = new Map(tasksAfter.map((t) => [t.id, t]));
+
+      tasksBefore.forEach((before) => {
+        const after = afterById.get(before.id);
+
+        expect(after).toBeDefined();
+        expect(after!.title).toBe(before.title);
 
         expect(
-          after.due_date.toISOString().slice(0, 10),
+          after!.due_date.toISOString().slice(0, 10),
         ).toBe(
           before.due_date.slice(0, 10),
         );
 
-        expect(after.completion_mode).toBe(
+        expect(after!.completion_mode).toBe(
           before.completion_mode,
         );
 
-        expect(after.is_checkpoint).toBe(
+        expect(after!.is_checkpoint).toBe(
           before.is_checkpoint,
         );
       });

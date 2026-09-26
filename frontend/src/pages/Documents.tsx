@@ -1,14 +1,30 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuthedFetch } from '../api/useAuthedFetch';
 import { useAuth } from '../auth/AuthContext';
-import { ApiError, downloadFile, openFileInline } from '../api/client';
+import { API_BASE_URL, ApiError, downloadFile, openFileInline } from '../api/client';
 import Reveal from '../components/Reveal';
+import { BrandMark, BrandWord } from '../components/BrandLogo';
+import artLeave from '../assets/policy-leave.png';
+import artStealth from '../assets/policy-stealth.png';
+import artHealth from '../assets/policy-health.png';
+import artMeal from '../assets/policy-meal.png';
+import artHandbook from '../assets/policy-handbook.png';
+import artTravel from '../assets/policy-travel.png';
+import { useToast, toastError } from '../components/Toast';
 
 interface DocumentRow {
   id: string;
   title: string;
   department_id: string | null;
+  category: Category | null;
+  is_available: boolean;
   created_at: string;
+}
+
+interface Department {
+  id: string;
+  name: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -16,8 +32,11 @@ interface DocumentRow {
 /* ------------------------------------------------------------------ */
 type Category = 'health' | 'travel' | 'general';
 
-function categoryFor(title: string): Category {
-  const t = title.toLowerCase();
+/** The stored category wins; the title-based guess is only the fallback for
+ *  rows uploaded before the category column existed (which are all NULL). */
+function categoryFor(doc: { title: string; category?: Category | null }): Category {
+  if (doc.category) return doc.category;
+  const t = doc.title.toLowerCase();
   if (t.includes('health') || t.includes('insurance')) return 'health';
   if (t.includes('travel') || t.includes('meal') || t.includes('reimbursement') || t.includes('expense'))
     return 'travel';
@@ -106,11 +125,37 @@ function descriptionFor(title: string): string {
     return 'Per-diem food meal allowances during customer visits, late shifts, and travels.';
   if (t.includes('handbook'))
     return 'Code of conduct, working norms, leave policies, and organizational hierarchy rules.';
+  if (t.includes('stealth'))
+    return 'What can and cannot be said publicly about unreleased work, and who to ask when you are unsure.';
   if (t.includes('leave') || t.includes('holiday'))
-    return 'Company leave calendar, holiday list, and time-off request guidelines.';
+    return 'Leave types and balances, how to apply, approvals, carry-forward and the holiday calendar.';
   if (t.includes('safety') || t.includes('security'))
     return 'Workplace safety protocols, IT security guidelines, and emergency procedures.';
   return 'Company policy document covering important guidelines and procedures.';
+}
+
+/**
+ * The picture on the right of each card.
+ *
+ * Matched on the title the same way descriptionFor and metaFor are, so a
+ * policy HR renames slightly keeps its art, and one we have no picture for
+ * simply renders without — the card's layout does not depend on it.
+ *
+ * Order matters below: 'travel' is tested before the generic cases because
+ * "Domestic Travel Policy" would otherwise fall through to nothing.
+ */
+function artFor(title: string): { src: string; alt: string } | null {
+  const t = title.toLowerCase();
+  if (t.includes('insurance') || t.includes('health'))
+    return { src: artHealth, alt: '' };
+  if (t.includes('travel')) return { src: artTravel, alt: '' };
+  if (t.includes('meal') || t.includes('reimbursement'))
+    return { src: artMeal, alt: '' };
+  if (t.includes('handbook')) return { src: artHandbook, alt: '' };
+  if (t.includes('stealth')) return { src: artStealth, alt: '' };
+  if (t.includes('leave') || t.includes('holiday'))
+    return { src: artLeave, alt: '' };
+  return null;
 }
 
 function metaFor(title: string): { label: string; value: string } {
@@ -123,6 +168,10 @@ function metaFor(title: string): { label: string; value: string } {
     return { label: 'Allowance', value: 'Monthly Sodexo / Zeta' };
   if (t.includes('handbook'))
     return { label: 'Version', value: 'v3.4 (2025 rev)' };
+  if (t.includes('stealth'))
+    return { label: 'Applies to', value: 'Everyone, from day one' };
+  if (t.includes('leave'))
+    return { label: 'Annual Balance', value: '12 CL · 8 SL · 15 EL' };
   return { label: 'Type', value: 'Policy Document' };
 }
 
@@ -167,7 +216,36 @@ const POLICY_CONTENT: Record<string, PolicySection[]> = {
     { heading: '5. IT & Security', text: 'Use only company-approved devices and software. Do not share credentials. Lock screen when away. Report lost devices within 2 hours to IT.' },
     { heading: '6. Reporting Structure', text: 'Every employee reports to a designated manager. Skip-level meetings quarterly. Grievances can be raised anonymously via the Ethics Hotline.' },
   ],
+  'leave policy': [
+    { heading: '1. Leave Year', text: 'The leave year runs 1 April to 31 March. Balances are credited at the start of it, or pro-rated from your joining date if you join part way through.' },
+    { heading: '2. Casual Leave', text: '12 days a year, credited monthly at 1 per month. For short, planned absences. Apply at least 2 working days ahead where you can; CL cannot be carried into the next leave year.' },
+    { heading: '3. Sick Leave', text: '8 days a year. No notice needed — tell your manager as early in the day as you can. A medical certificate is required for 3 or more consecutive days.' },
+    { heading: '4. Earned Leave', text: '15 days a year, credited quarterly. For longer breaks: apply 2 weeks ahead for 3+ days. Up to 30 days carry forward, and anything above that is encashed at basic pay in March.' },
+    { heading: '5. Applying & Approval', text: 'Raise every leave on the HR portal, including sick days applied for after the fact. Your reporting manager approves. Anything over 5 consecutive days also needs department head sign-off.' },
+    { heading: '6. Public Holidays', text: '10 fixed holidays plus 2 floaters you choose yourself. The calendar is published each December. Floaters do not carry forward.' },
+    { heading: '7. Special Leave', text: 'Maternity: 26 weeks. Paternity: 10 days, taken within 6 months of the birth. Bereavement: 5 days for immediate family. Marriage: 5 days, once during your employment.' },
+    { heading: '8. Unpaid Leave', text: 'Beyond your balance, leave is unpaid and needs HR approval in advance. Extended unpaid leave pauses earned-leave accrual for that period.' },
+  ],
+  'stealth mode policy': [
+    { heading: '1. What This Covers', text: 'Anything we are building that has not been announced: unreleased products and features, pilots, pricing work, client names not already public, and internal metrics. If it is not on our website or in a press release, treat it as unreleased.' },
+    { heading: '2. Why We Work This Way', text: 'In payments, an unannounced feature is a competitive position and often a client confidence. Early disclosure can cost a launch, a partnership, or a regulatory conversation that was not ready to be had.' },
+    { heading: '3. Outside the Company', text: 'Do not post, present, demo or describe unreleased work publicly — including conference talks, podcasts, personal blogs and social media. Screenshots of internal tools count, dashboards and test data included.' },
+    { heading: '4. Your Own Profiles', text: 'Naming AND Payments as your employer and your role is entirely fine and encouraged. Describing what you are building, which clients you work with, or what is shipping next is not.' },
+    { heading: '5. Friends, Family & Candidates', text: 'The same line applies in private. When referring a candidate, describe the team and the stack, not the roadmap — they can hear the rest once they have signed.' },
+    { heading: '6. AI Tools & Third Parties', text: 'Do not paste production code, client data or unreleased plans into tools the company has not approved. Approved tools are listed on the IT portal; ask IT before using a new one for work.' },
+    { heading: '7. When Something Goes Public', text: 'Launches are announced by Marketing with a date. Once it is out, share it freely — and please do. Before then, "I can\u2019t talk about that yet" is a complete and perfectly professional answer.' },
+    { heading: '8. If You Are Unsure', text: 'Ask before you post, not after. Your manager, Marketing or legal@andpayments.com will give you a straight answer, usually within the day. Nobody has ever been in trouble for asking.' },
+  ],
 };
+
+/** The date on the letterhead. Long-form month, because a policy's
+ *  effective date is read once and not scanned — "04 Feb 2026" is a table
+ *  cell, "4 February 2026" is a document. */
+function formatDocDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
 
 function policySectionsFor(title: string): PolicySection[] {
   const key = title.toLowerCase();
@@ -191,13 +269,29 @@ export default function Documents() {
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | Category>('all');
+  const [params, setParams] = useSearchParams();
+
+  /* The policy panel (HR only). One panel, two modes: 'new' posts a new
+     document, 'edit' patches the one in editDoc. They share every field and
+     the whole form, so a change to the scope picker or the file control
+     cannot end up applying to only one of them. */
+  const [panelMode, setPanelMode] = useState<'new' | 'edit' | null>(null);
+  const [editDoc, setEditDoc] = useState<DocumentRow | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [editTitle, setEditTitle] = useState('');
+  /** '' is company-wide, matching the API's own three-valued departmentId. */
+  const [editBranch, setEditBranch] = useState('');
+  const [editCategory, setEditCategory] = useState<Category>('general');
+  const [editFile, setEditFile] = useState<File | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* Modal state */
   const [modalDoc, setModalDoc] = useState<DocumentRow | null>(null);
-  const [highlightMode, setHighlightMode] = useState(false);
-  const [highlighted, setHighlighted] = useState<Record<string, boolean>>({});
 
   const isAdmin = user?.role === 'superadmin_hr';
+  const toast = useToast();
 
   /* Fetch documents */
   useEffect(() => {
@@ -207,6 +301,39 @@ export default function Documents() {
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* The branch list, for the edit panel's scope picker. Admins only: the
+     endpoint is open to any signed-in user, but nobody else has a panel to
+     put it in and it would be a request made for nothing. */
+  useEffect(() => {
+    if (!isAdmin) return;
+    authedFetch<Department[]>('/departments').then(setDepartments).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  /**
+   * Deep link from a policy card on the "Read the docs" task:
+   * /documents?policy=Employee%20Handbook opens that policy straight away.
+   *
+   * Waits on `docs`, because the title means nothing until they have loaded —
+   * the effect re-runs when they arrive. Matched loosely, the same way
+   * policySectionsFor matches, so the card and the document row do not have to
+   * agree on punctuation. The param is then dropped with replace, so closing
+   * the modal and pressing Back does not reopen it, and a title matching
+   * nothing simply leaves them on the list.
+   */
+  useEffect(() => {
+    const wanted = params.get('policy');
+    if (!wanted || docs.length === 0) return;
+    const key = wanted.trim().toLowerCase();
+    const match =
+      docs.find((d) => d.title.toLowerCase() === key) ??
+      docs.find((d) => d.title.toLowerCase().includes(key) || key.includes(d.title.toLowerCase()));
+    if (match) setModalDoc(match);
+    const next = new URLSearchParams(params);
+    next.delete('policy');
+    setParams(next, { replace: true });
+  }, [params, docs, setParams]);
 
   /* Download handler */
   async function handleDownload(doc: DocumentRow) {
@@ -225,8 +352,6 @@ export default function Documents() {
     const sections = policySectionsFor(doc.title);
     if (sections.length > 0) {
       setModalDoc(doc);
-      setHighlightMode(false);
-      setHighlighted({});
       return;
     }
     setOpeningId(doc.id);
@@ -239,27 +364,187 @@ export default function Documents() {
     }
   }
 
+  function startEdit(doc: DocumentRow) {
+    setPanelMode('edit');
+    setEditDoc(doc);
+    setEditTitle(doc.title);
+    // The Active-for dropdown doubles as the availability control: an
+    // unavailable policy shows 'Unavailable' selected regardless of its
+    // department, because that is its salient state.
+    setEditBranch(doc.is_available === false ? '__unavailable__' : (doc.department_id ?? ''));
+    setEditCategory(categoryFor(doc));
+    setEditFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function startCreate() {
+    setPanelMode('new');
+    setEditDoc(null);
+    setEditTitle('');
+    setEditBranch('');
+    setEditCategory('general');
+    setEditFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  function closePanel() {
+    setPanelMode(null);
+    setEditDoc(null);
+  }
+
+  /**
+   * Save the edit.
+   *
+   * Raw fetch rather than authedFetch, because that helper JSON-encodes its
+   * body and sets a JSON Content-Type — which is exactly what a multipart
+   * upload must not have. Same pattern, and the same CSRF double-submit, as
+   * DocumentChecklist's upload.
+   *
+   * Only changed fields are sent. The API treats an omitted departmentId as
+   * "leave the scope alone" and an empty one as "company-wide", so sending
+   * the field unconditionally would be harmless here but sending a stale one
+   * would not be — building the body from what actually differs keeps a
+   * title-only edit from touching who can see the policy.
+   */
+  async function saveEdit() {
+    const creating = panelMode === 'new';
+    if (!creating && !editDoc) return;
+
+    const title = editTitle.trim();
+    if (!title) {
+      toast({ tone: 'error', title: 'Give the policy a name' });
+      return;
+    }
+    // Only on create. An edit without a file keeps the one already attached,
+    // which is the common case; a new policy has nothing to fall back on and
+    // the API rejects it with a 400 rather than storing a row pointing at
+    // no document.
+    if (creating && !editFile) {
+      toast({
+        tone: 'error',
+        title: 'Choose a PDF',
+        message: 'A new policy needs a document attached.',
+      });
+      return;
+    }
+
+    const form = new FormData();
+    if (creating) {
+      form.append('title', title);
+      form.append('category', editCategory);
+      const unavailable = editBranch === '__unavailable__';
+      form.append('isAvailable', unavailable ? 'false' : 'true');
+      // Appended ONLY when a real department is chosen. The create DTO
+      // validates this with @IsUUID, so an empty string (company-wide) or
+      // the unavailable sentinel would fail outright — both are expressed by
+      // leaving the field out.
+      if (editBranch && !unavailable) form.append('departmentId', editBranch);
+      if (editFile) form.append('file', editFile);
+    } else if (editDoc) {
+      // Only what changed, so a title-only edit cannot touch who can see it.
+      if (title !== editDoc.title) form.append('title', title);
+      // The dropdown carries scope AND availability. Going unavailable leaves
+      // the department alone (so turning it back on restores the old scope);
+      // any real selection sets the department and makes it available again.
+      const unavailable = editBranch === '__unavailable__';
+      const newDept = unavailable ? (editDoc.department_id ?? '') : editBranch;
+      if (newDept !== (editDoc.department_id ?? '')) form.append('departmentId', newDept);
+      const nowAvailable = !unavailable;
+      if (nowAvailable !== editDoc.is_available) form.append('isAvailable', String(nowAvailable));
+      if (editCategory !== categoryFor(editDoc)) form.append('category', editCategory);
+      if (editFile) form.append('file', editFile);
+    }
+
+    setSavingEdit(true);
+    try {
+      const csrf =
+        document.cookie
+          .split('; ')
+          .find((c) => c.startsWith('csrf_token='))
+          ?.slice('csrf_token='.length) ?? '';
+      const res = await fetch(
+        creating ? `${API_BASE_URL}/documents` : `${API_BASE_URL}/documents/${editDoc!.id}`,
+        {
+          method: creating ? 'POST' : 'PATCH',
+          headers: csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {},
+          body: form,
+          credentials: 'include',
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ message: 'Could not save' }));
+        throw new Error(body.message ?? 'Could not save');
+      }
+      const saved: DocumentRow = await res.json();
+      setDocs((prev) =>
+        creating
+          ? // Newest first, matching the order the API lists them in — so the
+            // policy someone just uploaded is the one at the top, not one they
+            // have to go looking for.
+            [saved, ...prev]
+          : prev.map((d) => (d.id === saved.id ? { ...d, ...saved } : d)),
+      );
+      closePanel();
+      toast({ tone: 'success', title: creating ? 'Policy uploaded' : 'Policy updated' });
+    } catch (err) {
+      toast({
+        tone: 'error',
+        title: creating ? "Couldn't upload the policy" : "Couldn't update the policy",
+        message: toastError(err, 'Something went wrong. Try again in a moment.'),
+      });
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function deletePolicy() {
+    if (!editDoc) return;
+    // A real confirm: delete removes the policy for everyone, and there is no
+    // undo in the UI. Native rather than a second custom modal — one blocking
+    // question does not earn its own component.
+    if (!window.confirm(`Delete "${editDoc.title}"? This removes it for everyone.`)) return;
+
+    setDeleting(true);
+    try {
+      const csrf =
+        document.cookie
+          .split('; ')
+          .find((c) => c.startsWith('csrf_token='))
+          ?.slice('csrf_token='.length) ?? '';
+      const res = await fetch(`${API_BASE_URL}/documents/${editDoc.id}`, {
+        method: 'DELETE',
+        headers: csrf ? { 'X-CSRF-Token': decodeURIComponent(csrf) } : {},
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ message: 'Could not delete' }));
+        throw new Error(body.message ?? 'Could not delete');
+      }
+      const removedId = editDoc.id;
+      setDocs((prev) => prev.filter((d) => d.id !== removedId));
+      closePanel();
+      toast({ tone: 'success', title: 'Policy deleted' });
+    } catch (err) {
+      toast({
+        tone: 'error',
+        title: "Couldn't delete the policy",
+        message: toastError(err, 'Something went wrong. Try again in a moment.'),
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   /* Filtering */
   const filtered = docs.filter((d) => {
-    if (activeTab !== 'all' && categoryFor(d.title) !== activeTab) return false;
+    if (activeTab !== 'all' && categoryFor(d) !== activeTab) return false;
     if (search && !d.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
 
   /* Category counts */
   const counts: Record<string, number> = { all: docs.length, health: 0, travel: 0, general: 0 };
-  docs.forEach((d) => { counts[categoryFor(d.title)]++; });
-
-  /* Highlight toggle in modal */
-  function toggleSection(key: string) {
-    if (!highlightMode) return;
-    setHighlighted((prev) => {
-      const next = { ...prev };
-      if (next[key]) delete next[key];
-      else next[key] = true;
-      return next;
-    });
-  }
+  docs.forEach((d) => { counts[categoryFor(d)]++; });
 
   const modalSections = modalDoc ? policySectionsFor(modalDoc.title) : [];
 
@@ -286,14 +571,8 @@ export default function Documents() {
         </div>
         {isAdmin && (
           <div className="dp-header-actions">
-            <button className="dp-upload-btn">
+            <button className="dp-upload-btn" onClick={startCreate}>
               <span className="dp-upload-plus">+</span> Upload New Policy
-            </button>
-            <button className="dp-settings-btn" aria-label="Settings">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="#555" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="#555" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
             </button>
           </div>
         )}
@@ -338,13 +617,58 @@ export default function Documents() {
             const im = iconMetaFor(doc.title);
             const desc = descriptionFor(doc.title);
             const meta = metaFor(doc.title);
+            const art = artFor(doc.title);
             return (
               <article
-                className="dp-card"
+                className={`dp-card${art ? ' dp-card--art' : ''}`}
                 key={doc.id}
                 style={{ animationDelay: `${i * 0.06}s` }}
               >
-                {/* Top row: icon + title + edit */}
+                {/* The art sits in its own square column to the right of
+                    everything else, so the text and the buttons keep a
+                    straight left edge and only lose width. Decorative, so
+                    alt is empty and it is out of the reading order — the
+                    title and description already say what the policy is. */}
+                {art && (
+                  <div className="dp-card-art" aria-hidden="true">
+                    <img src={art.src} alt={art.alt} loading="lazy" />
+                  </div>
+                )}
+
+                {/* Everything but the art in one wrapper, so the card is a
+                    two-column grid of exactly two items. Without it the
+                    children are five separate grid items and the art can
+                    only span the explicit grid — which has one row — so
+                    the description and buttons ran underneath the picture
+                    instead of beside it. */}
+                <div className="dp-card-main">
+                {/* HR's edit button, against the CARD's top-right corner
+                    rather than the text column's. Inside .dp-card-main it
+                    landed between the title and the picture, which reads as
+                    floating in the middle of the card. */}
+                {isAdmin && (
+                  <button
+                    className="dp-card-edit-btn"
+                    aria-label={`Edit ${doc.title}`}
+                    onClick={() => startEdit(doc)}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      aria-hidden="true"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                      />
+                    </svg>
+                  </button>
+                )}
+
+                {/* Top row: icon + title */}
                 <div className="dp-card-top">
                   <div className="dp-card-icon-row">
                     <div
@@ -358,14 +682,6 @@ export default function Documents() {
                       <span className="dp-card-format">PDF</span>
                     </div>
                   </div>
-                  {isAdmin && (
-                    <button className="dp-card-edit-btn" aria-label="Edit policy">
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                        <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="#e8930c" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                        <path d="M9.5 3.5l3 3" stroke="#e8930c" strokeWidth="1.3" />
-                      </svg>
-                    </button>
-                  )}
                 </div>
 
                 {/* Description */}
@@ -399,10 +715,18 @@ export default function Documents() {
                   </button>
                 </div>
 
-                {/* Footer */}
-                <div className="dp-card-footer">
+                {/* Footer: the policy's live state. Unavailable is HR-only —
+                    employees never receive an unavailable row — so this line
+                    reads 'Active' for everyone but HR looking at one they have
+                    taken down. */}
+                <div className={`dp-card-footer${doc.is_available === false ? ' dp-card-footer--off' : ''}`}>
                   <span className="dp-card-status-dot" />
-                  Active (All depts)
+                  {doc.is_available === false
+                    ? 'Unavailable'
+                    : doc.department_id
+                      ? 'Active (1 dept)'
+                      : 'Active (All depts)'}
+                </div>
                 </div>
               </article>
             );
@@ -421,76 +745,230 @@ export default function Documents() {
         </div>
       </Reveal>
 
-      {/* ---- Bottom section (admin) ---- */}
-      {isAdmin && (
-        <Reveal>
-          <div className="dp-dept-section">
-            <div className="dp-dept-left">
-              <div className="dp-dept-icon">
-                <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                  <rect x="3" y="3" width="16" height="16" rx="2" stroke="#e8930c" strokeWidth="1.3" />
-                  <path d="M3 9h16M9 9v10" stroke="#e8930c" strokeWidth="1.3" />
+      {/* ---- Policy panel (HR only) ----
+           Upload and edit are the same form in two modes. Behind the same
+           role check as the buttons that open it, and behind the same one
+           the API enforces on POST and PATCH /documents. Showing this to an
+           employee would be showing them a form that can only ever 403. */}
+      {isAdmin && panelMode && (
+        <div className="dp-modal-overlay" onClick={() => !savingEdit && closePanel()}>
+          <div className="dp-modal dp-edit" onClick={(e) => e.stopPropagation()}>
+            <div className="dp-modal-header">
+              <h2 className="dp-modal-title">
+                {panelMode === 'new' ? 'Upload a policy' : 'Edit policy'}
+              </h2>
+              <button
+                className="modal-close"
+                onClick={closePanel}
+                disabled={savingEdit}
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
                 </svg>
-              </div>
-              <div>
-                <div className="dp-dept-title">Department-Specific Handbooks & Access Controls</div>
-                <div className="dp-dept-subtitle">
-                  Configure department visibility, upload revisions, and manage joinee access permissions.
-                </div>
-              </div>
+              </button>
             </div>
-            <span className="dp-dept-link">
-              Manage permissions <span>&rsaquo;</span>
-            </span>
+
+            <form
+              className="dp-edit-body"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveEdit();
+              }}
+            >
+              <label className="dp-edit-field">
+                <span>Policy name</span>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Remote Work Policy"
+                  autoFocus
+                />
+              </label>
+
+              <label className="dp-edit-field">
+                <span>Active for</span>
+                <select value={editBranch} onChange={(e) => setEditBranch(e.target.value)}>
+                  {/* Empty value, not a sentinel string: it is what the API
+                      reads as company-wide, so nothing has to translate it. */}
+                  <option value="">Everyone — company-wide</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                  {/* Not a branch but a state: chosen here because availability
+                      and scope are the one thing HR sets about who sees a
+                      policy. Its own sentinel value, split out on save. */}
+                  <option value="__unavailable__">Unavailable — hidden from staff</option>
+                </select>
+                <span className="dp-edit-hint">
+                  {editBranch === '__unavailable__'
+                    ? 'Hidden from everyone but HR. Nothing is deleted — set a branch here to bring it back.'
+                    : 'A branch policy is only visible to people in that department. Company-wide is visible to everyone.'}
+                </span>
+              </label>
+
+              <label className="dp-edit-field">
+                <span>Type</span>
+                <select
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value as Category)}
+                >
+                  <option value="health">Health &amp; Wellness</option>
+                  <option value="travel">Travel &amp; Expenses</option>
+                  <option value="general">General</option>
+                </select>
+                <span className="dp-edit-hint">
+                  Sets which tab the policy appears under. Pick the one people would look in.
+                </span>
+              </label>
+
+              <div className="dp-edit-field">
+                <span>Policy PDF</span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf"
+                  hidden
+                  onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+                />
+                <div className="dp-edit-file">
+                  <button
+                    type="button"
+                    className="dp-btn dp-btn--read"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Choose file
+                  </button>
+                  <span className="dp-edit-filename">
+                    {editFile
+                      ? editFile.name
+                      : panelMode === 'new'
+                        ? 'No file chosen yet'
+                        : 'Keeping the current file'}
+                  </span>
+                  {editFile && (
+                    <button
+                      type="button"
+                      className="dp-edit-clear"
+                      onClick={() => {
+                        setEditFile(null);
+                        if (fileInputRef.current) fileInputRef.current.value = '';
+                      }}
+                    >
+                      Undo
+                    </button>
+                  )}
+                </div>
+                <span className="dp-edit-hint">
+                  {panelMode === 'new'
+                    ? 'Required. The policy is listed as soon as you save, so upload the document you want people reading.'
+                    : 'Optional. Leave it alone to change only the name or the branch — most edits are not a new document.'}
+                </span>
+              </div>
+
+              <div className="dp-edit-actions">
+                {/* Delete lives on the left, apart from Cancel and Save, so
+                    the destructive action is not sitting where the eye lands
+                    for 'the safe button'. Edit mode only — there is nothing
+                    to delete while creating. */}
+                {panelMode === 'edit' && (
+                  <button
+                    type="button"
+                    className="dp-edit-delete"
+                    onClick={() => void deletePolicy()}
+                    disabled={savingEdit || deleting}
+                  >
+                    {deleting ? 'Deleting…' : 'Delete policy'}
+                  </button>
+                )}
+                <span className="dp-edit-actions-spacer" />
+                <button type="button" onClick={closePanel} disabled={savingEdit || deleting}>
+                  Cancel
+                </button>
+                <button type="submit" className="dp-btn dp-btn--read" disabled={savingEdit || deleting}>
+                  {savingEdit
+                    ? panelMode === 'new'
+                      ? 'Uploading…'
+                      : 'Saving…'
+                    : panelMode === 'new'
+                      ? 'Upload policy'
+                      : 'Save changes'}
+                </button>
+              </div>
+            </form>
           </div>
-        </Reveal>
+        </div>
       )}
 
-      {/* ---- Policy Detail Modal ---- */}
+      {/* ---- Policy Detail Modal ----
+           Dressed as a real document rather than as a dialog with text in
+           it: a letterhead with the AndBoard logotype, the title set in the
+           heading serif, a meta strip, then the clauses. The highlighter
+           that used to sit up here is gone — it painted a yellow block on a
+           section and kept nothing: the marks lived in component state, so
+           they were lost the moment the modal closed. A highlight you
+           cannot come back to is a control that looks like a feature. */}
       {modalDoc && (
-        <div className="dp-modal-overlay" onClick={() => { setModalDoc(null); setHighlightMode(false); }}>
-          <div className="dp-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="dp-modal-header">
-              <h2 className="dp-modal-title">{modalDoc.title}</h2>
-              <div className="dp-modal-controls">
-                <button
-                  className={`dp-highlight-btn ${highlightMode ? 'dp-highlight-btn--on' : ''}`}
-                  onClick={() => setHighlightMode((prev) => !prev)}
-                  aria-label="Toggle highlight mode"
-                >
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                    <path d="M3 15h4l7-7-4-4-7 7v4z" stroke="#e8930c" strokeWidth="1.3" strokeLinejoin="round" />
-                    <path d="M10 4l4 4" stroke="#e8930c" strokeWidth="1.3" />
-                    <rect x="2" y="15" width="14" height="2" rx="1" fill="#ffe066" opacity="0.7" />
-                  </svg>
-                </button>
-                {highlightMode && (
-                  <span className="dp-highlight-label">Highlighting ON</span>
-                )}
-                <button
-                  className="dp-modal-close"
-                  onClick={() => { setModalDoc(null); setHighlightMode(false); }}
-                  aria-label="Close"
-                >
-                  &times;
-                </button>
-              </div>
-            </div>
-            <div className="dp-modal-body">
-              {modalSections.map((section, idx) => {
-                const key = `${modalDoc.title}-${idx}`;
-                const isHl = !!highlighted[key];
-                return (
-                  <div
-                    key={key}
-                    className={`dp-modal-section ${highlightMode ? 'dp-modal-section--clickable' : ''} ${isHl ? 'dp-modal-section--highlighted' : ''}`}
-                    onClick={() => toggleSection(key)}
-                  >
-                    <h4 className="dp-modal-section-heading">{section.heading}</h4>
-                    <p className="dp-modal-section-text">{section.text}</p>
+        <div className="dp-modal-overlay" onClick={() => setModalDoc(null)}>
+          <div className="dp-modal dp-doc" onClick={(e) => e.stopPropagation()}>
+            {/* The app's own ✕, not this page's private one: .modal-close is
+                what every other modal closes with, down to the quarter turn
+                on hover. .dp-doc-close only puts it in the corner. */}
+            <button
+              className="modal-close dp-doc-close"
+              onClick={() => setModalDoc(null)}
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            <div className="dp-modal-body dp-doc-body">
+              <header className="dp-doc-head">
+                <span className="dp-doc-brand">
+                  <BrandMark className="dp-doc-mark" />
+                  <BrandWord className="dp-doc-word" brandClassName="dp-doc-word-accent" />
+                </span>
+                <span className="dp-doc-issuer">AND Payments · People &amp; Culture</span>
+
+                <h2 className="dp-doc-title">{modalDoc.title}</h2>
+
+                <dl className="dp-doc-meta">
+                  <div>
+                    <dt>Applies to</dt>
+                    <dd>{modalDoc.department_id ? 'Your department' : 'Everyone'}</dd>
                   </div>
-                );
-              })}
+                  <div>
+                    <dt>Effective</dt>
+                    <dd>{formatDocDate(modalDoc.created_at)}</dd>
+                  </div>
+                  <div>
+                    <dt>Clauses</dt>
+                    <dd>{modalSections.length || '—'}</dd>
+                  </div>
+                </dl>
+              </header>
+
+              {modalSections.map((section, idx) => (
+                <div key={`${modalDoc.title}-${idx}`} className="dp-modal-section dp-doc-section">
+                  <h4 className="dp-modal-section-heading">{section.heading}</h4>
+                  <p className="dp-modal-section-text">{section.text}</p>
+                </div>
+              ))}
+
+              {modalSections.length > 0 && (
+                <footer className="dp-doc-foot">
+                  <span className="dp-doc-foot-rule" aria-hidden="true" />
+                  <p>
+                    <strong>AndBoard</strong> · Internal policy document. Shared with you as an
+                    employee of AND Payments — please do not circulate outside the company.
+                  </p>
+                </footer>
+              )}
               {modalSections.length === 0 && (
                 <div className="dp-modal-fallback">
                   <p>Detailed sections are not available for this document.</p>

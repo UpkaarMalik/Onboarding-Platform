@@ -126,24 +126,59 @@ export const MacbookScroll = ({
   // matches the lid's 50rem; 0.4 down is the closed lid's 12rem against
   // this screen's 30rem. The registry's 1.2/0.6 were right for ITS
   // 32rem x 24rem lid and stopped being right when those changed.
+  // 1.85 is the point of the effect: the screen grows past the lid it came
+  // out of, so the tips arrive in front of the machine rather than staying
+  // boxed inside it. It was briefly capped at 1 to keep the panel inside the
+  // bezel, which did keep the laptop a laptop — and also made the whole
+  // sequence a lid that opens onto a panel that never moves. Anything from
+  // about 1.1 up overhangs the bezel on purpose; pair it with `translate`
+  // below, which is what carries the grown screen clear of the frame.
+  const MAX_SCREEN_SCALE = 1.85;
+  /**
+   * How far down the scroll the machine finishes opening.
+   *
+   * `useScroll` here is offset ["start start", "end end"], so progress 1 is
+   * the LAST scrollable pixel of this section. This used to be 0.3, which
+   * meant the whole reveal was over after a third of the scroll and the
+   * remaining two thirds moved nothing at all — and once the tip cards below
+   * the laptop were removed there was nothing down there to scroll to
+   * either. Spread across 0.85, every turn of the wheel advances the
+   * machine, and the finished picture IS the bottom of the page.
+   *
+   * Not 1.0 deliberately: the last 15% is left flat so the finished view
+   * holds still for a moment at the end instead of existing only on the
+   * final pixel, where a nudge either way would start closing it again.
+   *
+   * Every transform below shares it, so the scale, the travel and the lid's
+   * rotation land together — a resting picture means all three arriving at
+   * once, not the screen still drifting after the lid has stopped.
+   */
+  const OPEN_BY = 0.85;
   const scaleX = useTransform(
     scrollYProgress,
-    [0, 0.3],
-    [1, isMobile ? 1 : 1.85],
+    [0, OPEN_BY],
+    [1, isMobile ? 1 : MAX_SCREEN_SCALE],
   );
   const scaleY = useTransform(
     scrollYProgress,
-    [0, 0.3],
-    [1, isMobile ? 1 : 1.85],
+    [0, OPEN_BY],
+    [1, isMobile ? 1 : MAX_SCREEN_SCALE],
   );
-  const translate = useTransform(scrollYProgress, [0, 1], [0, 110]);
+  // The travel that carries the grown screen clear of the lid. It only makes
+  // sense alongside a MAX_SCREEN_SCALE above 1: at 1 the screen has nowhere
+  // to go and the travel just slides it down inside the frame, leaving an
+  // empty strip of lid above it and its bottom edge on the keys.
+  const translate = useTransform(scrollYProgress, [0, OPEN_BY], [0, 110]);
   // At rest the lid is reclined; it stands up as you scroll. The camera
   // is deliberately far away (6000px, not the registry's 800) — a near
   // camera projects the reclined lid's bottom edge much narrower than
   // its top, so the machine met the deck as a trapezoid. Far away, the
   // tilt reads as foreshortening (height x cos0) with the width left
   // alone, so the lid still meets the deck edge to edge.
-  const rotate = useTransform(scrollYProgress, [0, 0.3], [REST_TILT, 0]);
+  const rotate = useTransform(scrollYProgress, [0, OPEN_BY], [REST_TILT, 0]);
+  // The heading above the machine keeps its own short range rather than
+  // OPEN_BY: it says "scroll on", so it should be gone early, not linger
+  // most of the way down the page repeating an instruction being followed.
   const textTransform = useTransform(scrollYProgress, [0, 0.3], [0, 100]);
   const textOpacity = useTransform(scrollYProgress, [0, 0.2], [1, 0]);
 
@@ -706,13 +741,23 @@ export const KBtn = ({
         // of chassis colour: a white bloom that shows against a dark
         // deck, and a dark drop that shows against a light one. On any
         // colour at least one of them is doing the work.
+        //
+        // Turned down from 12px/3px at 0.65 alpha: at that strength the
+        // bloom from neighbouring keys overlapped in the gaps and the
+        // keyboard read as a lit slab with dark shapes on it rather than
+        // as keys. Halving the spread keeps each key's own glow inside
+        // its own outline.
         backlit &&
-          "bg-white/40 shadow-[0_0_12px_3px_rgba(255,255,255,0.65),0_1px_2px_rgba(0,0,0,0.5)]",
+          "bg-white/20 shadow-[0_0_6px_1px_rgba(255,255,255,0.3),0_1px_2px_rgba(0,0,0,0.55)]",
       )}
     >
       <div
         className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-[3.5px] bg-[#0A090D]",
+          // #16151a rather than #0A090D: near-black keys on a near-black
+          // deck meant the only thing separating one key from the next was
+          // the backlight, which is the thing being turned down above. A
+          // key that is a touch lighter than the deck has its own edge.
+          "flex h-6 w-6 items-center justify-center rounded-[3.5px] bg-[#16151a]",
           className,
         )}
         style={{
@@ -722,7 +767,11 @@ export const KBtn = ({
       >
         <div
           className={cn(
-            "flex w-full flex-col items-center justify-center text-[5px] leading-[1.2] tracking-[0.2px] text-white",
+            // Legends were 5px at 0.2px tracking, which the deck's 1.96x
+            // scale renders at about 10px — small enough that the smaller
+            // glyphs filled in. Slightly larger, slightly bolder and more
+            // open, which is what the keys needed more than more light.
+            "flex w-full flex-col items-center justify-center text-[5.5px] font-medium leading-[1.2] tracking-[0.3px] text-white/90",
             childrenClassName,
             backlit && "text-white",
           )}

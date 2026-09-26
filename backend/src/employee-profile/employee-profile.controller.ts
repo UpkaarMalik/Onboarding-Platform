@@ -29,6 +29,45 @@ export class EmployeeProfileController {
     return this.employeeProfile.search(q ?? '');
   }
 
+  /**
+   * The caller's own profile.
+   *
+   * No @Roles: everyone signed in has one, and the record returned is
+   * chosen by the token rather than by anything the caller sends — there
+   * is no id to tamper with, so a role check would add nothing. Same
+   * shape HR sees, because it is the same person's data.
+   *
+   * Declared above :userId for the same reason 'search' is: otherwise
+   * ParseUUIDPipe rejects the literal "me".
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('me')
+  getOwnProfile(@CurrentUser() actor: AuthenticatedUser) {
+    return this.employeeProfile.getProfile(actor.id);
+  }
+
+  /**
+   * The caller editing their own contact details.
+   *
+   * Deliberately NOT the surface HR gets. Only phone and personal email
+   * are forwarded; department, joining date and status stay HR's, and are
+   * dropped here rather than filtered further down — so adding a field to
+   * the HR body below can never quietly widen what someone may change
+   * about themselves.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  updateOwnProfile(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() body: { phoneNumber?: unknown; personalEmail?: unknown },
+  ) {
+    return this.employeeProfile.updateProfile(
+      actor.id,
+      { phoneNumber: body?.phoneNumber, personalEmail: body?.personalEmail },
+      actor.id,
+    );
+  }
+
   // HR-only, and a fixed role rather than a data-dependent check: this
   // is the whole-company view by definition, so there is no "your own
   // profile" case for RolesGuard to be too blunt for.

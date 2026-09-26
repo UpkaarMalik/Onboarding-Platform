@@ -2,9 +2,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
+import * as cookieParser from 'cookie-parser';
 
 import { AppModule } from '../src/app.module';
 import { TokenService } from '../src/auth/tokens/token.service';
+import { SessionsService } from '../src/auth/sessions/sessions.service';
 import { DatabaseService } from '../src/database/database.service';
 
 // This suite performs real writes.
@@ -23,12 +25,25 @@ describe('Step 37 gap coverage (e2e)', () => {
   let db: DatabaseService;
   let tokens: TokenService;
 
-  let superadminToken: string;
+  let sessions: SessionsService;
+
+  /** A credential: the bearer token and the CSRF value bound to the same
+   *  session row. Writes need both — CsrfGuard is global and runs before
+   *  the route's auth guard. */
+  interface Creds {
+    token: string;
+    csrf: string;
+  }
+
+  let superadmin: Creds;
   let engineeringDeptId: string;
 
+  const stamp = Date.now();
   const createdUserIds: string[] = [];
   const createdOnboardingIds: string[] = [];
-  const createdNoteIds: string[] = [];
+  /** Sessions opened on accounts this suite did NOT create (the real
+   *  superadmin), removed by id so nobody is signed out of their browser. */
+  const createdSessionIds: string[] = [];
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -36,6 +51,9 @@ describe('Step 37 gap coverage (e2e)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
+    // main.ts registers this; createNestApplication() does not. Without it
+    // req.cookies is undefined and CsrfGuard 403s every write.
+    app.use(cookieParser());
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -49,16 +67,28 @@ describe('Step 37 gap coverage (e2e)', () => {
 
     db = moduleRef.get(DatabaseService);
     tokens = moduleRef.get(TokenService);
+    sessions = moduleRef.get(SessionsService);
 
     /*
-     * IMPORTANT:
-     * This UUID only needs to be a syntactically valid UUID for signing
-     * the token. The employee/task-owner tokens below use real user IDs.
+     * A REAL superadmin, not a syntactically-valid invention.
+     *
+     * This used to be a made-up UUID on the grounds that the token only
+     * needed to be signable. That stopped being true at migration 0029:
+     * JwtStrategy re-reads the user_sessions row on every request, and a
+     * session cannot be opened for a user that does not exist.
      */
-    superadminToken = tokens.signAccessToken({
-      id: '5b4a3530-09da-4091-bf5b-6e20f5dce080',
-      role: 'superadmin_hr',
-    });
+    const { rows: adminRows } = await db.query<{ id: string }>(
+      `SELECT id FROM users
+        WHERE role = 'superadmin_hr' AND deleted_at IS NULL AND status <> 'disabled'
+        ORDER BY created_at
+        LIMIT 1`,
+    );
+    if (!adminRows[0]) {
+      throw new Error(
+        'No active superadmin_hr user found — seed one before running this suite.',
+      );
+    }
+    superadmin = await signIn(adminRows[0].id, 'superadmin_hr');
 
     const { rows } = await db.query<{ id: string }>(
       `SELECT id
@@ -80,6 +110,18 @@ describe('Step 37 gap coverage (e2e)', () => {
      * Delete onboarding tasks before onboardings because of FK constraints.
      */
     if (createdOnboardingIds.length) {
+      /*
+       * Subtasks before tasks: templates seed checklist items as of
+       * migration 0034 and onboarding_subtasks has no cascade.
+       */
+      await db.query(
+        `DELETE FROM onboarding_subtasks
+          WHERE onboarding_task_id IN (
+            SELECT id FROM onboarding_tasks
+             WHERE onboarding_id = ANY($1::uuid[]))`,
+        [createdOnboardingIds],
+      );
+
       await db.query(
         `DELETE FROM onboarding_tasks
          WHERE onboarding_id = ANY($1::uuid[])`,
@@ -93,15 +135,10 @@ describe('Step 37 gap coverage (e2e)', () => {
       );
     }
 
-    /*
-     * Delete notes before users because notes reference users.
-     */
-    if (createdNoteIds.length) {
-      await db.query(
-        `DELETE FROM notes
-         WHERE id = ANY($1::uuid[])`,
-        [createdNoteIds],
-      );
+    if (createdSessionIds.length) {
+      await db.query(`DELETE FROM user_sessions WHERE id = ANY($1::uuid[])`, [
+        createdSessionIds,
+      ]);
     }
 
     /*
@@ -112,6 +149,12 @@ describe('Step 37 gap coverage (e2e)', () => {
       await db.query(
         `DELETE FROM activity_logs
          WHERE actor_id = ANY($1::uuid[])`,
+        [createdUserIds],
+      );
+
+      await db.query(
+        `DELETE FROM user_sessions
+         WHERE user_id = ANY($1::uuid[])`,
         [createdUserIds],
       );
 
@@ -129,6 +172,59 @@ describe('Step 37 gap coverage (e2e)', () => {
   // Helpers
   // ---------------------------------------------------------------------------
 
+  /**
+   * A real session, because a signed token alone is no longer a credential:
+   * JwtStrategy re-reads the user_sessions row on EVERY request, so a
+   * fabricated `sid` comes back as "Session is no longer active".
+   *
+   * The CSRF value is issued by the same call because CsrfGuard binds the
+   * header to that session's stored hash — a made-up pair does not pass.
+   */
+  async function signIn(userId: string, role: string): Promise<Creds> {
+    const { sessionId, csrfToken } = await sessions.createSession(
+      userId,
+      'gap-coverage-e2e',
+    );
+    createdSessionIds.push(sessionId);
+    return {
+      token: tokens.signAccessToken(
+        { id: userId, role, department_id: null } as any,
+        sessionId,
+      ),
+      csrf: csrfToken,
+    };
+  }
+
+  /**
+   * Turns one of an onboarding's task_owner tasks into something a
+   * task_owner can actually claim, by giving it an owner side.
+   *
+   * See the long note at the call site for why this cannot be done
+   * through the API.
+   */
+  async function makeClaimable(
+    tasks: Array<Record<string, any>>,
+  ): Promise<Record<string, any>> {
+    const target = tasks.find(
+      (task) => task.owner_role === 'task_owner' && !task.is_checkpoint,
+    );
+    expect(target).toBeDefined();
+    await db.query(
+      `UPDATE onboarding_tasks SET completion_mode = 'dual' WHERE id = $1`,
+      [target!.id],
+    );
+    return target!;
+  }
+
+  /** Authenticated write. Everything CsrfGuard and JwtStrategy need, once. */
+  function authedPost(path: string, who: Creds) {
+    return request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${who.token}`)
+      .set('Cookie', [`csrf_token=${who.csrf}`])
+      .set('X-CSRF-Token', who.csrf);
+  }
+
   async function createUser(
     fullName: string,
     role: 'employee' | 'task_owner',
@@ -136,10 +232,16 @@ describe('Step 37 gap coverage (e2e)', () => {
   ): Promise<string> {
     const res = await request(app.getHttpServer())
       .post('/auth/users')
-      .set('Authorization', `Bearer ${superadminToken}`)
+      .set('Authorization', `Bearer ${superadmin.token}`)
+      .set('Cookie', [`csrf_token=${superadmin.csrf}`])
+      .set('X-CSRF-Token', superadmin.csrf)
       .send({
         fullName,
-        phoneNumber: `+1000000${String(
+        /* Stamped. These were a fixed +1000000100N series, so any run
+           whose teardown did not finish left rows that made every later
+           run fail on the phone_number unique constraint — a stale row
+           reported as a broken test. */
+        phoneNumber: `+1${String(stamp).slice(-6)}${String(
           1000 + createdUserIds.length,
         ).padStart(4, '0')}`,
         role,
@@ -164,7 +266,9 @@ describe('Step 37 gap coverage (e2e)', () => {
   }> {
     const res = await request(app.getHttpServer())
       .post('/onboardings')
-      .set('Authorization', `Bearer ${superadminToken}`)
+      .set('Authorization', `Bearer ${superadmin.token}`)
+      .set('Cookie', [`csrf_token=${superadmin.csrf}`])
+      .set('X-CSRF-Token', superadmin.csrf)
       .send({
         userId,
         startDate,
@@ -224,14 +328,11 @@ describe('Step 37 gap coverage (e2e)', () => {
 
         await createOnboarding(employeeBId, '2026-09-08');
 
-        const tokenA = tokens.signAccessToken({
-          id: employeeAId,
-          role: 'employee',
-        });
+        const tokenA = await signIn(employeeAId, 'employee');
 
         const meRes = await request(app.getHttpServer())
           .get('/onboardings/me')
-          .set('Authorization', `Bearer ${tokenA}`);
+          .set('Authorization', `Bearer ${tokenA.token}`);
 
         expect(meRes.status).toBe(200);
 
@@ -242,19 +343,19 @@ describe('Step 37 gap coverage (e2e)', () => {
 
         const listAllRes = await request(app.getHttpServer())
           .get('/onboardings')
-          .set('Authorization', `Bearer ${tokenA}`);
+          .set('Authorization', `Bearer ${tokenA.token}`);
 
         expect(listAllRes.status).toBe(403);
 
         const stuckRes = await request(app.getHttpServer())
           .get('/onboardings/stuck')
-          .set('Authorization', `Bearer ${tokenA}`);
+          .set('Authorization', `Bearer ${tokenA.token}`);
 
         expect(stuckRes.status).toBe(403);
 
         const auditRes = await request(app.getHttpServer())
           .get('/activity-logs')
-          .set('Authorization', `Bearer ${tokenA}`);
+          .set('Authorization', `Bearer ${tokenA.token}`);
 
         expect(auditRes.status).toBe(403);
       },
@@ -268,14 +369,11 @@ describe('Step 37 gap coverage (e2e)', () => {
           'task_owner',
         );
 
-        const ownerToken = tokens.signAccessToken({
-          id: taskOwnerId,
-          role: 'task_owner',
-        });
+        const ownerToken = await signIn(taskOwnerId, 'task_owner');
 
         const res = await request(app.getHttpServer())
           .get('/onboardings/me')
-          .set('Authorization', `Bearer ${ownerToken}`);
+          .set('Authorization', `Bearer ${ownerToken.token}`);
 
         expect(res.status).toBe(403);
       },
@@ -313,11 +411,28 @@ describe('Step 37 gap coverage (e2e)', () => {
           '2026-09-08',
         );
 
-        const checkpointX = tasksX.find((task) => task.is_checkpoint);
-        const checkpointY = tasksY.find((task) => task.is_checkpoint);
-
-        expect(checkpointX).toBeDefined();
-        expect(checkpointY).toBeDefined();
+        /*
+         * The claimable task has to be MADE, because nothing can create
+         * one any more.
+         *
+         * This used to grab the onboarding's checkpoint. Migration 0031
+         * moved that to HR (owner_role superadmin_hr), so a task_owner
+         * claiming it is now a 403 — correctly. Nor is there another
+         * candidate: migration 0028 pinned completionMode to
+         * @IsIn(['employee']) in BOTH the template DTO and the ad-hoc
+         * task DTO, and claimTask's first guard rejects exactly that
+         * ("this task has no owner side to claim"). Between them, no
+         * current code path produces a claimable task at all.
+         *
+         * Promoting two rows directly keeps the rule this test exists for
+         * — one owner's claim never shows up in another's
+         * /onboarding-tasks/mine — exercised against the real endpoints.
+         * That logic still runs for every pre-0028 row, of which this
+         * database has plenty, so deleting the coverage would be worse
+         * than hand-making the fixture.
+         */
+        const checkpointX = await makeClaimable(tasksX);
+        const checkpointY = await makeClaimable(tasksY);
 
         const ownerXId = await createUser(
           'Isolation Owner X',
@@ -329,33 +444,27 @@ describe('Step 37 gap coverage (e2e)', () => {
           'task_owner',
         );
 
-        const ownerXToken = tokens.signAccessToken({
-          id: ownerXId,
-          role: 'task_owner',
-        });
+        const ownerXToken = await signIn(ownerXId, 'task_owner');
 
-        const ownerYToken = tokens.signAccessToken({
-          id: ownerYId,
-          role: 'task_owner',
-        });
+        const ownerYToken = await signIn(ownerYId, 'task_owner');
 
-        const claimXRes = await request(app.getHttpServer())
-          .post(`/onboarding-tasks/${checkpointX!.id}/claim`)
-          .set('Authorization', `Bearer ${ownerXToken}`)
-          .send();
+        const claimXRes = await authedPost(
+          `/onboarding-tasks/${checkpointX!.id}/claim`,
+          ownerXToken,
+        ).send();
 
         expect(claimXRes.status).toBe(201);
 
-        const claimYRes = await request(app.getHttpServer())
-          .post(`/onboarding-tasks/${checkpointY!.id}/claim`)
-          .set('Authorization', `Bearer ${ownerYToken}`)
-          .send();
+        const claimYRes = await authedPost(
+          `/onboarding-tasks/${checkpointY!.id}/claim`,
+          ownerYToken,
+        ).send();
 
         expect(claimYRes.status).toBe(201);
 
         const mineXRes = await request(app.getHttpServer())
           .get('/onboarding-tasks/mine')
-          .set('Authorization', `Bearer ${ownerXToken}`);
+          .set('Authorization', `Bearer ${ownerXToken.token}`);
 
         expect(mineXRes.status).toBe(200);
 
@@ -375,74 +484,14 @@ describe('Step 37 gap coverage (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Notes isolation
+  // Notes isolation — REMOVED
+  //
+  // This section tested GET/POST /notes for cross-employee isolation. There is
+  // no notes module in src/ any more: the feature was taken out, so every
+  // request here 404s and the isolation it once guarded does not exist to be
+  // broken. Deleted rather than skipped, because a skipped test for a deleted
+  // feature reads as coverage somebody still owes.
   // ---------------------------------------------------------------------------
-
-  describe('notes isolation between two ordinary peers', () => {
-    it(
-      "one employee's notes are invisible to another employee, " +
-        'not just to admins',
-      async () => {
-        const employeeId = await createUser(
-          'Notes Owner Peer',
-          'employee',
-        );
-
-        const peerId = await createUser(
-          'Notes Peer',
-          'employee',
-        );
-
-        const ownerToken = tokens.signAccessToken({
-          id: employeeId,
-          role: 'employee',
-        });
-
-        const peerToken = tokens.signAccessToken({
-          id: peerId,
-          role: 'employee',
-        });
-
-        const createRes = await request(app.getHttpServer())
-          .post('/notes')
-          .set('Authorization', `Bearer ${ownerToken}`)
-          .send({
-            content: 'peer-isolation-secret',
-          });
-
-        expect(createRes.status).toBe(201);
-
-        const noteId = createRes.body.id as string;
-
-        createdNoteIds.push(noteId);
-
-        /*
-         * Direct access to somebody else's note must be forbidden.
-         */
-        const peerReadRes = await request(app.getHttpServer())
-          .get(`/notes/${noteId}`)
-          .set('Authorization', `Bearer ${peerToken}`);
-
-        expect(peerReadRes.status).toBe(403);
-
-        /*
-         * GET /notes currently returns NoteRow[] directly.
-         * It does NOT return { data, total, limit, offset }.
-         */
-        const peerListRes = await request(app.getHttpServer())
-          .get('/notes')
-          .set('Authorization', `Bearer ${peerToken}`);
-
-        expect(peerListRes.status).toBe(200);
-
-        const peerNotes = responseItems(peerListRes.body);
-
-        expect(
-          peerNotes.some((note: any) => note.id === noteId),
-        ).toBe(false);
-      },
-    );
-  });
 
   // ---------------------------------------------------------------------------
   // Filtering / sorting / pagination
@@ -455,7 +504,7 @@ describe('Step 37 gap coverage (e2e)', () => {
         .query({
           bogus: 'x',
         })
-        .set('Authorization', `Bearer ${superadminToken}`);
+        .set('Authorization', `Bearer ${superadmin.token}`);
 
       expect(res.status).toBe(400);
     });
@@ -466,7 +515,7 @@ describe('Step 37 gap coverage (e2e)', () => {
         .query({
           sort: 'bogus',
         })
-        .set('Authorization', `Bearer ${superadminToken}`);
+        .set('Authorization', `Bearer ${superadmin.token}`);
 
       expect(res.status).toBe(400);
     });
@@ -477,7 +526,7 @@ describe('Step 37 gap coverage (e2e)', () => {
         .query({
           limit: '1000',
         })
-        .set('Authorization', `Bearer ${superadminToken}`);
+        .set('Authorization', `Bearer ${superadmin.token}`);
 
       expect(tooBig.status).toBe(400);
 
@@ -486,7 +535,7 @@ describe('Step 37 gap coverage (e2e)', () => {
         .query({
           limit: '0',
         })
-        .set('Authorization', `Bearer ${superadminToken}`);
+        .set('Authorization', `Bearer ${superadmin.token}`);
 
       expect(zero.status).toBe(400);
     });
@@ -526,7 +575,7 @@ describe('Step 37 gap coverage (e2e)', () => {
           sort: 'startDate',
           limit: '100',
         })
-        .set('Authorization', `Bearer ${superadminToken}`);
+        .set('Authorization', `Bearer ${superadmin.token}`);
 
       expect(ascRes.status).toBe(200);
 
@@ -547,7 +596,7 @@ describe('Step 37 gap coverage (e2e)', () => {
           sort: '-startDate',
           limit: '100',
         })
-        .set('Authorization', `Bearer ${superadminToken}`);
+        .set('Authorization', `Bearer ${superadmin.token}`);
 
       expect(descRes.status).toBe(200);
 
@@ -612,7 +661,7 @@ describe('Step 37 gap coverage (e2e)', () => {
             limit: '2',
             offset: '0',
           })
-          .set('Authorization', `Bearer ${superadminToken}`);
+          .set('Authorization', `Bearer ${superadmin.token}`);
 
         expect(page1.status).toBe(200);
 
@@ -631,7 +680,7 @@ describe('Step 37 gap coverage (e2e)', () => {
             limit: '2',
             offset: '2',
           })
-          .set('Authorization', `Bearer ${superadminToken}`);
+          .set('Authorization', `Bearer ${superadmin.token}`);
 
         expect(page2.status).toBe(200);
         expect(Array.isArray(page2.body.data)).toBe(true);

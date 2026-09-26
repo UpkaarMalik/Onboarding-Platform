@@ -350,6 +350,22 @@ export async function downloadFile(path: string, suggestedName: string) {
   URL.revokeObjectURL(url);
 }
 
+/** Fetches a cookie-authenticated file as a blob and returns an object URL
+ *  plus its content type, for previewing INSIDE the page rather than handing
+ *  it to a new tab. The caller owns the URL and must URL.revokeObjectURL it
+ *  when the preview closes, or the blob leaks for the tab's lifetime. */
+export async function fetchFileObjectUrl(
+  path: string,
+): Promise<{ url: string; type: string }> {
+  const res = await fetch(`${API_BASE_URL}${path}`, { credentials: 'include' });
+  if (!res.ok) {
+    if (res.status === 401) redirectToLoginOnce();
+    throw new ApiError(res.status, 'OPEN_FAILED', 'Could not open this file');
+  }
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), type: blob.type };
+}
+
 /** "Read online" companion to downloadFile — hands the blob to a new
  *  tab. Same cookie-based auth. */
 export async function openFileInline(path: string) {
